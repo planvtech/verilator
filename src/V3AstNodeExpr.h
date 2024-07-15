@@ -5283,6 +5283,7 @@ public:
     void numberOperate(V3Number& out, const V3Number& lhs) override { out.opRedOr(lhs); }
     string emitVerilog() override { return "%f(| %l)"; }
     string emitC() override { return "VL_REDOR_%lq(%lW, %P, %li)"; }
+    string emitSMT() const override { return "(bvsgt %l #x00000000)"; }
     bool cleanOut() const override { return true; }
     bool cleanLhs() const override { return true; }
     bool sizeMattersLhs() const override { return false; }
