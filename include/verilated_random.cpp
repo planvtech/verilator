@@ -409,16 +409,15 @@ bool VlRandomizer::parseSolution(std::iostream& f) {
 
     return true;
 }
-std::string VlRandomizer::parseExpr(std::vector<std::string>::iterator& it, std::vector<std::string>::iterator end) {
-    if(it == end) {
-        throw std::invalid_argument("Incomplete expression.");
-    }
+std::string VlRandomizer::parseExpr(std::vector<std::string>::iterator& it,
+                                    std::vector<std::string>::iterator end) {
+    if (it == end) { throw std::invalid_argument("Incomplete expression."); }
     std::string token = *it;
     it++;
     std::ostringstream oss;
     if (token.find("ite") != std::string::npos) {
         oss << "(" << token;
-        
+
         std::string thenExpr = parseExpr(it, end);
         std::string elseExpr = parseExpr(it, end);
         oss << " " << thenExpr << " " << elseExpr << ")";
@@ -428,12 +427,13 @@ std::string VlRandomizer::parseExpr(std::vector<std::string>::iterator& it, std:
     return oss.str();
 }
 
-std::string VlRandomizer::buildConditionalConstraint(std::initializer_list<std::string> constraints) {
+std::string
+VlRandomizer::buildConditionalConstraint(std::initializer_list<std::string> constraints) {
     std::vector<std::string> tokens(constraints);
     auto it = tokens.begin();
     std::ostringstream oss;
 
-    if(constraints.size() % 2 == 0 || constraints.size() < 3) {
+    if (constraints.size() % 2 == 0 || constraints.size() < 3) {
         throw std::invalid_argument("Number of Args are invalid!!!");
     }
     oss << parseExpr(it, tokens.end());

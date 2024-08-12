@@ -111,18 +111,19 @@ public:
         if (it != m_vars.end()) return;
         m_vars[name] = std::make_shared<const VlRandomVar>(name, width, &var);
     }
-    template<typename... Args>
+    template <typename... Args>
     void hard(Args&&... args);
     //void hard(std::string&& constraint);
     //void hard(std::string&& constraint1, std::string&& constraint2, std::string&& constraint3);
 private:
-    std::string parseExpr(std::vector<std::string>::iterator& it, std::vector<std::string>::iterator end);
+    std::string parseExpr(std::vector<std::string>::iterator& it,
+                          std::vector<std::string>::iterator end);
     std::string buildConditionalConstraint(std::initializer_list<std::string> constraints);
 #ifdef VL_DEBUG
     void dump() const;
 #endif
 };
-template<typename... Args>
+template <typename... Args>
 void VlRandomizer::hard(Args&&... args) {
     if constexpr (sizeof...(args) == 1) {
         std::string constraint = std::move(std::get<0>(std::forward_as_tuple(args...)));

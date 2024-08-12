@@ -122,14 +122,15 @@ class RandomizeMarkVisitor final : public VNVisitorConst {
         iterateChildrenConst(nodep);
     }
     void visit(AstNodeVarRef* nodep) override {
-        if(m_constraintExprp || m_constraintIf) {
+        if (m_constraintExprp || m_constraintIf) {
             if (!nodep->varp()->isRand()) {
                 m_constraintExprp->user1(true);
                 nodep->v3warn(CONSTRAINTIGN, "State-dependent constraint ignored (unsupported)");
                 return;
             }
-            for (AstNode* backp = nodep; backp != m_constraintExprp && backp != m_constraintIf && !backp->user1();
-                backp = backp->backp())
+            for (AstNode* backp = nodep;
+                 backp != m_constraintExprp && backp != m_constraintIf && !backp->user1();
+                 backp = backp->backp())
                 backp->user1(true);
         }
     }
@@ -139,7 +140,7 @@ class RandomizeMarkVisitor final : public VNVisitorConst {
         // UINFO(2, "markVisitor::ConstraintIf nodep: " << nodep << " " << nodep->user1() << endl);
         VL_RESTORER(m_constraintIf);
         m_constraintIf = nodep;
-        iterateChildrenConst(nodep); 
+        iterateChildrenConst(nodep);
     }
 
     void visit(AstNodeBiop* nodep) override { iterateChildrenConst(nodep); }
@@ -162,10 +163,8 @@ class ConstraintIfVisitor final : public VNVisitor {
     AstTask* const m_taskp;  // X_setup_constraint() method of the constraint
     AstVar* const m_genp;  // VlRandomizer variable of the class
     bool editFormat(AstNodeExpr* nodep) {
-        
-        if (nodep->user1()) {
-            return false;
-        }
+
+        if (nodep->user1()) { return false; }
         // Replace computable expression with SMT constant
         VNRelinker handle;
         nodep->unlinkFrBack(&handle);
@@ -210,7 +209,8 @@ class ConstraintIfVisitor final : public VNVisitor {
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
 
-    void editSMT_condp(AstNodeExpr* nodep, AstNodeExpr* lhsp = nullptr, AstNodeExpr* rhsp = nullptr) {
+    void editSMT_condp(AstNodeExpr* nodep, AstNodeExpr* lhsp = nullptr,
+                       AstNodeExpr* rhsp = nullptr) {
         // Replace incomputable (result-dependent) expression with SMT expression
         std::string smtExpr = nodep->emitSMT();  // Might need child width (AstExtend)
         smtExpr = "ite " + smtExpr;
@@ -249,13 +249,15 @@ class ConstraintIfVisitor final : public VNVisitor {
 
     // VISITORS
     void visit(AstConstraintIf* nodep) {
-        //UINFO(2, "*************\n" << "ConstraintIf::ConstraintIf " << nodep << " " << nodep->user1() << " " << nodep->user3() << endl);
+        //UINFO(2, "*************\n" << "ConstraintIf::ConstraintIf " << nodep << " " <<
+        //nodep->user1() << " " << nodep->user3() << endl);
         iterateChildren(nodep);
     }
-    
+
     void visit(AstNodeVarRef* nodep) override {
-        UINFO(2, "ConstraintIf::VarRef " << nodep << " " << nodep->user1() << " " << nodep->user3() << endl);
-        if (editFormat(nodep)) {return;}
+        UINFO(2, "ConstraintIf::VarRef " << nodep << " " << nodep->user1() << " " << nodep->user3()
+                                         << endl);
+        if (editFormat(nodep)) { return; }
         // In SMT just variable name, but we also ensure write_var for the variable
         const std::string smtName = nodep->name();  // Can be anything unique
         nodep->replaceWith(new AstSFormatF{nodep->fileline(), smtName, false, nullptr});
@@ -271,7 +273,7 @@ class ConstraintIfVisitor final : public VNVisitor {
             methodp->dtypeSetVoid();
             methodp->addPinsp(new AstVarRef{varp->fileline(), varp, VAccess::WRITE});
             methodp->addPinsp(new AstConst{varp->dtypep()->fileline(), AstConst::Unsized64{},
-                                        (size_t)varp->width()});
+                                           (size_t)varp->width()});
             AstNodeExpr* const varnamep
                 = new AstCExpr{varp->fileline(), "\"" + smtName + "\"", varp->width()};
             varnamep->dtypep(varp->dtypep());
@@ -281,25 +283,23 @@ class ConstraintIfVisitor final : public VNVisitor {
     }
 
     void visit(AstNodeBiop* nodep) override {
-        UINFO(2, "ConstraintIf::NodeBiop " << nodep << " " << nodep->user1() << " " << nodep->user3() << endl);
-        if (nodep->user3())
-        {
+        UINFO(2, "ConstraintIf::NodeBiop " << nodep << " " << nodep->user1() << " "
+                                           << nodep->user3() << endl);
+        if (nodep->user3()) {
             UINFO(2, "Process as a condp." << endl);
             editSMT_condp(nodep, nodep->lhsp(), nodep->rhsp());
-        }
-        else{
-            if (editFormat(nodep)) {return;}
+        } else {
+            if (editFormat(nodep)) { return; }
             editSMT(nodep, nodep->lhsp(), nodep->rhsp());
         }
     }
     void visit(AstNodeUniop* nodep) override {
-        UINFO(2, "ConstraintIf::NodeUniop " << nodep << " " << nodep->user1() << " " << nodep->user3() << endl);
-        if (nodep->user3())
-        {
+        UINFO(2, "ConstraintIf::NodeUniop " << nodep << " " << nodep->user1() << " "
+                                            << nodep->user3() << endl);
+        if (nodep->user3()) {
             editSMT_condp(nodep, nodep->lhsp());
-        }
-        else{
-            if (editFormat(nodep)) {return;}
+        } else {
+            if (editFormat(nodep)) { return; }
             editSMT(nodep, nodep->lhsp());
         }
     }
@@ -316,14 +316,16 @@ class ConstraintIfVisitor final : public VNVisitor {
     }
 
     void visit(AstConstraintExpr* nodep) override {
-        UINFO(2, "ConstraintIf::constraintExpr " << nodep << " " << nodep->user1() << nodep->user3() << endl);
+        UINFO(2, "ConstraintIf::constraintExpr " << nodep << " " << nodep->user1()
+                                                 << nodep->user3() << endl);
         iterateChildren(nodep);
-        }
+    }
 
     void visit(AstCMethodHard* nodep) override {
-        // UINFO(2, "ConstraintIf::CmethodHard " << nodep << " " << nodep->user1() << nodep->user3() << endl);
- 
-        if (editFormat(nodep))   {return;}
+        // UINFO(2, "ConstraintIf::CmethodHard " << nodep << " " << nodep->user1() <<
+        // nodep->user3() << endl);
+
+        if (editFormat(nodep)) { return; }
 
         UASSERT_OBJ(nodep->name() == "size", nodep, "Non-size method call in constraints");
 
@@ -339,8 +341,9 @@ class ConstraintIfVisitor final : public VNVisitor {
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
     void visit(AstNodeExpr* nodep) override {
-        //UINFO(2, "ConstraintIf::NodeExpr " << nodep << " " << nodep->user1() << " " << nodep->user3() << endl);
-        if (editFormat(nodep)) {return;}
+        //UINFO(2, "ConstraintIf::NodeExpr " << nodep << " " << nodep->user1() << " " <<
+        //nodep->user3() << endl);
+        if (editFormat(nodep)) { return; }
     }
 
 public:
@@ -517,7 +520,7 @@ class RandomizeVisitor final : public VNVisitor {
     void processConstraintElseIf(AstConstraintIf* nodeIf, AstCMethodHard* methodp) {
         if (VN_IS(nodeIf->elsesp(), ConstraintIf)) {
             UINFO(2, "ElseIf Iteration" << endl);
-            AstConstraintIf* const nodeIfIf = VN_CAST(nodeIf->elsesp(), ConstraintIf);       
+            AstConstraintIf* const nodeIfIf = VN_CAST(nodeIf->elsesp(), ConstraintIf);
             methodp->addPinsp(nodeIfIf->condp()->unlinkFrBack());
             processConstraintIfIf(nodeIfIf, methodp);
             processConstraintElseIf(nodeIfIf, methodp);
@@ -531,7 +534,7 @@ class RandomizeVisitor final : public VNVisitor {
     void processConstraintIfIf(AstConstraintIf* nodeIf, AstCMethodHard* methodp) {
         if (VN_IS(nodeIf->thensp(), ConstraintIf)) {
             UINFO(2, "IfIf Iteration" << endl);
-            AstConstraintIf* const nodeIfIf = VN_CAST(nodeIf->thensp(), ConstraintIf);      
+            AstConstraintIf* const nodeIfIf = VN_CAST(nodeIf->thensp(), ConstraintIf);
             methodp->addPinsp(nodeIfIf->condp()->unlinkFrBack());
             processConstraintIfIf(nodeIfIf, methodp);
             processConstraintElseIf(nodeIfIf, methodp);
@@ -796,22 +799,25 @@ class RandomizeVisitor final : public VNVisitor {
                 VL_RESTORER(m_constraintIf_condp);
                 m_constraintIf_condp = nodeIf->condp();
                 iterateChildrenConst(nodeIf);
-                {ConstraintIfVisitor{nodeIf->unlinkFrBack(), taskp, genp}; }
+                { ConstraintIfVisitor{nodeIf->unlinkFrBack(), taskp, genp}; }
 
-                // UINFO(2, "*************\n" << "YILOU:DEBUG::Call CMethodHard" << "  " << nodeIf << "  " << nodeIf->user1() << "  " << nodeIf->condp() << "  " << nodeIf->thensp() << "  " << nodeIf->elsesp() << "\n*************" << endl);
-                
+                // UINFO(2, "*************\n" << "YILOU:DEBUG::Call CMethodHard" << "  " << nodeIf
+                // << "  " << nodeIf->user1() << "  " << nodeIf->condp() << "  " <<
+                // nodeIf->thensp() << "  " << nodeIf->elsesp() << "\n*************" << endl);
+
                 AstCMethodHard* const methodp = new AstCMethodHard{
-                    nodeIf->fileline(), new AstVarRef{nodeIf->fileline(), genp, VAccess::READWRITE},
-                    "hard", nodeIf->condp()->unlinkFrBack()};
+                    nodeIf->fileline(),
+                    new AstVarRef{nodeIf->fileline(), genp, VAccess::READWRITE}, "hard",
+                    nodeIf->condp()->unlinkFrBack()};
                 methodp->dtypeSetVoid();
 
                 processConstraintIfIf(nodeIf, methodp);
                 processConstraintElseIf(nodeIf, methodp);
 
                 taskp->addStmtsp(new AstStmtExpr{nodeIf->fileline(), methodp});
-                
+
                 VL_DO_DANGLING(nodeIf->deleteTree(), nodeIf);
-                
+
             } else {
                 AstConstraintExpr* const condsp = VN_CAST(nodep->itemsp(), ConstraintExpr);
                 if (!condsp || condsp->user1()) {
@@ -823,8 +829,9 @@ class RandomizeVisitor final : public VNVisitor {
                 { ConstraintExprVisitor{condsp->unlinkFrBack(), taskp, genp}; }
                 // Only hard constraints are now supported
                 AstCMethodHard* const methodp = new AstCMethodHard{
-                    condsp->fileline(), new AstVarRef{condsp->fileline(), genp, VAccess::READWRITE},
-                    "hard", condsp->exprp()->unlinkFrBack()};
+                    condsp->fileline(),
+                    new AstVarRef{condsp->fileline(), genp, VAccess::READWRITE}, "hard",
+                    condsp->exprp()->unlinkFrBack()};
                 methodp->dtypeSetVoid();
                 taskp->addStmtsp(new AstStmtExpr{condsp->fileline(), methodp});
                 VL_DO_DANGLING(condsp->deleteTree(), condsp);
@@ -892,12 +899,11 @@ class RandomizeVisitor final : public VNVisitor {
     }
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
     void visit(AstNodeVarRef* nodep) override {
-        if(m_constraintIf) {
+        if (m_constraintIf) {
             nodep->user3(true);
-            for (AstNode* backp = nodep->backp(); backp != m_constraintIf && !backp->user3(); backp = backp->backp()){
-                if (backp == m_constraintIf_condp) {
-                    backp->user3(true);
-                }
+            for (AstNode* backp = nodep->backp(); backp != m_constraintIf && !backp->user3();
+                 backp = backp->backp()) {
+                if (backp == m_constraintIf_condp) { backp->user3(true); }
             }
         }
         return;
