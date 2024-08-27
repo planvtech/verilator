@@ -330,6 +330,7 @@ public:
         ILLEGAL,
         COVERAGE_BLOCK_OFF,
         HIER_BLOCK,
+        HIER_PARAMS,
         INLINE_MODULE,
         NO_INLINE_MODULE,
         NO_INLINE_TASK,
@@ -2181,7 +2182,7 @@ public:
     virtual void tag(const string& text) {}
     virtual string tag() const { return ""; }
     virtual string verilogKwd() const { return ""; }
-    string nameProtect() const;  // Name with --protect-id applied
+    string nameProtect() const VL_MT_STABLE;  // Name with --protect-id applied
     string origNameProtect() const;  // origName with --protect-id applied
     string shortName() const;  // Name with __PVT__ removed for concatenating scopes
     static string dedotName(const string& namein);  // Name with dots removed

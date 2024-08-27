@@ -462,6 +462,7 @@ Wojciech
 Wolfel
 Wouters
 Wpedantic
+Wunused
 Wwarn
 XSim
 Xcelium
@@ -591,6 +592,7 @@ defname
 defparam
 demangling
 dep
+deparametrized
 der
 dereference
 desassign
@@ -717,6 +719,7 @@ hh
 hier
 hierCMakeArgs
 hierMkArgs
+hierParameters
 hierVer
 hx
 hyperthreading
@@ -848,6 +851,7 @@ parallelized
 param
 parameterization
 parameterized
+parameterized
 parameterless
 params
 parens
@@ -977,7 +981,9 @@ submakes
 submodule
 submodules
 substring
+superclass
 suspendable
+suspendables
 sv
 svBitVal
 svBitVecVal
@@ -1106,3 +1112,4 @@ zdave
 Øyvind
 Алексеевич
 Исаак
+

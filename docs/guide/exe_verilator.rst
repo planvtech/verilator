@@ -723,6 +723,13 @@ Summary:
    :option:`/*verilator&32;hier_block*/` metacomment is ignored.  See
    :ref:`Hierarchical Verilation`.
 
+.. option:: --hierarchical-params-file <filename>
+
+   Internal flag inserted used during :vlopt:`--hierarchical`; specifies
+   name of hierarchical parameters file for deparametrized modules with
+   :option:`/*verilator&32;hier_block*/` metacomment. See
+   :ref:`Hierarchical Verilation`.
+
 .. option:: -I<dir>
 
    See :vlopt:`-y`.
@@ -1995,6 +2002,13 @@ The grammar of configuration commands is as follows:
    Specifies that the module is an unit of hierarchical Verilation.  Note
    that the setting is ignored unless the :vlopt:`--hierarchical` option is
    specified.  See :ref:`Hierarchical Verilation`.
+
+.. option:: hier_params -module "<modulename>"
+
+   Specifies that the module contains parameters a :vlopt:`--hierarchical` block. This option
+   is used internally to specify parameters for deparametrized hier block instances.
+   This option should not be used directly.
+   See :ref:`Hierarchical Verilation`.
 
 .. option:: inline -module "<modulename>"
 

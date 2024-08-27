@@ -16,14 +16,13 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 if ($Self->{vlt_all}) {
     # Check for unused structs in any outputs
     my $any;
     foreach my $filename (glob $Self->{obj_dir} . "/*.[ch]*") {
-        file_grep_not($filename, qr/useless/i);
+        file_grep_not($filename, qr/useless/);
         $any = 1;
     }
     $any or $Self->error("No outputs found");

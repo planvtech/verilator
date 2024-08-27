@@ -163,7 +163,6 @@ set(HEADERS
     V3Table.h
     V3Task.h
     V3ThreadPool.h
-    V3ThreadSafety.h
     V3Timing.h
     V3Trace.h
     V3TraceDecl.h
@@ -335,8 +334,6 @@ SET(COVERAGE_SOURCES
 # Note about tests:
 # VlcMain.cpp #includes the following files:
 #  V3Error.cpp, V3String.cpp, V3Os.cpp and VlcTop.cpp
-# V3Number_test.cpp #includes the following files:
-#  V3FileLine.cpp
 
 #
 # Generated sources and headers for the verilator binary

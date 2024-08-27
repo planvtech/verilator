@@ -29,11 +29,10 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
-file_grep_not($Self->{stats}, qr/HierBlock,\s+Hierarchical blocks\s+(\d+)/i);
-file_grep($Self->{run_log_filename}, qr/MACRO:(\S+) is defined/i, "cplusplus");
+file_grep_not($Self->{stats}, qr/HierBlock,\s+Hierarchical blocks\s+(\d+)/);
+file_grep($Self->{run_log_filename}, qr/MACRO:(\S+) is defined/, "cplusplus");
 
 ok(1);
 1;

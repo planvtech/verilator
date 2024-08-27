@@ -16,7 +16,6 @@ compile(
 
 execute(
     all_run_flags => [" +verilator+coverage+file+$Self->{obj_dir}/coverage.dat"],
-    check_finished => 1,
     );
 
 if (-e ("$Self->{obj_dir}/coverage.dat")) {  # Don't try to write .info if test was skipped
@@ -27,7 +26,7 @@ if (-e ("$Self->{obj_dir}/coverage.dat")) {  # Don't try to write .info if test 
     verilator_run => 1,
     );
 
-    files_identical("$Self->{obj_dir}/coverage.info", $Self->{golden_filename});
+    files_identical("$Self->{obj_dir}/coverage.info", $Self->{name} . ".info.out");
 }
 
 ok(1);

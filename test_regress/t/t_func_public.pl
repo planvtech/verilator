@@ -12,11 +12,9 @@ scenarios(simulator => 1);
 
 compile(
     verilator_flags2 => ['+define+VERILATOR_PUBLIC_TASKS'],
-    fails => $fail,
     );
 
 execute(
-    check_finished => 1,
     );
 
 ok(1);

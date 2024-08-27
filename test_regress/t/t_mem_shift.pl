@@ -15,11 +15,10 @@ compile(
     );
 
 if ($Self->{vlt_all}) {
-    file_grep($Self->{stats}, qr/Optimizations, Delayed shared-sets\s+(\d+)/i, 14);
+    file_grep($Self->{stats}, qr/Optimizations, Delayed shared-sets\s+(\d+)/, 14);
 }
 
 execute(
-    check_finished => 1,
     );
 
 ok(1);

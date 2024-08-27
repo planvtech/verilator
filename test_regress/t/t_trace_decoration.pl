@@ -15,10 +15,9 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
-file_grep_not("$Self->{obj_dir}/$Self->{vm_prefix}.h", qr!// Body!x);
+file_grep_not("$Self->{obj_dir}/$Self->{vm_prefix}.h", qr!// Body!);
 
 ok(1);
 1;

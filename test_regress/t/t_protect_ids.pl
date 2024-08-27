@@ -30,7 +30,6 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 # 'to="PS"' indicates means we probably mis-protected something already protected
@@ -44,7 +43,7 @@ if ($Self->{vlt_all}) {
         if ($filename =~ /secret/i) {
             $Self->error("Secret found in a filename: " . $filename);
         }
-        file_grep_not($filename, qr/secret/i);
+        file_grep_not($filename, qr/secret/);
         $any = 1;
     }
     $any or $Self->error("No outputs found");

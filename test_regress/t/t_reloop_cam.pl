@@ -18,13 +18,12 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 if ($Self->{vlt_all}) {
-    file_grep($Self->{stats}, qr/Optimizations, Reloop iterations\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, Reloop iterations\s+(\d+)/,
               768);
-    file_grep($Self->{stats}, qr/Optimizations, Reloops\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, Reloops\s+(\d+)/,
               3);
 }
 

@@ -15,11 +15,10 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 if ($Self->{vlt}) {
-    file_grep($Self->{stats}, qr/Optimizations, Const bit op reduction\s+(\d+)/i, 144);
+    file_grep($Self->{stats}, qr/Optimizations, Const bit op reduction\s+(\d+)/, 144);
 }
 
 ok(1);

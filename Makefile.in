@@ -411,7 +411,8 @@ analyzer-include:
 	-rm -rf examples/*/obj*
 	scan-build $(MAKE) -k examples
 
-format: clang-format yapf format-pl-exec
+format:
+	$(MAKE) -j 4 clang-format yapf format-pl-exec
 
 CLANGFORMAT = clang-format-14
 CLANGFORMAT_FLAGS = -i
@@ -453,11 +454,13 @@ PY_FILES = \
 	$(PY_PROGRAMS) \
 	nodist/code_coverage.dat \
 
+PY_FILES_NOLINT = \
+
 YAPF = yapf3
-YAPF_FLAGS = -i
+YAPF_FLAGS = -i --parallel
 
 yapf:
-	$(YAPF) $(YAPF_FLAGS) $(PY_FILES)
+	$(YAPF) $(YAPF_FLAGS) $(PY_FILES) $(PY_FILES_NOLINT)
 
 PYLINT = pylint
 PYLINT_FLAGS = --score=n --disable=R0801

@@ -238,6 +238,7 @@ class AstNodeModule VL_NOT_FINAL : public AstNode {
     bool m_hasGParam : 1;  // Has global parameter (for link)
     bool m_hasParameterList : 1;  // Has #() for parameter declaration
     bool m_hierBlock : 1;  // Hierarchical Block marked by HIER_BLOCK pragma
+    bool m_hierParams : 1;  // Block containing params for parametrized hier blocks
     bool m_internal : 1;  // Internally created
     bool m_recursive : 1;  // Recursive module
     bool m_recursiveClone : 1;  // If recursive, what module it clones, otherwise nullptr
@@ -253,6 +254,7 @@ protected:
         , m_hasGParam{false}
         , m_hasParameterList{false}
         , m_hierBlock{false}
+        , m_hierParams{false}
         , m_internal{false}
         , m_recursive{false}
         , m_recursiveClone{false} {}
@@ -286,6 +288,8 @@ public:
     void hasParameterList(bool flag) { m_hasParameterList = flag; }
     bool hierBlock() const { return m_hierBlock; }
     void hierBlock(bool flag) { m_hierBlock = flag; }
+    bool hierParams() const { return m_hierParams; }
+    void hierParams(bool flag) { m_hierParams = flag; }
     bool internal() const { return m_internal; }
     void internal(bool flag) { m_internal = flag; }
     bool recursive() const { return m_recursive; }
@@ -1031,6 +1035,7 @@ public:
     string name() const override VL_MT_STABLE { return m_name; }  // * = Scope name
     bool isGateOptimizable() const override { return false; }
     bool isPredictOptimizable() const override { return false; }
+    bool maybePointedTo() const override { return true; }
     bool same(const AstNode* /*samep*/) const override { return true; }
     void isStatic(bool flag) { m_isStatic = flag; }
     bool isStatic() const { return m_isStatic; }
@@ -2344,8 +2349,8 @@ public:
                 && std::is_base_of<AstNode, T_Node>::value,
             "Callable 'f' must have a signature compatible with 'void(AstClass*, T_Node*)', "
             "with 'T_Node' being a subtype of 'AstNode'");
-        if (AstClassExtends* const extendsp = this->extendsp()) {
-            extendsp->classp()->foreachMember(f);
+        if (AstClassExtends* const cextendsp = this->extendsp()) {
+            cextendsp->classp()->foreachMember(f);
         }
         for (AstNode* stmtp = stmtsp(); stmtp; stmtp = stmtp->nextp()) {
             if (AstNode::privateTypeTest<T_Node>(stmtp)) f(this, static_cast<T_Node*>(stmtp));
@@ -2359,8 +2364,8 @@ public:
                           && std::is_base_of<AstNode, T_Node>::value,
                       "Predicate 'p' must have a signature compatible with 'bool(const AstClass*, "
                       "const T_Node*)', with 'T_Node' being a subtype of 'AstNode'");
-        if (AstClassExtends* const extendsp = this->extendsp()) {
-            if (extendsp->classp()->existsMember(p)) return true;
+        if (AstClassExtends* const cextendsp = this->extendsp()) {
+            if (cextendsp->classp()->existsMember(p)) return true;
         }
         for (AstNode* stmtp = stmtsp(); stmtp; stmtp = stmtp->nextp()) {
             if (AstNode::privateTypeTest<T_Node>(stmtp)) {

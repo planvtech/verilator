@@ -21,15 +21,14 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     expect_filename => $Self->{golden_filename},
     );
 
 if ($Self->{vlt}) {
     # Note, with vltmt this might be split differently, so only checking vlt
-    file_grep($Self->{stats}, qr/Optimizations, Reloop iterations\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, Reloop iterations\s+(\d+)/,
               63);
-    file_grep($Self->{stats}, qr/Optimizations, Reloops\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, Reloops\s+(\d+)/,
               1);
 }
 

@@ -17,16 +17,15 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 if ($Self->{vlt}) {
     # Note, with vltmt this might be split differently, so only checking vlt
-    file_grep($Self->{stats}, qr/Optimizations, MergeCond merges\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, MergeCond merges\s+(\d+)/,
               10);
-    file_grep($Self->{stats}, qr/Optimizations, MergeCond merged items\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, MergeCond merged items\s+(\d+)/,
               580);
-    file_grep($Self->{stats}, qr/Optimizations, MergeCond longest merge\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, MergeCond longest merge\s+(\d+)/,
               64);
 }
 

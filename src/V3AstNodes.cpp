@@ -76,7 +76,12 @@ bool AstNodeFTaskRef::isPure() {
         // cached.
         return false;
     } else {
-        if (!m_purity.isCached()) m_purity.set(this->getPurityRecurse());
+        if (!m_purity.isCached()) {
+            m_purity.set(true);  // To prevent infinite recursion, set to true before getting
+                                 // the actual purity. If there are impure statements in the
+                                 // task/function, they'll taint this call anyway.
+            m_purity.set(this->getPurityRecurse());
+        }
         return m_purity.get();
     }
 }
@@ -373,6 +378,8 @@ AstConst* AstConst::parseParamLiteral(FileLine* fl, const string& literal) {
     }
     return nullptr;
 }
+
+string AstConstraintRef::name() const { return constrp()->name(); }
 
 AstNetlist::AstNetlist()
     : ASTGEN_SUPER_Netlist(new FileLine{FileLine::builtInFilename()})

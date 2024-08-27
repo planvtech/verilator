@@ -15,14 +15,13 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     expect_filename => $Self->{golden_filename},
     );
 
 if ($Self->{vlt_all}) {
-    file_grep($Self->{stats}, qr/Optimizations, Prelim extracted value to ConstPool\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/Optimizations, Prelim extracted value to ConstPool\s+(\d+)/,
               8);
-    file_grep($Self->{stats}, qr/ConstPool, Constants emitted\s+(\d+)/i,
+    file_grep($Self->{stats}, qr/ConstPool, Constants emitted\s+(\d+)/,
               1);
 }
 

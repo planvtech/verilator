@@ -10,7 +10,7 @@
 # Then 'make maintainer-dist'
 #AC_INIT([Verilator],[#.### YYYY-MM-DD])
 #AC_INIT([Verilator],[#.### devel])
-AC_INIT([Verilator],[5.027 devel],
+AC_INIT([Verilator],[5.029 devel],
         [https://verilator.org],
         [verilator],[https://verilator.org])
 
@@ -28,6 +28,9 @@ AC_DEFINE_UNQUOTED([PACKAGE_VERSION_STRING_CHAR],
         [static const char* const PACKAGE_STRING_UNUSED = "$PACKAGE_STRING";],
         [Package version as a number])
 AC_SUBST(PACKAGE_VERSION_STRING_CHAR)
+
+######################################################################
+## Arguments/flag checking
 
 # Ignore automake flags passed by Ubuntu builds
 AC_ARG_ENABLE([dependency-tracking],
@@ -155,6 +158,11 @@ AC_ARG_WITH([solver],
               )
 AC_SUBST(CFG_WITH_SOLVER)
 AC_MSG_RESULT($CFG_WITH_SOLVER)
+
+######################################################################
+## Compiler checks
+
+AC_MSG_RESULT([compiler CXX inbound is set to... $CXX])
 
 # Compiler flags (ensure they are not empty to avoid configure defaults)
 CFLAGS="$CFLAGS "
@@ -622,6 +630,9 @@ LIBS="$ACO_SAVE_LIBS"
 AC_SUBST(HAVE_SYSTEMC)
 
 # Checks for system services
+
+######################################################################
+## Output
 
 # Other install directories
 pkgdatadir=${datadir}/verilator

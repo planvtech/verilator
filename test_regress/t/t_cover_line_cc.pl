@@ -18,7 +18,6 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 # Read the input .v file and do any CHECK_COVER requests
@@ -39,6 +38,8 @@ run(cmd => ["$ENV{VERILATOR_ROOT}/bin/verilator_coverage",
             "$Self->{obj_dir}/coverage.dat"],
     verilator_run => 1,
     );
+
+files_identical("$Self->{obj_dir}/coverage.info", $Self->{name} . ".info.out");
 
 # If installed
 if (`lcov --version` !~ /version/i

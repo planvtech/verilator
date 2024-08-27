@@ -15,7 +15,6 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 # Read the input .v file and do any CHECK_COVER requests
@@ -23,7 +22,7 @@ inline_checks();
 
 file_grep_not("$Self->{obj_dir}/coverage.dat", "largeish");
 
-file_grep($Self->{stats}, qr/Coverage, Toggle points joined\s+(\d+)/i, 23)
+file_grep($Self->{stats}, qr/Coverage, Toggle points joined\s+(\d+)/, 23)
     if $Self->{vlt_all};
 
 run(cmd => ["$ENV{VERILATOR_ROOT}/bin/verilator_coverage",

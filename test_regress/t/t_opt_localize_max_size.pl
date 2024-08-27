@@ -15,11 +15,10 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 # Value must differ from that in t_opt_localize_max_size.pl
-file_grep($Self->{stats}, qr/Optimizations, Vars localized\s+(\d+)/i, 5);
+file_grep($Self->{stats}, qr/Optimizations, Vars localized\s+(\d+)/, 5);
 
 ok(1);
 1;

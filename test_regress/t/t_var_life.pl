@@ -15,12 +15,11 @@ compile(
     );
 
 if ($Self->{vlt_all}) {
-    file_grep($Self->{stats}, qr/Optimizations, Lifetime assign deletions\s+(\d+)/i, 4);
-    file_grep($Self->{stats}, qr/Optimizations, Lifetime constant prop\s+(\d+)/i, 2);
+    file_grep($Self->{stats}, qr/Optimizations, Lifetime assign deletions\s+(\d+)/, 4);
+    file_grep($Self->{stats}, qr/Optimizations, Lifetime constant prop\s+(\d+)/, 2);
 }
 
 execute(
-    check_finished => 1,
     );
 
 ok(1);

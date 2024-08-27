@@ -21,12 +21,11 @@ else {
         );
 
     execute(
-        check_finished => 1,
         );
 
     if ($Self->{vlt_all}) {
         # Note more checks in _cc.pl
-        file_grep("$Self->{obj_dir}/simx.vcd", qr/\$enddefinitions/x);
+        file_grep("$Self->{obj_dir}/simx.vcd", qr/\$enddefinitions/);
 
         vcd_identical("$Self->{obj_dir}/simx.vcd", $Self->{golden_filename});
     }

@@ -14,11 +14,9 @@ top_filename("t/t_func_public.v");
 
 compile(
     verilator_flags2 => ["--trace"],
-    fails => $fail,
     );
 
 execute(
-    check_finished => 1,
     );
 
 ok(1);

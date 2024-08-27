@@ -16,11 +16,10 @@ compile(
     );
 
 if ($Self->{vlt_all}) {
-    file_grep($Self->{stats}, qr/Optimizations, Split always\s+(\d+)/i, 12);
+    file_grep($Self->{stats}, qr/Optimizations, Split always\s+(\d+)/, 12);
 }
 
 execute(
-    check_finished => 1,
     );
 
 ok(1);

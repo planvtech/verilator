@@ -15,15 +15,6 @@ compile(
     );
 
 execute(
-    check_finished => 1,
-    );
-
-compile(
-    verilator_flags2 => ["--exe --main --timing +define+WITH_DELAY"],
-    );
-
-execute(
-    check_finished => 1,
     );
 
 ok(1);

@@ -15,11 +15,10 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 my @files = glob_all("$Self->{obj_dir}/$Self->{vm_prefix}___024root__DepSet*__Slow.cpp");
-file_grep_any(\@files, qr/Vdeeptemp/i);
+file_grep_any(\@files, qr/Vdeeptemp/);
 
 ok(1);
 1;

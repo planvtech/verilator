@@ -16,12 +16,11 @@ compile(
     );
 
 execute(
-    check_finished => 1,
     );
 
 if ($Self->{vlt_all}) {
     #Optimization is disabled
-    #file_grep ($Self->{stats}, qr/Optimizations, Gaters inserted\s+(\d+)/i, 3);
+    #file_grep ($Self->{stats}, qr/Optimizations, Gaters inserted\s+(\d+)/, 3);
 }
 
 ok(1);
