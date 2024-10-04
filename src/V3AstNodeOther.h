@@ -125,7 +125,7 @@ public:
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;
     string name() const override VL_MT_STABLE { return m_name; }  // * = Var name
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     bool isGateOptimizable() const override {
         return !((m_dpiExport || m_dpiImport) && !m_dpiPure);
     }
@@ -263,7 +263,7 @@ public:
     ASTGEN_MEMBERS_AstNodeModule;
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     string name() const override VL_MT_STABLE { return m_name; }
     virtual bool timescaleMatters() const = 0;
     // ACCESSORS
@@ -371,7 +371,7 @@ public:
     ASTGEN_MEMBERS_AstNodeAssign;
     // Clone single node, just get same type back.
     virtual AstNodeAssign* cloneType(AstNodeExpr* lhsp, AstNodeExpr* rhsp) = 0;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     virtual bool cleanRhs() const { return true; }
     int instrCount() const override { return widthInstrs(); }
     bool same(const AstNode*) const override { return true; }
@@ -421,7 +421,7 @@ public:
     void name(const string& name) override { m_name = name; }
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;
-    VAssertType type() const { return m_type; }
+    VAssertType type() const VL_MT_SAFE { return m_type; }
     VAssertDirectiveType directive() const { return m_directive; }
     bool immediate() const {
         return this->type().containsAny(VAssertType::SIMPLE_IMMEDIATE
@@ -673,7 +673,7 @@ public:
     }
     ASTGEN_MEMBERS_AstCFunc;
     string name() const override VL_MT_STABLE { return m_name; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;
     bool same(const AstNode* samep) const override {
@@ -830,7 +830,7 @@ public:
     void cloneRelink() override {}  // TODO V3Param shouldn't require avoiding cloneRelinkGen
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     // ACCESSORS
     string name() const override VL_MT_STABLE { return m_name; }  // * = Cell name
     void name(const string& name) override { m_name = name; }
@@ -872,7 +872,7 @@ public:
     void dumpJson(std::ostream& str) const override;
     // ACCESSORS
     string name() const override VL_MT_STABLE { return m_name; }  // * = Cell name
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     string origModName() const { return m_origModName; }  // * = modp()->origName() before inlining
     void name(const string& name) override { m_name = name; }
     void timeunit(const VTimescale& flag) { m_timeunit = flag; }
@@ -900,7 +900,7 @@ public:
     void dumpJson(std::ostream& str) const override;
     // ACCESSORS
     string name() const override VL_MT_STABLE { return m_cellp->name(); }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     AstScope* scopep() const VL_MT_STABLE { return m_scopep; }  // Pointer to scope it's under
     string origModName() const {
         return m_cellp->origModName();
@@ -926,7 +926,7 @@ public:
     ASTGEN_MEMBERS_AstClassExtends;
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     string verilogKwd() const override { return isImplements() ? "implements" : "extends"; }
     // Class being extended (after link and instantiation if needed)
     AstClass* classOrNullp() const;
@@ -988,7 +988,7 @@ public:
     VDirection direction() const { return m_direction; }
     AstClockingItem* outputp() const { return m_outputp; }
     void outputp(AstClockingItem* outputp) { m_outputp = outputp; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
 };
 class AstConstPool final : public AstNode {
     // Container for const static data
@@ -1004,7 +1004,7 @@ class AstConstPool final : public AstNode {
 public:
     explicit AstConstPool(FileLine* fl);
     ASTGEN_MEMBERS_AstConstPool;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     void cloneRelink() override { V3ERROR_NA; }
     AstModule* modp() const { return m_modp; }
 
@@ -1036,7 +1036,7 @@ public:
     string name() const override VL_MT_STABLE { return m_name; }  // * = Scope name
     bool isGateOptimizable() const override { return false; }
     bool isPredictOptimizable() const override { return false; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     bool same(const AstNode* /*samep*/) const override { return true; }
     void isStatic(bool flag) { m_isStatic = flag; }
     bool isStatic() const { return m_isStatic; }
@@ -1174,8 +1174,8 @@ public:
         this->valuep(valuep);
     }
     ASTGEN_MEMBERS_AstInitItem;
-    bool maybePointedTo() const override { return true; }
-    bool hasDType() const override { return false; }  // See valuep()'s dtype instead
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
+    bool hasDType() const override VL_MT_SAFE { return false; }  // See valuep()'s dtype instead
 };
 class AstIntfRef final : public AstNode {
     // An interface reference
@@ -1224,7 +1224,7 @@ public:
         this->addVarsp(varsp);
     }
     string name() const override VL_MT_STABLE { return m_name; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     ASTGEN_MEMBERS_AstModport;
 };
 class AstModportFTaskRef final : public AstNode {
@@ -1269,7 +1269,7 @@ public:
     string name() const override VL_MT_STABLE { return m_name; }
     void direction(const VDirection& flag) { m_direction = flag; }
     VDirection direction() const { return m_direction; }
-    AstVar* varp() const { return m_varp; }  // [After Link] Pointer to variable
+    AstVar* varp() const VL_MT_STABLE { return m_varp; }  // [After Link] Pointer to variable
     void varp(AstVar* varp) { m_varp = varp; }
 };
 class AstNetlist final : public AstNode {
@@ -1339,19 +1339,32 @@ class AstPackageExport final : public AstNode {
     // A package export declaration
     //
     // @astgen ptr := m_packagep : Optional[AstPackage]  // Package hierarchy
-    string m_name;
+    string m_name;  // What imported e.g. "*"
+    string m_pkgName;  // Module the cell instances
 
 public:
     AstPackageExport(FileLine* fl, AstPackage* packagep, const string& name)
         : ASTGEN_SUPER_PackageExport(fl)
         , m_name{name}
-        , m_packagep{packagep} {}
+        , m_packagep{packagep} {
+        pkgNameFrom();
+    }
+    AstPackageExport(FileLine* fl, const string& pkgName, const string& name)
+        : ASTGEN_SUPER_PackageExport(fl)
+        , m_name{name}
+        , m_pkgName{pkgName}
+        , m_packagep{nullptr} {}
     ASTGEN_MEMBERS_AstPackageExport;
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     string name() const override VL_MT_STABLE { return m_name; }
+    string pkgName() const VL_MT_STABLE { return m_pkgName; }
+    string prettyPkgNameQ() const { return "'" + prettyName(pkgName()) + "'"; }
     AstPackage* packagep() const { return m_packagep; }
     void packagep(AstPackage* nodep) { m_packagep = nodep; }
+
+private:
+    void pkgNameFrom();
 };
 class AstPackageExportStarStar final : public AstNode {
     // A package export *::* declaration
@@ -1365,23 +1378,36 @@ class AstPackageImport final : public AstNode {
     // A package import declaration
     //
     // @astgen ptr := m_packagep : Optional[AstPackage]  // Package hierarchy
-    string m_name;
+    string m_name;  // What imported e.g. "*"
+    string m_pkgName;  // Module the cell instances
 
 public:
     AstPackageImport(FileLine* fl, AstPackage* packagep, const string& name)
         : ASTGEN_SUPER_PackageImport(fl)
         , m_name{name}
-        , m_packagep{packagep} {}
+        , m_packagep{packagep} {
+        pkgNameFrom();
+    }
+    AstPackageImport(FileLine* fl, const string& pkgName, const string& name)
+        : ASTGEN_SUPER_PackageImport(fl)
+        , m_name{name}
+        , m_pkgName{pkgName}
+        , m_packagep{nullptr} {}
     ASTGEN_MEMBERS_AstPackageImport;
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     string name() const override VL_MT_STABLE { return m_name; }
+    string pkgName() const VL_MT_STABLE { return m_pkgName; }
+    string prettyPkgNameQ() const { return "'" + prettyName(pkgName()) + "'"; }
     AstPackage* packagep() const { return m_packagep; }
     void packagep(AstPackage* nodep) { m_packagep = nodep; }
+
+private:
+    void pkgNameFrom();
 };
 class AstPin final : public AstNode {
     // A port or parameter assignment on an instantiation
-    // @astgen op1 := exprp : Optional[AstNode] // NodeExpr or NodeDType (nullptr if unconnected)
+    // @astgen op1 := exprp : Optional[AstNode<AstNodeExpr|AstNodeDType>]  // nullptr=unconnected
     //
     // @astgen ptr := m_modVarp : Optional[AstVar]  // Input/output connects to on submodule
     // @astgen ptr := m_modPTypep : Optional[AstParamTypeDType]  // Param type connects to on sub
@@ -1463,7 +1489,7 @@ public:
         this->propp(propp);
     }
     ASTGEN_MEMBERS_AstPropSpec;
-    bool hasDType() const override {
+    bool hasDType() const override VL_MT_SAFE {
         return true;
     }  // Used under Cover, which expects a bool child
 };
@@ -1512,7 +1538,7 @@ public:
         BROKEN_RTN(!m_modp);
         return nullptr;
     }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     string name() const override VL_MT_STABLE { return m_name; }  // * = Scope name
     void name(const string& name) override { m_name = name; }
     void dump(std::ostream& str) const override;
@@ -1594,7 +1620,7 @@ public:
     ASTGEN_MEMBERS_AstSenTree;
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     bool isMulti() const { return m_multi; }
     void multi(bool flag) { m_multi = true; }
     // METHODS
@@ -1644,7 +1670,7 @@ class AstTopScope final : public AstNode {
 
 public:
     ASTGEN_MEMBERS_AstTopScope;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
 };
 class AstTypeTable final : public AstNode {
     // Container for hash of standard data types
@@ -1663,7 +1689,7 @@ class AstTypeTable final : public AstNode {
 public:
     explicit AstTypeTable(FileLine* fl);
     ASTGEN_MEMBERS_AstTypeTable;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     void cloneRelink() override { V3ERROR_NA; }
     AstBasicDType* findBasicDType(FileLine* fl, VBasicDTypeKwd kwd);
     AstBasicDType* findLogicBitDType(FileLine* fl, VBasicDTypeKwd kwd, int width, int widthMin,
@@ -1707,8 +1733,8 @@ public:
     }
     // METHODS
     string name() const override VL_MT_STABLE { return m_name; }
-    bool maybePointedTo() const override { return true; }
-    bool hasDType() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     void name(const string& flag) override { m_name = flag; }
     bool attrPublic() const { return m_attrPublic; }
     void attrPublic(bool flag) { m_attrPublic = flag; }
@@ -1726,7 +1752,7 @@ public:
     ASTGEN_MEMBERS_AstTypedefFwd;
     // METHODS
     string name() const override VL_MT_STABLE { return m_name; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
 };
 class AstUdpTable final : public AstNode {
     // @astgen op1 := linesp : List[AstUdpTableLine]
@@ -1746,7 +1772,7 @@ public:
         , m_text{text} {}
     ASTGEN_MEMBERS_AstUdpTableLine;
     string name() const override VL_MT_STABLE { return m_text; }
-    string text() const { return m_text; }
+    string text() const VL_MT_SAFE { return m_text; }
 };
 class AstVar final : public AstNode {
     // A variable (in/out/wire/reg/param) inside a module
@@ -1755,7 +1781,8 @@ class AstVar final : public AstNode {
     // @astgen op2 := delayp : Optional[AstDelay] // Net delay
     // Initial value that never changes (static const), or constructor argument for
     // MTASKSTATE variables
-    // @astgen op3 := valuep : Optional[AstNode] // May be a DType for type parameter defaults
+    // @astgen op3 := valuep : Optional[AstNode<AstNodeExpr|AstNodeDType>]
+    //     Value is a DType for type parameter defaults
     // @astgen op4 := attrsp : List[AstNode] // Attributes during early parse
     // @astgen ptr := m_sensIfacep : Optional[AstIface]  // Interface type to which reads from this
     //                                                      var are sensitive
@@ -1907,9 +1934,9 @@ public:
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     bool same(const AstNode* samep) const override;
-    string name() const override VL_MT_STABLE VL_MT_SAFE { return m_name; }  // * = Var name
-    bool hasDType() const override { return true; }
-    bool maybePointedTo() const override { return true; }
+    string name() const override VL_MT_STABLE { return m_name; }  // * = Var name
+    bool hasDType() const override VL_MT_SAFE { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     string origName() const override { return m_origName; }  // * = Original name
     void origName(const string& name) { m_origName = name; }
     VVarType varType() const VL_MT_SAFE { return m_varType; }  // * = Type of variable
@@ -2151,12 +2178,12 @@ public:
         }
         cloneRelinkGen();
     }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     string name() const override VL_MT_STABLE { return scopep()->name() + "->" + varp()->name(); }
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     bool same(const AstNode* samep) const override;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     AstVar* varp() const VL_MT_STABLE { return m_varp; }  // [After Link] Pointer to variable
     AstScope* scopep() const VL_MT_STABLE { return m_scopep; }  // Pointer to scope it's under
     void scopep(AstScope* nodep) { m_scopep = nodep; }
@@ -2217,7 +2244,7 @@ public:
         this->fvarp(fvarp);
     }
     ASTGEN_MEMBERS_AstFunc;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     AstNodeFTask* cloneType(const string& name) override {
         return new AstFunc{fileline(), name, nullptr, nullptr};
     }
@@ -2230,7 +2257,7 @@ public:
     AstLet(FileLine* fl, const string& name)
         : ASTGEN_SUPER_Let(fl, name, nullptr) {}
     ASTGEN_MEMBERS_AstLet;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     const char* broken() const override {
         BROKEN_RTN(!VN_IS(stmtsp(), StmtExpr));
         return nullptr;
@@ -2243,7 +2270,7 @@ public:
     AstProperty(FileLine* fl, const string& name, AstNode* stmtp)
         : ASTGEN_SUPER_Property(fl, name, stmtp) {}
     ASTGEN_MEMBERS_AstProperty;
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     AstNodeFTask* cloneType(const string& name) override {
         return new AstProperty{fileline(), name, nullptr};
     }
@@ -2263,6 +2290,7 @@ public:
 class AstCFile final : public AstNodeFile {
     // C++ output file
     // Parents:  NETLIST
+    uint64_t m_complexityScore = 0;
     bool m_slow : 1;  ///< Compile w/o optimization
     bool m_source : 1;  ///< Source file (vs header file)
     bool m_support : 1;  ///< Support file (non systemc)
@@ -2275,6 +2303,8 @@ public:
     ASTGEN_MEMBERS_AstCFile;
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;
+    uint64_t complexityScore() const { return m_complexityScore; }
+    void complexityScore(uint64_t newScore) { m_complexityScore = newScore; }
     bool slow() const { return m_slow; }
     void slow(bool flag) { m_slow = flag; }
     bool source() const { return m_source; }
@@ -2311,13 +2341,13 @@ public:
         : ASTGEN_SUPER_Class(fl, name) {}
     ASTGEN_MEMBERS_AstClass;
     string verilogKwd() const override { return "class"; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     bool timescaleMatters() const override { return false; }
-    AstClassPackage* classOrPackagep() const VL_MT_SAFE { return m_classOrPackagep; }
+    AstClassPackage* classOrPackagep() const VL_MT_STABLE { return m_classOrPackagep; }
     void classOrPackagep(AstClassPackage* classpackagep) { m_classOrPackagep = classpackagep; }
-    AstNode* membersp() const { return stmtsp(); }
+    AstNode* membersp() const VL_MT_STABLE { return stmtsp(); }
     void addMembersp(AstNode* nodep) { addStmtsp(nodep); }
     bool isExtended() const { return m_extended; }
     void isExtended(bool flag) { m_extended = flag; }
@@ -2530,7 +2560,7 @@ public:
 class AstBracketRange final : public AstNodeRange {
     // Parser only concept "[lhsp]", an AstUnknownRange, QueueRange or Range,
     // unknown until lhsp type is determined
-    // @astgen op1 := elementsp : AstNode // Expr or DType
+    // @astgen op1 := elementsp : AstNode<AstNodeExpr|AstNodeDType>
 public:
     AstBracketRange(FileLine* fl, AstNode* elementsp)
         : ASTGEN_SUPER_BracketRange(fl) {
@@ -2542,7 +2572,7 @@ public:
     bool same(const AstNode* /*samep*/) const override { return true; }
     // Will be removed in V3Width, which relies on this
     // being a child not a dtype pointed node
-    bool maybePointedTo() const override { return false; }
+    bool maybePointedTo() const override VL_MT_SAFE { return false; }
 };
 class AstRange final : public AstNodeRange {
     // Range specification, for use under variables and cells
@@ -2781,7 +2811,7 @@ public:
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     int instrCount() const override { return 1 + 2 * INSTR_COUNT_LD; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     int binNum() const { return m_binNum; }
     void binNum(int flag) { m_binNum = flag; }
     int offset() const { return m_offset; }
@@ -3066,7 +3096,7 @@ public:
     ASTGEN_MEMBERS_AstJumpBlock;
     const char* broken() const override;
     int instrCount() const override { return 0; }
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     bool same(const AstNode* /*samep*/) const override { return true; }
     int labelNum() const { return m_labelNum; }
     void labelNum(int flag) { m_labelNum = flag; }
@@ -3112,7 +3142,7 @@ public:
         : ASTGEN_SUPER_JumpLabel(fl)
         , m_blockp{blockp} {}
     ASTGEN_MEMBERS_AstJumpLabel;
-    bool maybePointedTo() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
     const char* broken() const override {
         BROKEN_RTN(!blockp()->brokeExistsAbove());
         BROKEN_RTN(blockp()->labelp() != this);
@@ -3270,10 +3300,14 @@ public:
     bool isPure() override { return exprp()->isPure(); }
 };
 class AstStop final : public AstNodeStmt {
+    const bool m_isFatal;  // $fatal not $stop
 public:
-    AstStop(FileLine* fl, bool maybe)
-        : ASTGEN_SUPER_Stop(fl) {}
+    AstStop(FileLine* fl, bool isFatal)
+        : ASTGEN_SUPER_Stop(fl)
+        , m_isFatal(isFatal) {}
     ASTGEN_MEMBERS_AstStop;
+    void dump(std::ostream& str) const override;
+    void dumpJson(std::ostream& str) const override;
     bool isGateOptimizable() const override { return false; }
     bool isPredictOptimizable() const override { return false; }
     bool isPure() override { return false; }  // SPECIAL: $display has 'visual' ordering
@@ -3281,6 +3315,8 @@ public:
     bool isUnlikely() const override { return true; }
     int instrCount() const override { return 0; }  // Rarely executes
     bool same(const AstNode* samep) const override { return fileline() == samep->fileline(); }
+    string emitVerilog() const { return m_isFatal ? "$fatal" : "$stop"; }
+    bool isFatal() const { return m_isFatal; }
 };
 class AstSysFuncAsTask final : public AstNodeStmt {
     // TODO: This is superseded by AstStmtExpr, remove
@@ -3371,8 +3407,8 @@ public:
     int instrCount() const override { return 100; }  // Large...
     ASTGEN_MEMBERS_AstTraceDecl;
     string name() const override VL_MT_STABLE { return m_showname; }
-    bool maybePointedTo() const override { return true; }
-    bool hasDType() const override { return true; }
+    bool maybePointedTo() const override VL_MT_SAFE { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     bool same(const AstNode* samep) const override { return false; }
     string showname() const { return m_showname; }  // * = Var name
     // Details on what we're tracing
@@ -3413,7 +3449,7 @@ public:
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     int instrCount() const override { return 10 + 2 * INSTR_COUNT_LD; }
-    bool hasDType() const override { return true; }
+    bool hasDType() const override VL_MT_SAFE { return true; }
     bool same(const AstNode* samep) const override {
         return declp() == VN_DBG_AS(samep, TraceInc)->declp();
     }

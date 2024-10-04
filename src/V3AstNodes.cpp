@@ -2196,14 +2196,28 @@ void AstNodeModule::dumpJson(std::ostream& str) const {
 }
 void AstPackageExport::dump(std::ostream& str) const {
     this->AstNode::dump(str);
-    str << " -> " << packagep();
+    if (packagep()) {
+        str << " -> " << packagep();
+    } else {
+        str << " ->UNLINKED:" << pkgName();
+    }
 }
 void AstPackageExport::dumpJson(std::ostream& str) const { dumpJsonGen(str); }
+void AstPackageExport::pkgNameFrom() {
+    if (packagep()) m_pkgName = packagep()->name();
+}
 void AstPackageImport::dump(std::ostream& str) const {
     this->AstNode::dump(str);
-    str << " -> " << packagep();
+    if (packagep()) {
+        str << " -> " << packagep();
+    } else {
+        str << " ->UNLINKED:" << pkgName();
+    }
 }
 void AstPackageImport::dumpJson(std::ostream& str) const { dumpJsonGen(str); }
+void AstPackageImport::pkgNameFrom() {
+    if (packagep()) m_pkgName = packagep()->name();
+}
 void AstPatMember::dump(std::ostream& str) const {
     this->AstNodeExpr::dump(str);
     if (isDefault()) str << " [DEFAULT]";
@@ -2699,6 +2713,14 @@ void AstFork::dumpJson(std::ostream& str) const {
     dumpJsonStr(str, "joinType", joinType().ascii());
     dumpJsonGen(str);
 }
+void AstStop::dump(std::ostream& str) const {
+    this->AstNodeStmt::dump(str);
+    if (isFatal()) str << " [FATAL]";
+}
+void AstStop::dumpJson(std::ostream& str) const {
+    dumpJsonBoolFunc(str, isFatal);
+    dumpJsonGen(str);
+}
 void AstTraceDecl::dump(std::ostream& str) const {
     this->AstNodeStmt::dump(str);
     if (code()) str << " [code=" << code() << "]";
@@ -2888,6 +2910,15 @@ void AstCMethodHard::setPurity() {
     auto isPureIt = isPureMethod.find(name());
     UASSERT_OBJ(isPureIt != isPureMethod.end(), this, "Unknown purity of method " + name());
     m_pure = isPureIt->second;
+    if (!m_pure) return;
+    if (!fromp()->isPure()) m_pure = false;
+    if (!m_pure) return;
+    for (AstNodeExpr* argp = pinsp(); argp; argp = VN_AS(argp->nextp(), NodeExpr)) {
+        if (!argp->isPure()) {
+            m_pure = false;
+            return;
+        }
+    }
 }
 
 void AstCUse::dump(std::ostream& str) const {
