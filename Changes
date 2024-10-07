@@ -30,6 +30,7 @@ Verilator 5.029 devel
 * Support inside array constraints (#5448). [Arkadiusz Kozdra, Antmicro Ltd.]
 * Support DPI imports and exports with double underscores (#5481).
 * Support ccache when compiling Verilated files with cmake.
+* Support `local` and `protected` on `typedef` (#5460).
 * Add error on misused genvar (#408). [Alex Solomatnikov]
 * Add error on instances without parenthesis.
 * Add Docker pre-commit hook (#5238) (#5452). [Chris Bachhuber]
@@ -74,6 +75,7 @@ Verilator 5.029 devel
 * Fix exponential concatenate performance (#5488). [Arkadiusz Kozdra, Antmicro Ltd.]
 * Fix V3Table trying to generate 'x' bits in the lookup table. (#5491). [Geza Lore]
 * Fix randomize with foreach constraints (#5492). [Arkadiusz Kozdra, Antmicro Ltd.]
+* Fix pattern initialization with typedef key (#5512). [Eugene Feinberg]
 
 
 Verilator 5.028 2024-08-21
