@@ -110,6 +110,7 @@ Eugen
 Fabrizio
 Faucher
 Faure
+Feinberg
 Fekete
 Ferrandi
 Flachs
@@ -359,6 +360,7 @@ Sasselli
 Scharrer
 Seitz
 Shahid
+Shahrestani
 Shankar
 Shanshan
 Sharad
@@ -935,6 +937,7 @@ redeclaring
 regs
 reloop
 replaceShiftOp
+reproducibility
 resetall
 respecified
 rodata

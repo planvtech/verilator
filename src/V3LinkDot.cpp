@@ -489,6 +489,15 @@ public:
                 }
             } else if (ifacerefp->ifaceViaCellp()->dead()) {
                 if (varp->isIfaceRef()) {
+                    if (forPrimary() && !varp->isIfaceParent()
+                        && !v3Global.opt.topIfacesSupported()) {
+                        // Only AstIfaceRefDType's at this point correspond to ports;
+                        // haven't made additional ones for interconnect yet, so assert is simple
+                        // What breaks later is we don't have a Scope/Cell representing
+                        // the interface to attach to
+                        varp->v3warn(E_UNSUPPORTED,
+                                     "Unsupported: Interfaced port on top level module");
+                    }
                     ifacerefp->v3error("Parent instance's interface is not found: "
                                        << AstNode::prettyNameQ(ifacerefp->ifaceName()));
                 } else {
@@ -1487,6 +1496,7 @@ class LinkDotFindVisitor final : public VNVisitor {
     }
     void visit(AstPackageImport* nodep) override {
         UINFO(4, "  Link: " << nodep << endl);
+        if (!nodep->packagep()) return;  // Errored in V3LinkCells
         VSymEnt* const srcp = m_statep->getNodeSym(nodep->packagep());
         if (nodep->name() == "*") {
             if (nodep->packagep() != v3Global.rootp()->stdPackagep()) {
@@ -1497,10 +1507,7 @@ class LinkDotFindVisitor final : public VNVisitor {
             }
         } else {
             VSymEnt* const impp = srcp->findIdFlat(nodep->name());
-            if (!impp) {
-                nodep->v3error("Import object not found: '" << nodep->packagep()->prettyName()
-                                                            << "::" << nodep->prettyName() << "'");
-            }
+            if (!impp) { nodep->v3error("Import object not found: " << nodep->prettyPkgNameQ()); }
         }
         m_curSymp->importFromPackage(m_statep->symsp(), srcp, nodep->name());
         UINFO(9, "    Link Done: " << nodep << endl);
@@ -1508,6 +1515,7 @@ class LinkDotFindVisitor final : public VNVisitor {
     }
     void visit(AstPackageExport* nodep) override {
         UINFO(9, "  Link: " << nodep << endl);
+        if (!nodep->packagep()) return;  // Errored in V3LinkCells
         VSymEnt* const srcp = m_statep->getNodeSym(nodep->packagep());
         if (nodep->name() != "*") {
             VSymEnt* const impp = srcp->findIdFlat(nodep->name());
@@ -2167,14 +2175,17 @@ class LinkDotResolveVisitor final : public VNVisitor {
         }
         string ascii() const {
             static const char* const names[]
-                = {"NONE", "PACKAGE", "FIRST", "SCOPE", "FINAL", "MEMBER"};
+                = {"DP_NONE", "DP_PACKAGE", "DP_FIRST", "DP_SCOPE", "DP_FINAL", "DP_MEMBER"};
             std::ostringstream sstr;
             sstr << "ds=" << names[m_dotPos];
             sstr << "  dse" << cvtToHex(m_dotSymp);
-            sstr << "  sup=" << m_super;
+            sstr << "(" << m_dotSymp->nodep()->typeName() << ")";
+
+            if (m_dotErr) sstr << "  [dotErr]";
+            if (m_super) sstr << "  [super]";
+            if (m_unresolvedCell) sstr << "  [unrCell]";
+            if (m_unresolvedClass) sstr << "  [unrClass]";
             sstr << "  txt=" << m_dotText;
-            sstr << "  unrCell=" << m_unresolvedCell;
-            sstr << "  unrClass=" << m_unresolvedClass;
             return sstr.str();
         }
     } m_ds;  // State to preserve across recursions
@@ -2257,9 +2268,12 @@ class LinkDotResolveVisitor final : public VNVisitor {
     void checkNoDot(AstNode* nodep) {
         if (VL_UNLIKELY(m_ds.m_dotPos != DP_NONE)) {
             // UINFO(9, indent() << "ds=" << m_ds.ascii() << endl);
-            nodep->v3error("Syntax error: Not expecting " << nodep->type() << " under a "
-                                                          << nodep->backp()->type()
-                                                          << " in dotted expression");
+            nodep->v3error("Syntax error: Not expecting "
+                           << nodep->type() << " under a " << nodep->backp()->type()
+                           << " in dotted expression\n"
+                           << nodep->warnContextPrimary() << m_ds.m_dotp->warnOther()
+                           << "... Resolving this reference\n"
+                           << m_ds.m_dotp->warnContextSecondary());
             m_ds.m_dotErr = true;
         }
     }
@@ -2432,6 +2446,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
     void visit(AstCell* nodep) override {
         // Cell: Recurse inside or cleanup not founds
         LINKDOT_VISIT_START();
+        UINFO(5, indent() << "visit " << nodep << endl);
         checkNoDot(nodep);
         VL_RESTORER(m_usedPins);
         m_usedPins.clear();
@@ -2451,7 +2466,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
             // instantiator's symbols
             else {
                 m_pinSymp = m_statep->getNodeSym(nodep->modp());
-                UINFO(4, indent() << "(Backto) Link Cell: " << nodep << endl);
+                UINFO(4, indent() << "(Backto) visit " << nodep << endl);
                 // if (debug()) nodep->dumpTree("-  linkcell: ");
                 // if (debug()) nodep->modp()->dumpTree("-  linkcemd: ");
                 iterateChildren(nodep);
@@ -2463,6 +2478,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
     void visit(AstClassRefDType* nodep) override {
         // Cell: Recurse inside or cleanup not founds
         LINKDOT_VISIT_START();
+        UINFO(5, indent() << "visit " << nodep << endl);
         checkNoDot(nodep);
         VL_RESTORER(m_usedPins);
         m_usedPins.clear();
@@ -2473,7 +2489,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
         {
             // ClassRef's have pins, so track
             m_pinSymp = m_statep->getNodeSym(nodep->classp());
-            UINFO(4, indent() << "(Backto) Link ClassRefDType: " << nodep << endl);
+            UINFO(4, indent() << "(Backto) visit " << nodep << endl);
             // if (debug()) nodep->dumpTree("-  linkcell: ");
             // if (debug()) nodep->modp()->dumpTree("-  linkcemd: ");
             iterateChildren(nodep);
@@ -2684,7 +2700,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
 
         if (start) {
             m_ds.init(m_curSymp);
-            // Note m_ds.m_dot remains nullptr; this is a reference not under a dot
+            // Note m_ds.m_dotp remains nullptr; this is a reference not under a dot
         }
         if (nodep->name() == "super") {
             nodep->v3warn(E_UNSUPPORTED, "Unsupported: super");
@@ -2712,7 +2728,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
             // m_ds.dotp->lhsp() was checked to know if `index` is directly after lambda arg ref.
             // If not, treat it as normal member select
             iterateChildren(nodep);
-            const auto newp = new AstLambdaArgRef{
+            AstLambdaArgRef* const newp = new AstLambdaArgRef{
                 nodep->fileline(), m_ds.m_dotp->lhsp()->name() + "__DOT__index", true};
             nodep->replaceWith(newp);
             VL_DO_DANGLING(pushDeletep(nodep), nodep);
@@ -3041,8 +3057,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     m_ds.m_dotPos = DP_MEMBER;
                 } else {
                     // Cells/interfaces can't be implicit
-                    const bool isCell = foundp ? VN_IS(foundp->nodep(), Cell) : false;
-                    const bool checkImplicit = (!m_ds.m_dotp && m_ds.m_dotText == "" && !isCell);
+                    const bool checkImplicit = (!m_ds.m_dotp && m_ds.m_dotText == "" && !foundp);
                     const bool err
                         = !(checkImplicit && m_statep->implicitOk(m_modp, nodep->name()));
                     if (err) {
@@ -3077,7 +3092,8 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     if (checkImplicit) {
                         // Create if implicit, and also if error (so only complain once)
                         // Else if a scope is allowed, making a signal won't help error cascade
-                        auto varp = createImplicitVar(m_curSymp, nodep, m_modp, m_modSymp, err);
+                        AstVar* const varp
+                            = createImplicitVar(m_curSymp, nodep, m_modp, m_modSymp, err);
                         AstVarRef* const newp
                             = new AstVarRef{nodep->fileline(), varp, VAccess::READ};
                         nodep->replaceWith(newp);
@@ -3278,6 +3294,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
     void visit(AstMethodCall* nodep) override {
         // Created here so should already be resolved.
         LINKDOT_VISIT_START();
+        UINFO(5, indent() << "visit " << nodep << endl);
         VL_RESTORER(m_ds);
         VL_RESTORER(m_fromSymp);
         VL_RESTORER(m_randMethodCallp);
@@ -3923,8 +3940,10 @@ class LinkDotResolveVisitor final : public VNVisitor {
         // Resolve its reference
         if (nodep->user3SetOnce()) return;
         LINKDOT_VISIT_START();
+        UINFO(5, indent() << "visit " << nodep << endl);
         if (AstNode* const cpackagep = nodep->classOrPackageOpp()) {
             if (AstClassOrPackageRef* const cpackagerefp = VN_CAST(cpackagep, ClassOrPackageRef)) {
+                iterate(cpackagerefp);
                 const AstClass* const clsp = VN_CAST(cpackagerefp->classOrPackageNodep(), Class);
                 if (clsp && clsp->isParameterized()) {
                     // Unable to link before the instantiation of parameter classes.
@@ -4073,6 +4092,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
     }
 
     void visit(AstIfaceRefDType* nodep) override {
+        if (nodep->user3SetOnce()) return;
         LINKDOT_VISIT_START();
         if (nodep->paramsp()) {
             // If there is no parameters, there is no need to visit this node.
@@ -4124,7 +4144,7 @@ void V3LinkDot::linkDotGuts(AstNetlist* rootp, VLinkDotStep step) {
         v3Global.rootp()->dumpTreeFile(v3Global.debugFilename("prelinkdot-find.tree"));
     }
     if (step == LDS_PRIMARY || step == LDS_PARAMED) {
-        // Initial link stage, resolve parameters
+        // Initial link stage, resolve parameters and interfaces
         const LinkDotParamVisitor visitors{rootp, &state};
         if (dumpTreeEitherLevel() >= 9) {
             V3Global::dumpCheckGlobalTree("prelinkdot-param");
