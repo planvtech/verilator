@@ -1,15 +1,14 @@
 // DESCRIPTION: Verilator: Verilog Test module
 //
 // This file ONLY is placed under the Creative Commons Public Domain, for
-// any use, without warranty, 2005 by Wilson Snyder.
+// any use, without warranty, 2024 by Antmicro.
 // SPDX-License-Identifier: CC0-1.0
 
 module t (/*AUTOARG*/);
-
-   looped looped ();
-
+   logic a;
+   s u_s(.a(a));
 endmodule
 
-module looped (/*AUTOARG*/);
-   looped looped ();
+module s(output logic a);
+   /*verilator hier_block*/
 endmodule

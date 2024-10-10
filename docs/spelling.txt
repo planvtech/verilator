@@ -110,6 +110,7 @@ Eugen
 Fabrizio
 Faucher
 Faure
+Feinberg
 Fekete
 Ferrandi
 Flachs
@@ -936,6 +937,7 @@ redeclaring
 regs
 reloop
 replaceShiftOp
+reproducibility
 resetall
 respecified
 rodata
@@ -1025,6 +1027,8 @@ traceEverOn
 tran
 treei
 tri
+triand
+trior
 tristate
 tristates
 trunc
@@ -1100,6 +1104,7 @@ warmup
 waveforms
 whitespace
 widthed
+wor
 wreal
 writeb
 writeme
