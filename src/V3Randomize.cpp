@@ -1422,7 +1422,7 @@ class RandomizeVisitor final : public VNVisitor {
             tempElementp->dtypep(tempDTypep->subDTypep());
             tempDTypep = tempDTypep->virtRefDTypep();
         }
-        handleUnsupportedStruct(tempElementp);
+        //handleUnsupportedStruct(tempElementp);
         stmtsp = createForeachLoop(tempElementp, randLoopIndxp);
         return stmtsp;
     }
