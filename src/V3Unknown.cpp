@@ -118,16 +118,21 @@ class UnknownVisitor final : public VNVisitor {
                 = new AstVar{fl, VVarType::MODULETEMP, m_lvboundNames.get(prep), prep->dtypep()};
             m_modp->addStmtsp(varp);
             AstNode* const abovep = prep->backp();  // Grab above point before we replace 'prep'
-            AstNode* itrnodep = abovep;
-            if (!needDly) {
-                while (!VN_IS(itrnodep, NodeStmt)) itrnodep = itrnodep->backp();
-                VNRelinker rejoinStmpt;
-                itrnodep = itrnodep->unlinkFrBackWithNext(&rejoinStmpt);
-                AstNode* newaddedStmt = new AstAssign{fl, new AstVarRef{fl, varp, VAccess::WRITE},
-                                                      prep->cloneTree(false)};
-                newaddedStmt->addNextStmt(itrnodep, newaddedStmt);
-                rejoinStmpt.relink(newaddedStmt);
-            }
+             AstNode* itrnodep = abovep;
+             while (!VN_IS(itrnodep, NodeStmt)) itrnodep = itrnodep->backp();
+             VNRelinker rejoinStmpt;
+             itrnodep = itrnodep->unlinkFrBackWithNext(&rejoinStmpt);
+             AstNode * selnodep = prep->cloneTree(true);
+            AstNode * itrselnodep ;
+             AstNode * backupselnodep = selnodep;
+             while(itrselnodep = VN_AS(backupselnodep->op1p(), NodeExpr)){
+                if(VN_IS(itrselnodep, VarRef)){ VN_AS(itrselnodep, VarRef)->access(VAccess::READ);  break;}
+                backupselnodep = itrselnodep;
+             }
+             AstNode* newaddedStmt = new AstAssign{fl, new AstVarRef{fl, varp, VAccess::WRITE},
+                                                     (AstNodeExpr *)selnodep};
+             newaddedStmt->addNextStmt(itrnodep, newaddedStmt);
+             rejoinStmpt.relink(newaddedStmt);
             prep->replaceWith(new AstVarRef{fl, varp, VAccess::WRITE});
             if (m_timingControlp) m_timingControlp->unlinkFrBack();
             AstIf* const newp = new AstIf{
