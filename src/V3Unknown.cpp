@@ -125,7 +125,7 @@ class UnknownVisitor final : public VNVisitor {
             AstNode* selnodep = prep->cloneTree(true);
             AstNode* itrselnodep;
             AstNode* backupselnodep = selnodep;
-            while (itrselnodep = VN_AS(backupselnodep->op1p(), NodeExpr)) {
+            while ((itrselnodep = VN_AS(backupselnodep->op1p(), NodeExpr))) {
                 if (VN_IS(itrselnodep, VarRef)) {
                     VN_AS(itrselnodep, VarRef)->access(VAccess::READ);
                     break;

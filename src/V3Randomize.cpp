@@ -1390,15 +1390,15 @@ class RandomizeVisitor final : public VNVisitor {
             return new AstVar{fl, VVarType::VAR, uniqueNamep->get(""),
                               dtypep->findBasicDType(VBasicDTypeKwd::UINT32)};
         };
-        auto handleUnsupportedStruct = [&](AstNodeExpr* tempElementp) {
-            if (VN_IS(tempElementp->dtypep()->skipRefp(), StructDType)) {
-                tempElementp->dtypep()->v3warn(
-                    E_UNSUPPORTED,
-                    "Unsupported: CreateArrayForeachLoop currently does not support "
-                    "this data type. (Struct-Array unconstrained "
-                    "randomization is not fully supported)");
-            }
-        };
+        // auto handleUnsupportedStruct = [&](AstNodeExpr* tempElementp) {
+        //     if (VN_IS(tempElementp->dtypep()->skipRefp(), StructDType)) {
+        //         tempElementp->dtypep()->v3warn(
+        //             E_UNSUPPORTED,
+        //             "Unsupported: CreateArrayForeachLoop currently does not support "
+        //             "this data type. (Struct-Array unconstrained "
+        //             "randomization is not fully supported)");
+        //     }
+        // };
         auto createForeachLoop = [&](AstNodeExpr* tempElementp, AstVar* randLoopIndxp) {
             AstSelLoopVars* const randLoopVarp
                 = new AstSelLoopVars{fl, exprp->cloneTree(false), randLoopIndxp};
