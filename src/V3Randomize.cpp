@@ -720,6 +720,10 @@ class ConstraintExprVisitor final : public VNVisitor {
 
         editSMT(nodep, nodep->fromp(), lsbp, msbp);
     }
+    void visit(AstStructSel* nodep){
+        if (editFormat(nodep)) return;
+        iterateChildren(nodep);
+    }
     void visit(AstArraySel* nodep) override {
         if (editFormat(nodep)) return;
         FileLine* const fl = nodep->fileline();
