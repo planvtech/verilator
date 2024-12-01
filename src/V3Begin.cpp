@@ -458,10 +458,14 @@ AstNode* V3Begin::convertToWhile(AstForeach* nodep) {
             } else if (VN_IS(fromDtp, DynArrayDType) || VN_IS(fromDtp, QueueDType)) {
                 AstConst* const leftp = new AstConst{fl, 0};
                 //AstNodeExpr* const rightp
-                  //  = new AstCMethodHard{fl, subfromp->cloneTreePure(false), "size"};
-                AstNodeExpr* const rightp = new AstCMethodHard{fl,VN_IS(subfromp->dtypep(),NodeArrayDType )? 
-                                                                new AstArraySel{fl, subfromp->cloneTreePure(false), new AstVarRef{fl,lastindexp, VAccess::READ} }
-                                                                : subfromp->cloneTreePure(false), "size"};
+                //  = new AstCMethodHard{fl, subfromp->cloneTreePure(false), "size"};
+                AstNodeExpr* const rightp = new AstCMethodHard{
+                    fl,
+                    VN_IS(subfromp->dtypep(), NodeArrayDType)
+                        ? new AstArraySel{fl, subfromp->cloneTreePure(false),
+                                          new AstVarRef{fl, lastindexp, VAccess::READ}}
+                        : subfromp->cloneTreePure(false),
+                    "size"};
 
                 AstVarRef* varRefp = new AstVarRef{fl, varp, VAccess::READ};
                 subfromp = new AstCMethodHard{fl, subfromp, "at", varRefp};
