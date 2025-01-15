@@ -713,7 +713,6 @@ class ConstraintExprVisitor final : public VNVisitor {
             && VN_AS(nodep->bitp(), VarRef)->varp()->dtypep()->basicp()
             && VN_AS(nodep->bitp(), VarRef)->dtypep()->basicp()->keyword()
                    == VBasicDTypeKwd::STRING) {
-            AstVarRef* bitpref = (AstVarRef*)(nodep->bitp());
             VNRelinker handle;
             AstNodeExpr* const idxp
                 = new AstSFormatF{fl, "#x%32x", false, nodep->bitp()->unlinkFrBack(&handle)};
