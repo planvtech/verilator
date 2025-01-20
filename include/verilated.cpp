@@ -904,13 +904,12 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 std::ostringstream oss;
                 for (unsigned char c : *cstrp) { oss << std::hex << static_cast<int>(c); }
                 std::string hex_str = oss.str();
-                if(width>0 && widthSet){
+                if (width > 0 && widthSet) {
                     hex_str = hex_str.size() > width
-                                    ? hex_str.substr(0, width)
-                                    : std::string(width - hex_str.size(), '0') + hex_str;
+                                  ? hex_str.substr(0, width)
+                                  : std::string(width - hex_str.size(), '0') + hex_str;
                     output += hex_str;
-                }
-                else{
+                } else {
                     const std::string msg = "Width size not specified  "s + pos[0];
                     VL_FATAL_MT(__FILE__, __LINE__, "", msg.c_str());
                 }
