@@ -906,8 +906,8 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 std::string hex_str = oss.str();
                 // Ensure the hex string is exactly 128 bits (32 hex characters)
                 hex_str = hex_str.size() > width
-                                ? hex_str.substr(0, width)
-                                : std::string(width - hex_str.size(), '0') + hex_str;
+                              ? hex_str.substr(0, width)
+                              : std::string(width - hex_str.size(), '0') + hex_str;
                 output += hex_str;
                 break;
             }
