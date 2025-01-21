@@ -898,19 +898,23 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 output += left ? (*cstrp + padding) : (padding + *cstrp);
                 break;
             }
-            case 'p': {  // 'x' but parameter is string
-                va_arg(ap, int);
+            case 'p': {  // Convert string to hexadecimal format
+                va_arg(ap, int);  // # bits is ignored
                 const std::string* const cstrp = va_arg(ap, const std::string*);
-                std::ostringstream oss;
-                for (unsigned char c : *cstrp) { oss << std::hex << static_cast<int>(c); }
-                std::string hex_str = oss.str();
+                std::string hex_str;
+                hex_str.reserve(cstrp->size() * 2);  // Reserve space for hex characters
+                for (unsigned char c : *cstrp) {
+                    char buf[3];
+                    snprintf(buf, sizeof(buf), "%02x", c);  // Convert each character to hex
+                    hex_str += buf;
+                }
                 if (width > 0 && widthSet) {
-                    hex_str = hex_str.size() > width
+                    hex_str = (hex_str.size() > static_cast<size_t>(width))
                                   ? hex_str.substr(0, width)
                                   : std::string(width - hex_str.size(), '0') + hex_str;
                     output += hex_str;
                 } else {
-                    const std::string msg = "Width size not specified  "s + pos[0];
+                    const std::string msg = "Width size not specified "s + pos[0];
                     VL_FATAL_MT(__FILE__, __LINE__, "", msg.c_str());
                 }
                 break;
