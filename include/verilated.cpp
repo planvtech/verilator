@@ -906,11 +906,11 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 const char hex_chars[] = "0123456789abcdef";  // Hexadecimal character set
                 for (unsigned char c : *cstrp) {
                     hex_str += hex_chars[(c >> 4) & 0xF];  // High nibble
-                    hex_str += hex_chars[c & 0xF];         // Low nibble
+                    hex_str += hex_chars[c & 0xF];  // Low nibble
                 }
                 hex_str = (hex_str.size() > static_cast<size_t>(width))
-                                ? hex_str.substr(0, width)
-                                : std::string(width - hex_str.size(), '0') + hex_str;
+                              ? hex_str.substr(0, width)
+                              : std::string(width - hex_str.size(), '0') + hex_str;
                 output += hex_str;
                 break;
             }
