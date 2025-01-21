@@ -903,20 +903,15 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 const std::string* const cstrp = va_arg(ap, const std::string*);
                 std::string hex_str;
                 hex_str.reserve(cstrp->size() * 2);  // Reserve space for hex characters
+                const char hex_chars[] = "0123456789abcdef";  // Hexadecimal character set
                 for (unsigned char c : *cstrp) {
-                    char buf[3];
-                    snprintf(buf, sizeof(buf), "%02x", c);  // Convert each character to hex
-                    hex_str += buf;
+                    hex_str += hex_chars[(c >> 4) & 0xF];  // High nibble
+                    hex_str += hex_chars[c & 0xF];         // Low nibble
                 }
-                if (width > 0 && widthSet) {
-                    hex_str = (hex_str.size() > static_cast<size_t>(width))
-                                  ? hex_str.substr(0, width)
-                                  : std::string(width - hex_str.size(), '0') + hex_str;
-                    output += hex_str;
-                } else {
-                    const std::string msg = "Width size not specified "s + pos[0];
-                    VL_FATAL_MT(__FILE__, __LINE__, "", msg.c_str());
-                }
+                hex_str = (hex_str.size() > static_cast<size_t>(width))
+                                ? hex_str.substr(0, width)
+                                : std::string(width - hex_str.size(), '0') + hex_str;
+                output += hex_str;
                 break;
             }
             case 'e':
