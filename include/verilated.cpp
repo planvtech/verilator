@@ -898,7 +898,7 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 output += left ? (*cstrp + padding) : (padding + *cstrp);
                 break;
             }
-            case 'p': {  // Convert string to hexadecimal format
+            case 'P': {  // Convert string to hexadecimal format
                 va_arg(ap, int);  // # bits is ignored
                 const std::string* const cstrp = va_arg(ap, const std::string*);
                 std::string hex_str;
