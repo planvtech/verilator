@@ -715,7 +715,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                    == VBasicDTypeKwd::STRING) {
             VNRelinker handle;
             AstNodeExpr* const idxp
-                = new AstSFormatF{fl, "#x%32$", false, nodep->bitp()->unlinkFrBack(&handle)};
+                = new AstSFormatF{fl, "#x%32p", false, nodep->bitp()->unlinkFrBack(&handle)};
             handle.relink(idxp);
             editSMT(nodep, nodep->fromp(), idxp);
         } else if (VN_IS(nodep->bitp(), CvtPackString)
