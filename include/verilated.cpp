@@ -898,10 +898,16 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                 output += left ? (*cstrp + padding) : (padding + *cstrp);
                 break;
             }
-            case '$': {  // Convert string to hexadecimal format
+            case 'p': {  // Convert string to hexadecimal format
                 va_arg(ap, int);  // # bits is ignored
-                const std::string* const cstrp = va_arg(ap, const std::string*);
+                const void* raw_ptr = va_arg(ap, const void*);
+                const std::string* const cstrp = static_cast<const std::string*>(raw_ptr);
+                // const std::string* const cstrp = va_arg(ap, const std::string*);
                 std::string hex_str;
+                if (!cstrp) {
+                    VL_FATAL_MT(__FILE__, __LINE__, "",
+                                "Null pointer passed for string conversion");
+                }
                 hex_str.reserve(cstrp->size() * 2);  // Reserve space for hex characters
                 const char hex_chars[] = "0123456789abcdef";  // Hexadecimal character set
                 for (unsigned char c : *cstrp) {

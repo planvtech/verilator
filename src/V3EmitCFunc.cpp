@@ -361,7 +361,7 @@ void EmitCFunc::displayNode(AstNode* nodep, AstScopeName* scopenamep, const stri
             case '@':
                 displayArg(nodep, &elistp, isScan, vfmt, ignore, '@');
                 break;  // Packed string
-            case '$': displayArg(nodep, &elistp, isScan, vfmt, ignore, '$'); break;
+            case 'p': displayArg(nodep, &elistp, isScan, vfmt, ignore, 'p'); break;
             // Spec: h d o b c l
             case 'b': displayArg(nodep, &elistp, isScan, vfmt, ignore, 'b'); break;
             case 'c': displayArg(nodep, &elistp, isScan, vfmt, ignore, 'c'); break;
