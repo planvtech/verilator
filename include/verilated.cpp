@@ -1034,7 +1034,7 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
 
                     std::string append;
                     int digits;
-                    switch (fmt) {
+                    switch (fmt) {  // b / o / x
                     case 'b': {
                         digits = lsb + 1;
                         for (; lsb >= 0; --lsb) append += (VL_BITRSHIFT_W(lwp, lsb) & 1) + '0';
@@ -1078,19 +1078,6 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
                     } else {
                         output += append;
                     }
-                    break;
-                }  // b / o / x
-                case 'p': {  // 'x' but parameter is string
-                    const int lbits = va_arg(ap, int);
-                    const std::string* const cstrp = va_arg(ap, const std::string*);
-                    std::ostringstream oss;
-                    for (unsigned char c : *cstrp) { oss << std::hex << static_cast<int>(c); }
-                    std::string hex_str = oss.str();
-                    // Ensure the hex string is exactly 128 bits (32 hex characters)
-                    hex_str = hex_str.size() > 32
-                                  ? hex_str.substr(0, 32)
-                                  : std::string(32 - hex_str.size(), '0') + hex_str;
-                    output += hex_str;
                     break;
                 }
                 case 'u':
