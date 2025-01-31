@@ -20,7 +20,7 @@ class constrained_associative_array_basic;
         string_index_arr["Charlie"] > 25;
     }
     constraint string_index_2_constraints {
-        foreach (string_index_arr_2[i]) string_index_arr_2[i] > 10; // nodep->bitp() would be VARREF, instead of CVTPACKSTRING
+        foreach (string_index_arr_2[i]) string_index_arr_2[i] < 10; // nodep->bitp() would be VARREF, instead of CVTPACKSTRING
     }
 
     // Constructor to initialize arrays
@@ -41,7 +41,7 @@ class constrained_associative_array_basic;
                 (name == "Charlie" && string_index_arr[name] <= 25)) $stop;
         end
         foreach (string_index_arr_2[i]) begin
-            if (string_index_arr_2[i] <= 10) $stop;
+            if (string_index_arr_2[i] > 10) $stop;
         end
     endfunction
 

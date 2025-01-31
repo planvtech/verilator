@@ -1034,7 +1034,7 @@ void _vl_vsformat(std::string& output, const std::string& format, va_list ap) VL
 
                     std::string append;
                     int digits;
-                    switch (fmt) {  // b / o / x
+                    switch (fmt) {
                     case 'b': {
                         digits = lsb + 1;
                         for (; lsb >= 0; --lsb) append += (VL_BITRSHIFT_W(lwp, lsb) & 1) + '0';
