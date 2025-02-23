@@ -726,10 +726,13 @@ class ConstraintExprVisitor final : public VNVisitor {
                     memberp = VN_CAST(memberp->nextp(), MemberDType);
             }
         }
-        if(VN_IS(nodep->fromp(), ArraySel)){
+        if (VN_IS(nodep->fromp(), ArraySel)) {
             AstNodeExpr* const fromp = VN_AS(nodep->fromp(), ArraySel)->fromp();
-            VN_AS(fromp->dtypep()->skipRefp()->subDTypep()->skipRefp(), StructDType)->markConstrainedRand(true);
-            AstMemberDType* memberp = VN_AS(fromp->dtypep()->skipRefp()->subDTypep()->skipRefp(), StructDType)->membersp();
+            VN_AS(fromp->dtypep()->skipRefp()->subDTypep()->skipRefp(), StructDType)
+                ->markConstrainedRand(true);
+            AstMemberDType* memberp
+                = VN_AS(fromp->dtypep()->skipRefp()->subDTypep()->skipRefp(), StructDType)
+                      ->membersp();
             while (memberp) {
                 if (memberp->name() == nodep->name()) {
                     memberp->markConstrainedRand(true);
@@ -741,14 +744,14 @@ class ConstraintExprVisitor final : public VNVisitor {
         iterateChildren(nodep);
         if (editFormat(nodep)) return;
         FileLine* const fl = nodep->fileline();
-        AstSFormatF* newp= nullptr;
-        if(VN_AS(nodep->fromp(), SFormatF)->name()=="(select %@ %@)"){
-            newp
-            = new AstSFormatF{fl, "%@.%@."+nodep->name(), false, VN_AS(nodep->fromp(), SFormatF)->exprsp()->cloneTreePure(true)};
+        AstSFormatF* newp = nullptr;
+        if (VN_AS(nodep->fromp(), SFormatF)->name() == "(select %@ %@)") {
+            newp = new AstSFormatF{fl, "%@.%@." + nodep->name(), false,
+                                   VN_AS(nodep->fromp(), SFormatF)->exprsp()->cloneTreePure(true)};
             newp->exprsp()->nextp()->name("x%8x");
-        }else 
-        newp
-            = new AstSFormatF{fl, nodep->fromp()->name() + "." + nodep->name(), false, nullptr};
+        } else
+            newp = new AstSFormatF{fl, nodep->fromp()->name() + "." + nodep->name(), false,
+                                   nullptr};
         nodep->replaceWith(newp);
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
