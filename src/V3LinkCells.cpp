@@ -307,68 +307,66 @@ class LinkCellsVisitor final : public VNVisitor {
         }
         VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
     }
-// Function to extract cycle elements
-void extractCycle(AstNodeModule* startNode, AstNodeModule* currentNode,
-                  std::unordered_map<AstNodeModule*, AstNodeModule*>& parentMap,
-                  std::vector<AstNodeModule*>& cycle) {
-    cycle.push_back(currentNode);
-    while (currentNode != startNode) {
-        currentNode = parentMap[currentNode];
+    // Function to extract cycle elements
+    void extractCycle(AstNodeModule* startNode, AstNodeModule* currentNode,
+                      std::unordered_map<AstNodeModule*, AstNodeModule*>& parentMap,
+                      std::vector<AstNodeModule*>& cycle) {
         cycle.push_back(currentNode);
+        while (currentNode != startNode) {
+            currentNode = parentMap[currentNode];
+            cycle.push_back(currentNode);
+        }
+        std::reverse(cycle.begin(), cycle.end());  // Reverse to maintain order
     }
-    std::reverse(cycle.begin(), cycle.end());  // Reverse to maintain order
-}
 
-// DFS function for cycle detection
-void dfs(AstNodeModule* node, std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph,
-         std::unordered_map<AstNodeModule*, AstNodeModule*>& parentMap,
-         std::set<AstNodeModule*>& visited, std::set<AstNodeModule*>& recStack,
-         std::vector<std::vector<AstNodeModule*>>& cycles) {
-    
-    visited.insert(node);
-    recStack.insert(node);
+    // DFS function for cycle detection
+    void dfs(AstNodeModule* node,
+             std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph,
+             std::unordered_map<AstNodeModule*, AstNodeModule*>& parentMap,
+             std::set<AstNodeModule*>& visited, std::set<AstNodeModule*>& recStack,
+             std::vector<std::vector<AstNodeModule*>>& cycles) {
 
-    if (graph.find(node) != graph.end()) { // If node has outgoing edges
-        for (AstNodeModule* next : graph[node]) {
-            if (!visited.count(next)) {
-                parentMap[next] = node;  // Track parent
-                dfs(next, graph, parentMap, visited, recStack, cycles);
-            } else if (recStack.count(next)) { // Cycle detected
-                std::vector<AstNodeModule*> cycle;
-                extractCycle(next, node, parentMap, cycle);
-                cycles.push_back(cycle);
+        visited.insert(node);
+        recStack.insert(node);
+
+        if (graph.find(node) != graph.end()) {  // If node has outgoing edges
+            for (AstNodeModule* next : graph[node]) {
+                if (!visited.count(next)) {
+                    parentMap[next] = node;  // Track parent
+                    dfs(next, graph, parentMap, visited, recStack, cycles);
+                } else if (recStack.count(next)) {  // Cycle detected
+                    std::vector<AstNodeModule*> cycle;
+                    extractCycle(next, node, parentMap, cycle);
+                    cycles.push_back(cycle);
+                }
             }
         }
+
+        recStack.erase(node);  // Remove from recursion stack after processing
     }
 
-    recStack.erase(node); // Remove from recursion stack after processing
-}
+    // Function to find all cycles in the graph
+    std::vector<std::vector<AstNodeModule*>>
+    findAllCycles(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph) {
+        std::set<AstNodeModule*> visited;
+        std::set<AstNodeModule*> recStack;
+        std::vector<std::vector<AstNodeModule*>> cycles;
+        std::unordered_map<AstNodeModule*, AstNodeModule*> parentMap;
 
-// Function to find all cycles in the graph
-std::vector<std::vector<AstNodeModule*>> findAllCycles(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph) {
-    std::set<AstNodeModule*> visited;
-    std::set<AstNodeModule*> recStack;
-    std::vector<std::vector<AstNodeModule*>> cycles;
-    std::unordered_map<AstNodeModule*, AstNodeModule*> parentMap;
-
-    for (const auto& pair : graph) {
-        if (!visited.count(pair.first)) {
-            dfs(pair.first, graph, parentMap, visited, recStack, cycles);
+        for (const auto& pair : graph) {
+            if (!visited.count(pair.first)) {
+                dfs(pair.first, graph, parentMap, visited, recStack, cycles);
+            }
         }
-    }
 
-    return cycles;
-}
-void addEdge(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph,
-    AstNodeModule* from, AstNodeModule* to) {
-    if (graph.find(from) == graph.end()) {
-        graph[from] = {};
+        return cycles;
     }
-    if (graph.find(to) == graph.end()) {
-        graph[to] = {};
+    void addEdge(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& graph,
+                 AstNodeModule* from, AstNodeModule* to) {
+        if (graph.find(from) == graph.end()) { graph[from] = {}; }
+        if (graph.find(to) == graph.end()) { graph[to] = {}; }
+        graph[from].push_back(to);
     }
-    graph[from].push_back(to);
-}
 
     void visit(AstCell* nodep) override {
         // Cell: Resolve its filename.  If necessary, parse it.
@@ -394,7 +392,7 @@ void addEdge(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& gr
             // Use findIdFallback instead of findIdFlat; it doesn't matter for now
             // but we might support modules-under-modules someday.
             AstNodeModule* cellmodp = resolveModule(nodep, nodep->modName());
-           // ModuleMap[m_modp] = cellmodp;
+            // ModuleMap[m_modp] = cellmodp;
             addEdge(ModuleMap, m_modp, cellmodp);
             ModuleCellMap[cellmodp] = nodep;
             if (cellmodp) {
@@ -433,24 +431,27 @@ void addEdge(std::unordered_map<AstNodeModule*, std::vector<AstNodeModule*>>& gr
                         nodep->modp(cellmodp);
                         // We don't create a V3GraphEdge (as it would be circular)
                     }
-                } else if (!cycles.empty()){
-                    V3GraphVertex::List& vertexList =  m_graph.vertices();
+                } else if (!cycles.empty()) {
+                    V3GraphVertex::List& vertexList = m_graph.vertices();
                     std::cout << "Cycles detected after adding nodes:\n";
                     for (const auto& cycle : cycles) {
                         for (auto it = cycle.begin(); it != cycle.end(); ++it) {
                             AstNodeModule* node = *it;
                             std::cout << node->name() << " ";
-                            for (V3GraphVertex& vertex : vertexList){
-                                if(node == static_cast<LinkCellsVertex*>(&vertex)->modp()){
+                            for (V3GraphVertex& vertex : vertexList) {
+                                if (node == static_cast<LinkCellsVertex*>(&vertex)->modp()) {
                                     V3GraphEdge::OList& oEdgeList = vertex.outEdges();
-                                    for (V3GraphEdge& edge : oEdgeList){
+                                    for (V3GraphEdge& edge : oEdgeList) {
                                         edge.weight(0);
-                                        AstCell* fromcellp = ModuleCellMap[static_cast<LinkCellsVertex*>(edge.fromp())->modp()];
-                                        AstCell* tocellp =ModuleCellMap[static_cast<LinkCellsVertex*>(edge.top())->modp()];
-                                        AstNodeModule* fromcellmodp = static_cast<LinkCellsVertex*>(edge.fromp())->modp();
-                                        AstNodeModule* tocellmodp = static_cast<LinkCellsVertex*>(edge.fromp())->modp();
+                                        AstCell* fromcellp = ModuleCellMap
+                                            [static_cast<LinkCellsVertex*>(edge.fromp())->modp()];
+                                        AstCell* tocellp = ModuleCellMap
+                                            [static_cast<LinkCellsVertex*>(edge.top())->modp()];
+                                        AstNodeModule* fromcellmodp
+                                            = static_cast<LinkCellsVertex*>(edge.fromp())->modp();
+                                        AstNodeModule* tocellmodp
+                                            = static_cast<LinkCellsVertex*>(edge.fromp())->modp();
                                     }
-
                                 }
                             }
                         }
