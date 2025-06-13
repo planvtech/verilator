@@ -609,9 +609,6 @@ class ConstraintExprVisitor final : public VNVisitor {
                                       : nullptr;
         if (membersel) varp = membersel->varp();
 
-
-
-
         AstNodeModule* const classOrPackagep = nodep->classOrPackagep();
         const RandomizeMode randMode = {.asInt = varp->user1()};
         if (!randMode.usesMode && editFormat(nodep)) return;
@@ -855,7 +852,6 @@ class ConstraintExprVisitor final : public VNVisitor {
         iterateChildren(nodep);
         nodep->replaceWith(nodep->fromp()->unlinkFrBack());
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
-
     }
     void visit(AstSFormatF* nodep) override {}
     void visit(AstStmtExpr* nodep) override {}
