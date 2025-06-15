@@ -609,7 +609,9 @@ class ConstraintExprVisitor final : public VNVisitor {
                                       : nullptr;
         if (membersel) varp = membersel->varp();
         withinclass = membersel ? VN_AS(nodep->dtypep(), ClassRefDType)->classp() : nullptr;
-        // if(membersel && (nodep->backp()->user2p()/* constraint sontaining class/module*/ == VN_AS(nodep->dtypep(), ClassRefDType)->classp())/*class of the memberselected var*/ )  withinclass = true;
+        // if(membersel && (nodep->backp()->user2p()/* constraint sontaining class/module*/ ==
+        // VN_AS(nodep->dtypep(), ClassRefDType)->classp())/*class of the memberselected var*/ )
+        // withinclass = true;
 
         AstNodeModule* const classOrPackagep = nodep->classOrPackagep();
         const RandomizeMode randMode = {.asInt = varp->user1()};
@@ -658,8 +660,7 @@ class ConstraintExprVisitor final : public VNVisitor {
             }
             methodp->dtypeSetVoid();
             // AstClass* const classp = VN_AS(varp->user2p(), Class);
-            AstClass* const classp
-                = membersel ? withinclass : VN_AS(varp->user2p(), Class);
+            AstClass* const classp = membersel ? withinclass : VN_AS(varp->user2p(), Class);
             AstVarRef* const varRefp
                 = new AstVarRef{varp->fileline(), classp, varp, VAccess::WRITE};
             varRefp->classOrPackagep(classOrPackagep);
@@ -848,11 +849,14 @@ class ConstraintExprVisitor final : public VNVisitor {
         if (nodep->user1()) {
             nodep->v3warn(CONSTRAINTIGN, "Global constraints ignored (unsupported)");
         }
-        if(nodep->varp()->rand().isRandomizable()){
-            if(nodep->user2p()== VN_AS(VN_AS(nodep->fromp(), VarRef)->dtypep(), ClassRefDType)->classp()) // contraint is from inside the class or outside( with class var or outside var)
+        if (nodep->varp()->rand().isRandomizable()) {
+            if (nodep->user2p()
+                == VN_AS(VN_AS(nodep->fromp(), VarRef)->dtypep(), ClassRefDType)
+                       ->classp())  // contraint is from inside the class or outside( with class
+                                    // var or outside var)
             {
                 // fromp == constrained contained class
-                cout<<"GOTCHEEE22222"<<endl;
+                cout << "GOTCHEEE22222" << endl;
                 iterateChildren(nodep);
                 nodep->replaceWith(nodep->fromp()->unlinkFrBack());
                 VL_DO_DANGLING(nodep->deleteTree(), nodep);
