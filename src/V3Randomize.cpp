@@ -123,7 +123,6 @@ class RandomizeMarkVisitor final : public VNVisitor {
     //  AstVar::user1()         -> bool.  Set true to indicate needs rand_mode
     //  AstVar::user2p()        -> AstNodeModule*. Pointer to containing module
     //  AstNodeFTask::user2p()  -> AstNodeModule*. Pointer to containing module
-    //  AstMemberSel::user2p()  -> AstNodeModule*. Pointer to containing module
     const VNUser1InUse m_inuser1;
     const VNUser2InUse m_inuser2;
 
@@ -432,7 +431,6 @@ class RandomizeMarkVisitor final : public VNVisitor {
         // of type AstLambdaArgRef. They are randomized too.
         const bool randObject = nodep->fromp()->user1() || VN_IS(nodep->fromp(), LambdaArgRef);
         nodep->user1(randObject && nodep->varp()->rand().isRandomizable());
-        nodep->user2p(m_modp);
     }
     void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
@@ -475,7 +473,6 @@ class ConstraintExprVisitor final : public VNVisitor {
     // NODE STATE
     // AstVar::user3() -> bool. Handled in constraints
     //  AstNodeExpr::user1()    -> bool. Depending on a randomized variable
-    //  AstMemberSel::user2p()  -> AstNodeModule*. Pointer to containing module
     // VNuser3InUse m_inuser3; (Allocated for use in RandomizeVisitor)
 
     AstNodeFTask* const m_inlineInitTaskp;  // Method to add write_var calls to
@@ -595,29 +592,19 @@ class ConstraintExprVisitor final : public VNVisitor {
 
     // VISITORS
     void visit(AstNodeVarRef* nodep) override {
-        //AstVar* const varp = nodep->varp();
-        AstVar* varp = nodep->varp();
+        AstVar* const varp = nodep->varp();
         if (varp->user4p()) {
             varp->user4p()->v3warn(
                 CONSTRAINTIGN,
                 "Size constraint combined with element constraint may not work correctly");
         }
 
-        //bool memberSelflag = VN_IS(nodep->backp(), MemberSel);
-        AstMemberSel* membersel = VN_IS(nodep->backp(), MemberSel)
-                                      ? VN_AS(nodep->backp(), MemberSel)->cloneTree(false)
-                                      : nullptr;
-        if (membersel) varp = membersel->varp();
-
         AstNodeModule* const classOrPackagep = nodep->classOrPackagep();
         const RandomizeMode randMode = {.asInt = varp->user1()};
         if (!randMode.usesMode && editFormat(nodep)) return;
 
         // In SMT just variable name, but we also ensure write_var for the variable
-        //const std::string smtName = nodep->name();  // Can be anything unique
-        const std::string smtName
-            = membersel ? membersel->fromp()->name() + "." + membersel->name()
-                        : nodep->name();  // Can be anything unique
+        const std::string smtName = nodep->name();  // Can be anything unique
         VNRelinker relinker;
         nodep->unlinkFrBack(&relinker);
         AstNodeExpr* exprp = new AstSFormatF{nodep->fileline(), smtName, false, nullptr};
@@ -655,14 +642,11 @@ class ConstraintExprVisitor final : public VNVisitor {
                 dimension = 1;
             }
             methodp->dtypeSetVoid();
-            //AstClass* const classp = VN_AS(varp->user2p(), Class);
-            AstClass* const classp
-                = membersel ? VN_AS(membersel->user2p(), Class) : VN_AS(varp->user2p(), Class);
+            AstClass* const classp = VN_AS(varp->user2p(), Class);
             AstVarRef* const varRefp
                 = new AstVarRef{varp->fileline(), classp, varp, VAccess::WRITE};
             varRefp->classOrPackagep(classOrPackagep);
-            //methodp->addPinsp(varRefp);
-            membersel ? methodp->addPinsp(membersel) : methodp->addPinsp(varRefp);
+            methodp->addPinsp(varRefp);
             AstNodeDType* tmpDtypep = varp->dtypep();
             while (VN_IS(tmpDtypep, UnpackArrayDType) || VN_IS(tmpDtypep, DynArrayDType)
                    || VN_IS(tmpDtypep, QueueDType) || VN_IS(tmpDtypep, AssocArrayDType))
@@ -846,10 +830,7 @@ class ConstraintExprVisitor final : public VNVisitor {
         if (nodep->user1()) {
             nodep->v3warn(CONSTRAINTIGN, "Global constraints ignored (unsupported)");
         }
-        //editFormat(nodep);
-        iterateChildren(nodep);
-        nodep->replaceWith(nodep->fromp()->unlinkFrBack());
-        VL_DO_DANGLING(nodep->deleteTree(), nodep);
+        editFormat(nodep);
     }
     void visit(AstSFormatF* nodep) override {}
     void visit(AstStmtExpr* nodep) override {}
