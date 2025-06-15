@@ -616,9 +616,7 @@ class ConstraintExprVisitor final : public VNVisitor {
         // In SMT just variable name, but we also ensure write_var for the variable
         //const std::string smtName = nodep->name();  // Can be anything unique
         const std::string smtName
-            = membersel ? (membersel->fromp()->name() == "__Vthis")
-                              ? membersel->name()
-                              : membersel->fromp()->name() + "." + membersel->name()
+            = membersel ? membersel->fromp()->name() + "." + membersel->name()
                         : nodep->name();  // Can be anything unique
         VNRelinker relinker;
         nodep->unlinkFrBack(&relinker);
@@ -1137,6 +1135,8 @@ class CaptureVisitor final : public VNVisitor {
         m_ignore.emplace(thisRefp);
         AstMemberSel* const memberSelp
             = new AstMemberSel(nodep->fileline(), thisRefp, nodep->varp());
+        thisRefp->user1(true);
+        memberSelp->user2p(m_targetp);
         nodep->replaceWith(memberSelp);
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
         m_ignore.emplace(memberSelp);
