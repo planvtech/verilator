@@ -856,7 +856,6 @@ class ConstraintExprVisitor final : public VNVisitor {
                                     // var or outside var)
             {
                 // fromp == constrained contained class
-                cout << "GOTCHEEE22222" << endl;
                 iterateChildren(nodep);
                 nodep->replaceWith(nodep->fromp()->unlinkFrBack());
                 VL_DO_DANGLING(nodep->deleteTree(), nodep);
