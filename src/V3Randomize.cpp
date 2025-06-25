@@ -54,7 +54,9 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 enum ClassRandom : uint8_t {
     NONE,  // randomize() is not called
     IS_RANDOMIZED,  // randomize() is called
+    IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS, //randomize() is called with global constraints in it
     IS_RANDOMIZED_INLINE,  // randomize() with args is called
+    IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS, // randomize() with args is called and constaints global constraints
 };
 
 // ######################################################################
@@ -162,7 +164,7 @@ class RandomizeMarkVisitor final : public VNVisitor {
                         }
                     }
                     // If the class is randomized inline, all members use rand mode
-                    if (nodep->user1() == IS_RANDOMIZED_INLINE) {
+                    if ((nodep->user1() == IS_RANDOMIZED_INLINE) || (nodep->user1() == IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS) ) {
                         RandomizeMode randMode = {};
                         randMode.usesMode = true;
                         varp->user1(randMode.asInt);
@@ -433,6 +435,10 @@ class RandomizeMarkVisitor final : public VNVisitor {
         const bool randObject = nodep->fromp()->user1() || VN_IS(nodep->fromp(), LambdaArgRef);
         nodep->user1(randObject && nodep->varp()->rand().isRandomizable());
         nodep->user2p(m_modp);
+        if(m_constraintExprGenp){
+            if(m_classp->user1() == IS_RANDOMIZED) m_classp->user1(IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS);
+            if(m_classp->user1() == IS_RANDOMIZED_INLINE) m_classp->user1(IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS);
+        }
     }
     void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
