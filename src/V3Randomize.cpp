@@ -138,6 +138,8 @@ class RandomizeMarkVisitor final : public VNVisitor {
     AstNodeModule* m_modp;  // Current module
     AstNodeStmt* m_stmtp = nullptr;  // Current statement
     std::set<AstNodeVarRef*> m_staticRefs;  // References to static variables under `with` clauses
+    bool globalConsProcessed = false;
+    std::vector<AstConstraint*> cloneConstrained;
 
     // METHODS
     void markMembers(const AstClass* nodep) {
@@ -196,13 +198,31 @@ class RandomizeMarkVisitor final : public VNVisitor {
             staticRefp->classOrPackagep(VN_AS(staticRefp->varp()->user2p(), NodeModule));
         }
     }
-
+    void nameManipulation(AstVarRef* fromp, AstConstraint* cloneCons) {
+        // need to iterate over all the contents and check if there is varref and ned to replace it witht he member sel.
+        cloneCons->name(fromp->name()+"__DT__"+cloneCons->name());
+         cloneCons->foreach([&](AstVarRef* varRefp) {
+            AstMemberSel * varMemberp = new AstMemberSel{cloneCons->fileline(), fromp->cloneTree(false) , varRefp->varp()};
+            varMemberp->user2p(m_classp);
+            varRefp->replaceWith(varMemberp);
+            VL_DO_DANGLING(varRefp->deleteTree(), varRefp);
+            //VL_DO_DANGLING(pushDeletep(varRefp->unlinkFrBack()), varRefp);
+        });
+    }
     // VISITORS
     void visit(AstClass* nodep) override {
         VL_RESTORER(m_classp);
         VL_RESTORER(m_modp);
         m_modp = m_classp = nodep;
+        globalConsProcessed = false;
         iterateChildrenConst(nodep);
+        for(int i = 0; i<cloneConstrained.size();i++){ 
+                    // cloneConstrained[i]->dumpTreeJson(cout); 
+                    // cout<<endl; //BEEEEPPPPP Bump on the road, as constraint is already deleted for the processed class.
+                    //cloneConstrained[i]->itemsp()->dumpTreeJson(cout);
+                    m_classp->addStmtsp(cloneConstrained[i]);
+                }
+        cloneConstrained.clear();
         if (nodep->extendsp()) {
             // Save pointer to derived class
             const AstClass* const basep = nodep->extendsp()->classp();
@@ -435,10 +455,38 @@ class RandomizeMarkVisitor final : public VNVisitor {
         const bool randObject = nodep->fromp()->user1() || VN_IS(nodep->fromp(), LambdaArgRef);
         nodep->user1(randObject && nodep->varp()->rand().isRandomizable());
         nodep->user2p(m_modp);
-        if(m_constraintExprGenp){
+        if(randObject && nodep->varp()->rand().isRandomizable()){ // if global constraint is there
             if(m_classp->user1() == IS_RANDOMIZED) m_classp->user1(IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS);
-            if(m_classp->user1() == IS_RANDOMIZED_INLINE) m_classp->user1(IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS);
+                else if(m_classp->user1() == IS_RANDOMIZED_INLINE) m_classp->user1(IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS);
+                VN_AS(nodep->fromp(), VarRef)->varp()->isGlobalConstrained(true); // not needed
+
+            //1. detection of globally constrained obj variables and randomized obj.
+            //2. clone the trees for constrains of the class of the randomzied objects
+            //3. name manipulation :change the name to the objName.Varname.
+            //4. add the cloned tree to the current class and rest as same
+            //5. But what about the randomized non constrained variables of the class ? for that we only need to call the basic randomization, not the randomization function of the obj
+
+            if(!globalConsProcessed){      //works this time as only one object's var is in global cons but should be a vector here that checks if the class is processed 
+                if( nodep->user1() && VN_IS(nodep->fromp()->dtypep()->skipRefp(), ClassRefDType) &&  VN_AS(nodep->fromp(), VarRef)->varp()->isGlobalConstrained()){
+                    AstClass* gConsClass = VN_AS(nodep->fromp()->dtypep()->skipRefp(), ClassRefDType)->classp();
+                    cout<<gConsClass<<endl;
+
+                    gConsClass->foreachMember([&](AstClass* const classp, AstConstraint* const constrp) {
+                        AstConstraint* cloneConstrp = constrp->cloneTree(false);
+                        //Name manipulation 
+                        nameManipulation(VN_AS(nodep->fromp(), VarRef), cloneConstrp);
+                        cloneConstrained.push_back(cloneConstrp);
+                    });
+
+                }
+            }
+
+            // name manipulation :change the name to the objName.Varname.
+            // add the cloned tree to the current class and rest as same
+            // But what about the randomized non constrained variables of the class ? for that we only need to call the basic randomization, not the randomization function of the obj
+            globalConsProcessed = true;
         }
+        
     }
     void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
@@ -614,7 +662,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                                       ? VN_AS(nodep->backp(), MemberSel)->cloneTree(false)
                                       : nullptr;
         if (membersel) varp = membersel->varp();
-        withinclass = membersel ? VN_AS(nodep->dtypep(), ClassRefDType)->classp() : nullptr;
+        withinclass = membersel ? VN_CAST(membersel->user2p(),Class): nullptr;//membersel ? VN_AS(nodep->dtypep(), ClassRefDType)->classp() : nullptr;
         // if(membersel && (nodep->backp()->user2p()/* constraint sontaining class/module*/ ==
         // VN_AS(nodep->dtypep(), ClassRefDType)->classp())/*class of the memberselected var*/ )
         // withinclass = true;
@@ -644,13 +692,16 @@ class ConstraintExprVisitor final : public VNVisitor {
             VL_DO_DANGLING(pushDeletep(nodep), nodep);
         }
         relinker.relink(exprp);
-
-        if (!varp->user3()) {
+        if(membersel) cout<< membersel->fromp()->name() <<"   " <<varp->name() <<endl;
+        if(membersel && VN_AS(membersel->fromp(),VarRef)->varp()->isGlobalConstrained())cout<<"HIIIII I am here "<<endl;
+        cout<<"Wassss22"<<endl;
+        if (!varp->user3() || (membersel && VN_AS(membersel->fromp(),VarRef)->varp()->isGlobalConstrained())) {
             AstCMethodHard* const methodp = new AstCMethodHard{
                 varp->fileline(),
                 new AstVarRef{varp->fileline(), VN_AS(m_genp->user2p(), NodeModule), m_genp,
                               VAccess::READWRITE},
                 "write_var"};
+            if(membersel && VN_AS(membersel->fromp(),VarRef)->varp()->isGlobalConstrained())cout<<"HIIIII I am here 2222"<<endl;
             uint32_t dimension = 0;
             if (VN_IS(varp->dtypep(), UnpackArrayDType) || VN_IS(varp->dtypep(), DynArrayDType)
                 || VN_IS(varp->dtypep(), QueueDType) || VN_IS(varp->dtypep(), AssocArrayDType)) {
@@ -852,9 +903,9 @@ class ConstraintExprVisitor final : public VNVisitor {
         editSMT(nodep, nodep->fromp(), indexp);
     }
     void visit(AstMemberSel* nodep) override {
-        if (nodep->user1()) {
-            nodep->v3warn(CONSTRAINTIGN, "Global constraints ignored (unsupported)");
-        }
+        // if (nodep->user1()) {
+        //     nodep->v3warn(CONSTRAINTIGN, "Global constraints ignored (unsupported)");
+        // }
         if (nodep->varp()->rand().isRandomizable()) {
             if (nodep->user2p()
                 == VN_AS(VN_AS(nodep->fromp(), VarRef)->dtypep(), ClassRefDType)
@@ -862,6 +913,12 @@ class ConstraintExprVisitor final : public VNVisitor {
                                     // var or outside var)
             {
                 // fromp == constrained contained class
+                iterateChildren(nodep);
+                nodep->replaceWith(nodep->fromp()->unlinkFrBack());
+                VL_DO_DANGLING(nodep->deleteTree(), nodep);
+                return;
+            }
+            if(VN_AS(nodep->fromp(), VarRef)->varp()->isGlobalConstrained()){
                 iterateChildren(nodep);
                 nodep->replaceWith(nodep->fromp()->unlinkFrBack());
                 VL_DO_DANGLING(nodep->deleteTree(), nodep);
@@ -1300,6 +1357,8 @@ class RandomizeVisitor final : public VNVisitor {
     int m_randCaseNum = 0;  // Randcase number within a module for var naming
     std::map<std::string, AstCDType*> m_randcDtypes;  // RandC data type deduplication
     AstConstraint* m_constraintp = nullptr;  // Current constraint
+
+    std::map<AstClass*, AstStmtExpr*> m_clonedConstraints;  // Map of the class to the cloned constraint from the instantiated object
 
     // METHODS
     void createRandomGenerator(AstClass* const classp) {
@@ -1857,9 +1916,10 @@ class RandomizeVisitor final : public VNVisitor {
                     return;
                 }
                 AstFunc* const memberFuncp
-                    = V3Randomize::newRandomizeFunc(m_memberMap, classRefp->classp());
+                    = memberVarp->isGlobalConstrained()?V3Randomize::newRandomizeFunc(m_memberMap, classRefp->classp(), "__Vbasic_randomize") :V3Randomize::newRandomizeFunc(m_memberMap, classRefp->classp());
                 AstMethodCall* const callp
-                    = new AstMethodCall{fl, new AstVarRef{fl, classp, memberVarp, VAccess::WRITE},
+                    = memberVarp->isGlobalConstrained()? new AstMethodCall{fl, new AstVarRef{fl, classp, memberVarp, VAccess::WRITE},
+                                        "__Vbasic_randomize", nullptr} : new AstMethodCall{fl, new AstVarRef{fl, classp, memberVarp, VAccess::WRITE},
                                         "randomize", nullptr};
                 callp->taskp(memberFuncp);
                 callp->dtypeFrom(memberFuncp);
@@ -2036,6 +2096,42 @@ class RandomizeVisitor final : public VNVisitor {
         if (!nodep->user1()) return;  // Doesn't need randomize, or already processed
         UINFO(9, "Define randomize() for " << nodep << endl);
         nodep->baseMostClassp()->needRNG(true);
+
+        // //1. detection of globally constrained obj variables and randomized obj.
+        // //2. clone the trees for constrains of the class of the randomzied objects
+        // //3. name manipulation :change the name to the objName.Varname.
+        // //4. add the cloned tree to the current class and rest as same
+        // //5. But what about the randomized non constrained variables of the class ? for that we only need to call the basic randomization, not the randomization function of the obj
+
+        // //1. detection of globally constrained obj variables and randomized obj.
+        // if((nodep->user1() == IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS) ||(nodep->user1() == IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS)  ){
+
+        //     nodep->foreachMember([&](AstClass* const classp, AstVar* const randObj) {
+        //         if(randObj->isRand() && VN_IS(randObj->dtypep()->skipRefp(), ClassRefDType) && randObj->isGlobalConstrained()){
+        //             std::vector<AstConstraint*> cloneConstrained;
+        //             AstClass* gConsClass = VN_AS(randObj->dtypep()->skipRefp(), ClassRefDType)->classp();
+        //             cout<<gConsClass<<endl;
+
+        //             gConsClass->foreachMember([&](AstClass* const classp, AstConstraint* const constrp) {
+        //                 cloneConstrained.push_back(constrp->cloneTree(false));
+        //             });
+
+        //             for(int i = 0; i<cloneConstrained.size();i++){ 
+        //                 cloneConstrained[i]->dumpTreeJson(cout); 
+        //                 cout<<endl; //BEEEEPPPPP Bump on the road, as constraint is already deleted for the processed class.
+        //                 //cloneConstrained[i]->itemsp()->dumpTreeJson(cout);
+        //             }
+        //             cout<<randObj->name()<<endl;
+        //             cout<<randObj->dtypep()<<endl;
+        //         }
+        //     });
+        // }
+        
+
+        // // name manipulation :change the name to the objName.Varname.
+        // // add the cloned tree to the current class and rest as same
+        // // But what about the randomized non constrained variables of the class ? for that we only need to call the basic randomization, not the randomization function of the obj
+
         AstFunc* const randomizep = V3Randomize::newRandomizeFunc(m_memberMap, nodep);
         AstVar* const fvarp = VN_AS(randomizep->fvarp(), Var);
         addPrePostCall(nodep, randomizep, "pre_randomize");
