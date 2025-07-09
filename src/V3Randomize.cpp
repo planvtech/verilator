@@ -139,6 +139,7 @@ class RandomizeMarkVisitor final : public VNVisitor {
     AstNodeStmt* m_stmtp = nullptr;  // Current statement
     std::set<AstNodeVarRef*> m_staticRefs;  // References to static variables under `with` clauses
     bool globalConsProcessed = false;
+    AstWith* astWith = nullptr;
     std::vector<AstConstraint*> cloneConstrained;
 
     // METHODS
@@ -454,7 +455,17 @@ class RandomizeMarkVisitor final : public VNVisitor {
         // of type AstLambdaArgRef. They are randomized too.
         const bool randObject = nodep->fromp()->user1() || VN_IS(nodep->fromp(), LambdaArgRef);
         nodep->user1(randObject && nodep->varp()->rand().isRandomizable());
-        nodep->user2p(m_modp);
+        if(astWith){
+            AstNode* backp = astWith;
+            while (backp->backp()) {
+                if(VN_IS(backp, MethodCall)){
+                    AstClassRefDType* classdtype = VN_CAST(VN_AS(backp, MethodCall)->fromp()->dtypep()->skipRefp(), ClassRefDType);
+                    nodep->user2p(classdtype->classp());
+                    break;
+                }
+            backp = backp->backp();
+        }
+        }else nodep->user2p(m_modp);
         if(randObject && nodep->varp()->rand().isRandomizable()){ // if global constraint is there
             if(m_classp->user1() == IS_RANDOMIZED) m_classp->user1(IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS);
                 else if(m_classp->user1() == IS_RANDOMIZED_INLINE) m_classp->user1(IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS);
@@ -500,6 +511,11 @@ class RandomizeMarkVisitor final : public VNVisitor {
     void visit(AstVar* nodep) override {
         nodep->user2p(m_modp);
         iterateChildrenConst(nodep);
+    }
+    void visit(AstWith* nodep) override {
+        astWith = nodep;
+        iterateChildrenConst(nodep);
+        astWith = nullptr;
     }
 
     void visit(AstNodeExpr* nodep) override {
