@@ -608,7 +608,9 @@ class ConstraintExprVisitor final : public VNVisitor {
                                       ? VN_AS(nodep->backp(), MemberSel)->cloneTree(false)
                                       : nullptr;
         if (membersel) varp = membersel->varp();
-        containerClass = membersel ? VN_CAST(membersel->user2p(),Class): nullptr;//membersel ? VN_AS(nodep->dtypep(), ClassRefDType)->classp() : nullptr;
+        containerClass = membersel ? VN_CAST(membersel->user2p(), Class)
+                                   : nullptr;  //membersel ? VN_AS(nodep->dtypep(),
+                                               //ClassRefDType)->classp() : nullptr;
         // if(membersel && (nodep->backp()->user2p()/* constraint sontaining class/module*/ ==
         // VN_AS(nodep->dtypep(), ClassRefDType)->classp())/*class of the memberselected var*/ )
         // containerClass = true;
