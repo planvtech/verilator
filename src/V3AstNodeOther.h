@@ -1044,7 +1044,7 @@ public:
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     string name() const override VL_MT_STABLE { return m_name; }  // * = Scope name
-    void name ( string nama) VL_MT_STABLE {m_name =  nama; }  // * = Scope name
+    void name(string nama) VL_MT_STABLE { m_name = nama; }  // * = Scope name
     bool isGateOptimizable() const override { return false; }
     bool isPredictOptimizable() const override { return false; }
     bool maybePointedTo() const override VL_MT_SAFE { return true; }
@@ -1910,7 +1910,7 @@ class AstVar final : public AstNode {
     bool m_isWrittenBySuspendable : 1;  // This variable can be written by a suspendable process
     bool m_ignorePostWrite : 1;  // Ignore writes in 'Post' blocks during ordering
     bool m_ignoreSchedWrite : 1;  // Ignore writes in scheduling (for coverage increments)
-    bool m_globalCons :1 ;
+    bool m_globalCons : 1;
     void init() {
         m_ansi = false;
         m_declTyped = false;
@@ -2181,7 +2181,7 @@ public:
     bool isTrace() const { return m_trace; }
     bool isRand() const { return m_rand.isRand(); }
     bool isRandC() const { return m_rand.isRandC(); }
-    bool isGlobalConstrained() const { return m_globalCons;}
+    bool isGlobalConstrained() const { return m_globalCons; }
     bool isConst() const VL_MT_SAFE { return m_isConst; }
     bool isStatic() const VL_MT_SAFE { return m_isStatic; }
     bool isLatched() const { return m_isLatched; }
