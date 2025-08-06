@@ -2176,7 +2176,8 @@ class RandomizeVisitor final : public VNVisitor {
         // // add the cloned tree to the current class and rest as same
         // // But what about the randomized non constrained variables of the class ? for that we
         // only need to call the basic randomization, not the randomization function of the obj
-        bool globalcons = nodep->user1() == IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS || nodep->user1() == IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS;
+        bool globalcons = nodep->user1() == IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS
+                          || nodep->user1() == IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS;
         AstFunc* const randomizep = V3Randomize::newRandomizeFunc(m_memberMap, nodep);
         AstVar* const fvarp = VN_AS(randomizep->fvarp(), Var);
         addPrePostCall(nodep, randomizep, "pre_randomize");
@@ -2244,7 +2245,8 @@ class RandomizeVisitor final : public VNVisitor {
         }
 
         AstVarRef* const fvarRefp = new AstVarRef{fl, fvarp, VAccess::WRITE};
-        randomizep->addStmtsp(new AstAssign{fl, fvarRefp, globalcons ? basicRandomizeCallp : beginValp});
+        randomizep->addStmtsp(
+            new AstAssign{fl, fvarRefp, globalcons ? basicRandomizeCallp : beginValp});
 
         if (AstTask* const resizeAllTaskp
             = VN_AS(m_memberMap.findMember(nodep, "__Vresize_constrained_arrays"), Task)) {
@@ -2252,12 +2254,12 @@ class RandomizeVisitor final : public VNVisitor {
             randomizep->addStmtsp(resizeTaskRefp->makeStmt());
         }
 
-        
         AstVarRef* const fvarRefReadp = fvarRefp->cloneTree(false);
         fvarRefReadp->access(VAccess::READ);
 
-        randomizep->addStmtsp(new AstAssign{fl, fvarRefp->cloneTree(false),
-                                            new AstAnd{fl, fvarRefReadp, globalcons? beginValp: basicRandomizeCallp}});
+        randomizep->addStmtsp(new AstAssign{
+            fl, fvarRefp->cloneTree(false),
+            new AstAnd{fl, fvarRefReadp, globalcons ? beginValp : basicRandomizeCallp}});
         addPrePostCall(nodep, randomizep, "post_randomize");
         nodep->user1(false);
     }
