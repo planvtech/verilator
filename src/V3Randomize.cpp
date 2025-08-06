@@ -495,7 +495,6 @@ class RandomizeMarkVisitor final : public VNVisitor {
                     && VN_AS(nodep->fromp(), VarRef)->varp()->isGlobalConstrained()) {
                     AstClass* gConsClass
                         = VN_AS(nodep->fromp()->dtypep()->skipRefp(), ClassRefDType)->classp();
-                    cout << gConsClass << endl;
 
                     gConsClass->foreachMember(
                         [&](AstClass* const classp, AstConstraint* const constrp) {
@@ -725,10 +724,7 @@ class ConstraintExprVisitor final : public VNVisitor {
             VL_DO_DANGLING(pushDeletep(nodep), nodep);
         }
         relinker.relink(exprp);
-        if (membersel) cout << membersel->fromp()->name() << "   " << varp->name() << endl;
-        if (membersel && VN_AS(membersel->fromp(), VarRef)->varp()->isGlobalConstrained())
-            cout << "HIIIII I am here " << endl;
-        cout << "Wassss22" << endl;
+
         if (!varp->user3()
             || (membersel && VN_AS(membersel->fromp(), VarRef)->varp()->isGlobalConstrained())) {
             AstCMethodHard* const methodp = new AstCMethodHard{
@@ -736,8 +732,6 @@ class ConstraintExprVisitor final : public VNVisitor {
                 new AstVarRef{varp->fileline(), VN_AS(m_genp->user2p(), NodeModule), m_genp,
                               VAccess::READWRITE},
                 "write_var"};
-            if (membersel && VN_AS(membersel->fromp(), VarRef)->varp()->isGlobalConstrained())
-                cout << "HIIIII I am here 2222" << endl;
             uint32_t dimension = 0;
             if (VN_IS(varp->dtypep(), UnpackArrayDType) || VN_IS(varp->dtypep(), DynArrayDType)
                 || VN_IS(varp->dtypep(), QueueDType) || VN_IS(varp->dtypep(), AssocArrayDType)) {
@@ -2182,13 +2176,17 @@ class RandomizeVisitor final : public VNVisitor {
         // // add the cloned tree to the current class and rest as same
         // // But what about the randomized non constrained variables of the class ? for that we
         // only need to call the basic randomization, not the randomization function of the obj
-
+        bool globalcons = nodep->user1() == IS_RANDOMIZED_INLINE_WITH_GLOBAL_CONSTRAINTS || nodep->user1() == IS_RANDOMIZED_WITH_GLOBAL_CONSTRAINTS;
         AstFunc* const randomizep = V3Randomize::newRandomizeFunc(m_memberMap, nodep);
         AstVar* const fvarp = VN_AS(randomizep->fvarp(), Var);
         addPrePostCall(nodep, randomizep, "pre_randomize");
         FileLine* fl = nodep->fileline();
 
         AstVar* const randModeVarp = getRandModeVar(nodep);
+        AstFunc* const basicRandomizep
+            = V3Randomize::newRandomizeFunc(m_memberMap, nodep, "__Vbasic_randomize");
+        addBasicRandomizeBody(basicRandomizep, nodep, randModeVarp);
+        AstFuncRef* const basicRandomizeCallp = new AstFuncRef{fl, basicRandomizep, nullptr};
         AstNodeExpr* beginValp = nullptr;
         AstVar* genp = getRandomGenerator(nodep);
         if (genp) {
@@ -2246,7 +2244,7 @@ class RandomizeVisitor final : public VNVisitor {
         }
 
         AstVarRef* const fvarRefp = new AstVarRef{fl, fvarp, VAccess::WRITE};
-        randomizep->addStmtsp(new AstAssign{fl, fvarRefp, beginValp});
+        randomizep->addStmtsp(new AstAssign{fl, fvarRefp, globalcons ? basicRandomizeCallp : beginValp});
 
         if (AstTask* const resizeAllTaskp
             = VN_AS(m_memberMap.findMember(nodep, "__Vresize_constrained_arrays"), Task)) {
@@ -2254,15 +2252,12 @@ class RandomizeVisitor final : public VNVisitor {
             randomizep->addStmtsp(resizeTaskRefp->makeStmt());
         }
 
-        AstFunc* const basicRandomizep
-            = V3Randomize::newRandomizeFunc(m_memberMap, nodep, "__Vbasic_randomize");
-        addBasicRandomizeBody(basicRandomizep, nodep, randModeVarp);
-        AstFuncRef* const basicRandomizeCallp = new AstFuncRef{fl, basicRandomizep, nullptr};
+        
         AstVarRef* const fvarRefReadp = fvarRefp->cloneTree(false);
         fvarRefReadp->access(VAccess::READ);
 
         randomizep->addStmtsp(new AstAssign{fl, fvarRefp->cloneTree(false),
-                                            new AstAnd{fl, fvarRefReadp, basicRandomizeCallp}});
+                                            new AstAnd{fl, fvarRefReadp, globalcons? beginValp: basicRandomizeCallp}});
         addPrePostCall(nodep, randomizep, "post_randomize");
         nodep->user1(false);
     }
