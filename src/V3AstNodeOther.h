@@ -1044,7 +1044,7 @@ public:
     void dump(std::ostream& str) const override;
     void dumpJson(std::ostream& str) const override;
     string name() const override VL_MT_STABLE { return m_name; }  // * = Scope name
-    void name(const string& name) VL_MT_STABLE { m_name = name; }  // * = Scope name
+    void name(const string& name) override { m_name = name; }  // * = Scope name
     bool isGateOptimizable() const override { return false; }
     bool isPredictOptimizable() const override { return false; }
     bool maybePointedTo() const override VL_MT_SAFE { return true; }
