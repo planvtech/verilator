@@ -2291,8 +2291,7 @@ class RandomizeVisitor final : public VNVisitor {
                               new AstVarRef{nodep->fileline(), VN_AS(randomizeFuncp->fvarp(), Var),
                                             VAccess::WRITE},
                               new AstConst{nodep->fileline(), AstConst::WidthedValue{}, 32, 1}});
-            bool tempVar = false;
-            for (AstNode* pinp = nodep->pinsp()->unlinkFrBackWithNext(); pinp;
+            for (AstNode* pinp = nodep->pinsp() ? nodep->pinsp()->unlinkFrBackWithNext() : nullptr, *oldpinp = pinp; pinp;
                  pinp = pinp->nextp()) {
                 AstArg* const argp = VN_CAST(pinp, Arg);
                 if (!argp) continue;
@@ -2304,7 +2303,6 @@ class RandomizeVisitor final : public VNVisitor {
                 const size_t width = exprp->width();
                 AstVar* pinptemp = nullptr;
                 if (VN_IS(exprp, VarRef) && VN_AS(exprp, VarRef)->varp()->isFuncLocal()) {
-                    tempVar = true;
                     AstVar* expvarp = VN_AS(exprp, VarRef)->varp();
                     pinptemp = new AstVar{nodep->fileline(), expvarp->varType(),
                                           "__Vtemp__" + expvarp->name(), expvarp};
@@ -2330,13 +2328,13 @@ class RandomizeVisitor final : public VNVisitor {
                                new AstVarRef{nodep->fileline(),
                                              VN_AS(randomizeFuncp->fvarp(), Var), VAccess::READ},
                                basicMethodp}});
+                if(!pinp->nextp()) VL_DO_DANGLING(pushDeletep(oldpinp),oldpinp);
             }
             // Replace the node with a call to that function
             nodep->name(randomizeFuncp->name());
             nodep->taskp(randomizeFuncp);
             nodep->dtypeFrom(randomizeFuncp->dtypep());
             if (VN_IS(m_modp, Class)) nodep->classOrPackagep(m_modp);
-            if (!tempVar && nodep->pinsp()) pushDeletep(nodep->pinsp()->unlinkFrBackWithNext());
             return;
         }
         handleRandomizeArgs(nodep);
