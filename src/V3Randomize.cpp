@@ -2292,7 +2292,8 @@ class RandomizeVisitor final : public VNVisitor {
                                             VAccess::WRITE},
                               new AstConst{nodep->fileline(), AstConst::WidthedValue{}, 32, 1}});
             bool tempVar = false;
-            for (AstNode* pinp = nodep->pinsp()->unlinkFrBackWithNext(); pinp; pinp = pinp->nextp()) {
+            for (AstNode* pinp = nodep->pinsp()->unlinkFrBackWithNext(); pinp;
+                 pinp = pinp->nextp()) {
                 AstArg* const argp = VN_CAST(pinp, Arg);
                 if (!argp) continue;
                 AstNodeExpr* exprp = argp->exprp();
@@ -2302,18 +2303,22 @@ class RandomizeVisitor final : public VNVisitor {
                     "basicStdRandomization"};
                 const size_t width = exprp->width();
                 AstVar* pinptemp = nullptr;
-                if(VN_IS(exprp, VarRef) && VN_AS(exprp,VarRef)->varp()->isFuncLocal()) {
+                if (VN_IS(exprp, VarRef) && VN_AS(exprp, VarRef)->varp()->isFuncLocal()) {
                     tempVar = true;
-                    AstVar* expvarp = VN_AS(exprp,VarRef)->varp();
-                    pinptemp = new AstVar{nodep->fileline(),expvarp->varType(),"__Vtemp__"+expvarp->name(), expvarp};
+                    AstVar* expvarp = VN_AS(exprp, VarRef)->varp();
+                    pinptemp = new AstVar{nodep->fileline(), expvarp->varType(),
+                                          "__Vtemp__" + expvarp->name(), expvarp};
                     pinptemp->funcLocal(true);
                     pinptemp->lifetime(VLifetime::AUTOMATIC);
                     pinptemp->direction(VDirection::REF);
                     randomizeFuncp->addStmtsp(pinptemp);
-                    nodep->addPinsp(new AstArg{nodep->fileline(), "",  exprp->unlinkFrBack()});
+                    nodep->addPinsp(new AstArg{nodep->fileline(), "", exprp->unlinkFrBack()});
                 }
-                if(VN_IS(exprp, VarRef) && VN_AS(exprp,VarRef)->varp()->isFuncLocal()) basicMethodp->addPinsp(new AstVarRef{nodep->fileline(), pinptemp, VAccess::WRITE});
-                else basicMethodp->addPinsp(exprp->unlinkFrBack());
+                if (VN_IS(exprp, VarRef) && VN_AS(exprp, VarRef)->varp()->isFuncLocal())
+                    basicMethodp->addPinsp(
+                        new AstVarRef{nodep->fileline(), pinptemp, VAccess::WRITE});
+                else
+                    basicMethodp->addPinsp(exprp->unlinkFrBack());
                 basicMethodp->addPinsp(
                     new AstConst{nodep->fileline(), AstConst::Unsized64{}, width});
                 basicMethodp->dtypeSetBit();
