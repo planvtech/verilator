@@ -2291,8 +2291,9 @@ class RandomizeVisitor final : public VNVisitor {
                               new AstVarRef{nodep->fileline(), VN_AS(randomizeFuncp->fvarp(), Var),
                                             VAccess::WRITE},
                               new AstConst{nodep->fileline(), AstConst::WidthedValue{}, 32, 1}});
-            for (AstNode* pinp = nodep->pinsp() ? nodep->pinsp()->unlinkFrBackWithNext() : nullptr, *oldpinp = pinp; pinp;
-                 pinp = pinp->nextp()) {
+            for (AstNode *pinp = nodep->pinsp() ? nodep->pinsp()->unlinkFrBackWithNext() : nullptr,
+                         *oldpinp = pinp;
+                 pinp; pinp = pinp->nextp()) {
                 AstArg* const argp = VN_CAST(pinp, Arg);
                 if (!argp) continue;
                 AstNodeExpr* exprp = argp->exprp();
@@ -2328,7 +2329,7 @@ class RandomizeVisitor final : public VNVisitor {
                                new AstVarRef{nodep->fileline(),
                                              VN_AS(randomizeFuncp->fvarp(), Var), VAccess::READ},
                                basicMethodp}});
-                if(!pinp->nextp()) VL_DO_DANGLING(pushDeletep(oldpinp),oldpinp);
+                if (!pinp->nextp()) VL_DO_DANGLING(pushDeletep(oldpinp), oldpinp);
             }
             // Replace the node with a call to that function
             nodep->name(randomizeFuncp->name());
