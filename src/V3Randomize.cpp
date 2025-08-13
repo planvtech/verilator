@@ -2291,7 +2291,8 @@ class RandomizeVisitor final : public VNVisitor {
                               new AstVarRef{nodep->fileline(), VN_AS(randomizeFuncp->fvarp(), Var),
                                             VAccess::WRITE},
                               new AstConst{nodep->fileline(), AstConst::WidthedValue{}, 32, 1}});
-            for (AstNode* pinp = nodep->pinsp(); pinp; pinp = pinp->nextp()) {
+            bool tempVar = false;
+            for (AstNode* pinp = nodep->pinsp()->unlinkFrBackWithNext(); pinp; pinp = pinp->nextp()) {
                 AstArg* const argp = VN_CAST(pinp, Arg);
                 if (!argp) continue;
                 AstNodeExpr* exprp = argp->exprp();
@@ -2300,7 +2301,19 @@ class RandomizeVisitor final : public VNVisitor {
                     new AstVarRef{nodep->fileline(), stdrand, VAccess::READWRITE},
                     "basicStdRandomization"};
                 const size_t width = exprp->width();
-                basicMethodp->addPinsp(exprp->unlinkFrBack());
+                AstVar* pinptemp = nullptr;
+                if(VN_IS(exprp, VarRef) && VN_AS(exprp,VarRef)->varp()->isFuncLocal()) {
+                    tempVar = true;
+                    AstVar* expvarp = VN_AS(exprp,VarRef)->varp();
+                    pinptemp = new AstVar{nodep->fileline(),expvarp->varType(),"__Vtemp__"+expvarp->name(), expvarp};
+                    pinptemp->funcLocal(true);
+                    pinptemp->lifetime(VLifetime::AUTOMATIC);
+                    pinptemp->direction(VDirection::REF);
+                    randomizeFuncp->addStmtsp(pinptemp);
+                    nodep->addPinsp(new AstArg{nodep->fileline(), "",  exprp->unlinkFrBack()});
+                }
+                if(VN_IS(exprp, VarRef) && VN_AS(exprp,VarRef)->varp()->isFuncLocal()) basicMethodp->addPinsp(new AstVarRef{nodep->fileline(), pinptemp, VAccess::WRITE});
+                else basicMethodp->addPinsp(exprp->unlinkFrBack());
                 basicMethodp->addPinsp(
                     new AstConst{nodep->fileline(), AstConst::Unsized64{}, width});
                 basicMethodp->dtypeSetBit();
@@ -2318,7 +2331,7 @@ class RandomizeVisitor final : public VNVisitor {
             nodep->taskp(randomizeFuncp);
             nodep->dtypeFrom(randomizeFuncp->dtypep());
             if (VN_IS(m_modp, Class)) nodep->classOrPackagep(m_modp);
-            if (nodep->pinsp()) pushDeletep(nodep->pinsp()->unlinkFrBackWithNext());
+            if (!tempVar && nodep->pinsp()) pushDeletep(nodep->pinsp()->unlinkFrBackWithNext());
             return;
         }
         handleRandomizeArgs(nodep);
