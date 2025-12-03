@@ -2477,7 +2477,9 @@ class RandomizeVisitor final : public VNVisitor {
                     resizeAllTaskp->addStmtsp(resizeTaskRefp->makeStmt());
                 }
 
-                ConstraintExprVisitor{m_memberMap, constrp->itemsp(), nullptr,
+                // For global constraints, use randomizep as inline task so write_var
+                // is added to randomize() where we have instance context
+                ConstraintExprVisitor{m_memberMap, constrp->itemsp(), randomizep,
                                       genp,        randModeVarp,      m_writtenVars};
                 if (constrp->itemsp()) {
                     taskp->addStmtsp(wrapIfConstraintMode(
