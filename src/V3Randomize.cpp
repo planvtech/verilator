@@ -714,7 +714,6 @@ class ConstraintExprVisitor final : public VNVisitor {
     AstVar* const m_genp;  // VlRandomizer variable of the class
     AstVar* m_randModeVarp;  // Relevant randmode state variable
     bool m_wantSingle = false;  // Whether to merge constraint expressions with LOGAND
-    VMemberMap& m_memberMap;  // Member names cached for fast lookup
     bool m_structSel = false;  // Marks when inside structSel
                                // (used to format "%@.%@" for struct arrays)
     std::set<std::string>& m_writtenVars;  // Track which variable paths have write_var generated
@@ -1342,13 +1341,11 @@ class ConstraintExprVisitor final : public VNVisitor {
 
 public:
     // CONSTRUCTORS
-    explicit ConstraintExprVisitor(VMemberMap& memberMap, AstNode* nodep,
-                                   AstNodeFTask* inlineInitTaskp, AstVar* genp,
+    explicit ConstraintExprVisitor(AstNode* nodep, AstNodeFTask* inlineInitTaskp, AstVar* genp,
                                    AstVar* randModeVarp, std::set<std::string>& writtenVars)
         : m_inlineInitTaskp{inlineInitTaskp}
         , m_genp{genp}
         , m_randModeVarp{randModeVarp}
-        , m_memberMap{memberMap}
         , m_writtenVars{writtenVars} {
         iterateAndNextNull(nodep);
     }
@@ -2475,8 +2472,8 @@ class RandomizeVisitor final : public VNVisitor {
 
                 // For global constraints, use randomizep as inline task so write_var
                 // is added to randomize() where we have instance context
-                ConstraintExprVisitor{m_memberMap, constrp->itemsp(), randomizep,
-                                      genp,        randModeVarp,      m_writtenVars};
+                ConstraintExprVisitor{constrp->itemsp(), randomizep, genp, randModeVarp,
+                                      m_writtenVars};
                 if (constrp->itemsp()) {
                     taskp->addStmtsp(wrapIfConstraintMode(
                         nodep, constrp, constrp->itemsp()->unlinkFrBackWithNext()));
@@ -2703,8 +2700,8 @@ class RandomizeVisitor final : public VNVisitor {
                 randomizeFuncp->addStmtsp(capturedTreep);
                 {
                     m_writtenVars.clear();
-                    ConstraintExprVisitor{m_memberMap, capturedTreep, randomizeFuncp,
-                                          stdrand,     nullptr,       m_writtenVars};
+                    ConstraintExprVisitor{capturedTreep, randomizeFuncp, stdrand, nullptr,
+                                          m_writtenVars};
                 }
                 AstCExpr* const solverCallp = new AstCExpr{fl};
                 solverCallp->dtypeSetBit();
@@ -2816,8 +2813,8 @@ class RandomizeVisitor final : public VNVisitor {
         randomizeFuncp->addStmtsp(capturedTreep);
         {
             m_writtenVars.clear();
-            ConstraintExprVisitor{m_memberMap, capturedTreep, randomizeFuncp,
-                                  localGenp,   randModeVarp,  m_writtenVars};
+            ConstraintExprVisitor{capturedTreep, randomizeFuncp, localGenp, randModeVarp,
+                                  m_writtenVars};
         }
 
         // Call the solver and set return value
