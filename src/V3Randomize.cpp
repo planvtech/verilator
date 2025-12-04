@@ -900,14 +900,12 @@ class ConstraintExprVisitor final : public VNVisitor {
         // else: Global constraints keep nodep alive for write_var processing
         relinker.relink(exprp);
 
-        // For global constraints: check if this specific path has been written
-        // For normal constraints: only call write_var if varp->user3() is not set
-        const bool alreadyWritten
-            = isGlobalConstrained ? m_writtenVars.count(smtName) > 0 : varp->user3();
+        // Deduplication: use path-based m_writtenVars within each function scope
+        // Each randomize() has independent write_var calls
+        const bool alreadyWritten = m_writtenVars.count(smtName) > 0;
         const bool shouldWriteVar = !alreadyWritten;
         if (shouldWriteVar) {
-            // Track this variable path as written
-            if (isGlobalConstrained) m_writtenVars.insert(smtName);
+            m_writtenVars.insert(smtName);
             // For global constraints, delete nodep after processing
             if (isGlobalConstrained && !nodep->backp()) VL_DO_DANGLING(pushDeletep(nodep), nodep);
             AstCMethodHard* const methodp = new AstCMethodHard{
@@ -956,14 +954,11 @@ class ConstraintExprVisitor final : public VNVisitor {
                 methodp->addPinsp(
                     new AstConst{varp->fileline(), AstConst::Unsized64{}, randMode.index});
             }
-            AstNodeFTask* initTaskp = m_inlineInitTaskp;
-            if (!initTaskp) {
-                initTaskp = VN_AS(m_memberMap.findMember(classp, "new"), NodeFTask);
-                UASSERT_OBJ(initTaskp, classp, "No new() in class");
-            }
-            // Mark variable as set up
+            // Add write_var call to current randomize() function
+            UASSERT_OBJ(m_inlineInitTaskp, classp, "No randomize function context");
+            m_inlineInitTaskp->addStmtsp(methodp->makeStmt());
+            // Mark variable as handled in constraints
             varp->user3(true);
-            initTaskp->addStmtsp(methodp->makeStmt());
         } else {
             // Variable already written, clean up cloned membersel if any
             if (membersel) VL_DO_DANGLING(membersel->deleteTree(), membersel);
@@ -2707,6 +2702,7 @@ class RandomizeVisitor final : public VNVisitor {
                 AstNode* const capturedTreep = withp->exprp()->unlinkFrBackWithNext();
                 randomizeFuncp->addStmtsp(capturedTreep);
                 {
+                    m_writtenVars.clear();
                     ConstraintExprVisitor{m_memberMap, capturedTreep, randomizeFuncp,
                                           stdrand,     nullptr,       m_writtenVars};
                 }
@@ -2819,6 +2815,7 @@ class RandomizeVisitor final : public VNVisitor {
         AstNode* const capturedTreep = withp->exprp()->unlinkFrBackWithNext();
         randomizeFuncp->addStmtsp(capturedTreep);
         {
+            m_writtenVars.clear();
             ConstraintExprVisitor{m_memberMap, capturedTreep, randomizeFuncp,
                                   localGenp,   randModeVarp,  m_writtenVars};
         }
