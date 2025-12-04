@@ -898,7 +898,8 @@ class ConstraintExprVisitor final : public VNVisitor {
                 AstNodeExpr* parentAccess = membersel->fromp()->cloneTree(false);
                 AstNodeModule* const varClassp = VN_AS(varp->user2p(), NodeModule);
                 AstVar* const effectiveRandModeVarp = VN_AS(varClassp->user2p(), Var);
-                UASSERT_OBJ(effectiveRandModeVarp, nodep, "No effectiveRandModeVarp for membersel");
+                UASSERT_OBJ(effectiveRandModeVarp, nodep,
+                            "No effectiveRandModeVarp for membersel");
                 AstMemberSel* randModeSel
                     = new AstMemberSel{varp->fileline(), parentAccess, effectiveRandModeVarp};
                 randModeSel->dtypep(effectiveRandModeVarp->dtypep());
