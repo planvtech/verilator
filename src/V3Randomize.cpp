@@ -958,10 +958,11 @@ class ConstraintExprVisitor final : public VNVisitor {
             }
             AstNodeFTask* initTaskp = m_inlineInitTaskp;
             if (!initTaskp) {
-                varp->user3(true);  // Mark as set up in new()
                 initTaskp = VN_AS(m_memberMap.findMember(classp, "new"), NodeFTask);
                 UASSERT_OBJ(initTaskp, classp, "No new() in class");
             }
+            // Mark variable as set up
+            varp->user3(true);
             initTaskp->addStmtsp(methodp->makeStmt());
         } else {
             // Variable already written, clean up cloned membersel if any
