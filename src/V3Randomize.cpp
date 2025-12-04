@@ -2480,8 +2480,8 @@ class RandomizeVisitor final : public VNVisitor {
 
                 // For global constraints, use randomizep as inline task so write_var
                 // is added to randomize() where we have instance context
-                ConstraintExprVisitor{constrp->itemsp(), randomizep, genp, randModeVarp,
-                                      m_memberMap, m_writtenVars};
+                ConstraintExprVisitor{constrp->itemsp(), randomizep,  genp,
+                                      randModeVarp,      m_memberMap, m_writtenVars};
                 if (constrp->itemsp()) {
                     taskp->addStmtsp(wrapIfConstraintMode(
                         nodep, constrp, constrp->itemsp()->unlinkFrBackWithNext()));
@@ -2708,8 +2708,8 @@ class RandomizeVisitor final : public VNVisitor {
                 randomizeFuncp->addStmtsp(capturedTreep);
                 {
                     m_writtenVars.clear();
-                    ConstraintExprVisitor{capturedTreep, randomizeFuncp, stdrand, nullptr,
-                                          m_memberMap, m_writtenVars};
+                    ConstraintExprVisitor{capturedTreep, randomizeFuncp, stdrand,
+                                          nullptr,       m_memberMap,    m_writtenVars};
                 }
                 AstCExpr* const solverCallp = new AstCExpr{fl};
                 solverCallp->dtypeSetBit();
@@ -2821,8 +2821,8 @@ class RandomizeVisitor final : public VNVisitor {
         randomizeFuncp->addStmtsp(capturedTreep);
         {
             m_writtenVars.clear();
-            ConstraintExprVisitor{capturedTreep, randomizeFuncp, localGenp, randModeVarp,
-                                  m_memberMap, m_writtenVars};
+            ConstraintExprVisitor{capturedTreep, randomizeFuncp, localGenp,
+                                  randModeVarp,  m_memberMap,    m_writtenVars};
         }
 
         // Call the solver and set return value
