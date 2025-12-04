@@ -713,6 +713,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                                             // (may be null, then new() is used)
     AstVar* const m_genp;  // VlRandomizer variable of the class
     AstVar* m_randModeVarp;  // Relevant randmode state variable
+    VMemberMap& m_memberMap;  // Member names cached for fast lookup
     bool m_wantSingle = false;  // Whether to merge constraint expressions with LOGAND
     bool m_structSel = false;  // Marks when inside structSel
                                // (used to format "%@.%@" for struct arrays)
@@ -953,9 +954,14 @@ class ConstraintExprVisitor final : public VNVisitor {
                 methodp->addPinsp(
                     new AstConst{varp->fileline(), AstConst::Unsized64{}, randMode.index});
             }
-            // Add write_var call to current randomize() function
-            UASSERT_OBJ(m_inlineInitTaskp, classp, "No randomize function context");
-            m_inlineInitTaskp->addStmtsp(methodp->makeStmt());
+            // Add write_var call to appropriate function
+            AstNodeFTask* initTaskp = m_inlineInitTaskp;
+            if (!initTaskp) {
+                // No randomize context provided, add to new() instead
+                initTaskp = VN_AS(m_memberMap.findMember(classp, "new"), NodeFTask);
+                UASSERT_OBJ(initTaskp, classp, "No new() in class");
+            }
+            initTaskp->addStmtsp(methodp->makeStmt());
             // Mark variable as handled in constraints
             varp->user3(true);
         } else {
@@ -1342,10 +1348,12 @@ class ConstraintExprVisitor final : public VNVisitor {
 public:
     // CONSTRUCTORS
     explicit ConstraintExprVisitor(AstNode* nodep, AstNodeFTask* inlineInitTaskp, AstVar* genp,
-                                   AstVar* randModeVarp, std::set<std::string>& writtenVars)
+                                   AstVar* randModeVarp, VMemberMap& memberMap,
+                                   std::set<std::string>& writtenVars)
         : m_inlineInitTaskp{inlineInitTaskp}
         , m_genp{genp}
         , m_randModeVarp{randModeVarp}
+        , m_memberMap{memberMap}
         , m_writtenVars{writtenVars} {
         iterateAndNextNull(nodep);
     }
@@ -2473,7 +2481,7 @@ class RandomizeVisitor final : public VNVisitor {
                 // For global constraints, use randomizep as inline task so write_var
                 // is added to randomize() where we have instance context
                 ConstraintExprVisitor{constrp->itemsp(), randomizep, genp, randModeVarp,
-                                      m_writtenVars};
+                                      m_memberMap, m_writtenVars};
                 if (constrp->itemsp()) {
                     taskp->addStmtsp(wrapIfConstraintMode(
                         nodep, constrp, constrp->itemsp()->unlinkFrBackWithNext()));
@@ -2701,7 +2709,7 @@ class RandomizeVisitor final : public VNVisitor {
                 {
                     m_writtenVars.clear();
                     ConstraintExprVisitor{capturedTreep, randomizeFuncp, stdrand, nullptr,
-                                          m_writtenVars};
+                                          m_memberMap, m_writtenVars};
                 }
                 AstCExpr* const solverCallp = new AstCExpr{fl};
                 solverCallp->dtypeSetBit();
@@ -2814,7 +2822,7 @@ class RandomizeVisitor final : public VNVisitor {
         {
             m_writtenVars.clear();
             ConstraintExprVisitor{capturedTreep, randomizeFuncp, localGenp, randModeVarp,
-                                  m_writtenVars};
+                                  m_memberMap, m_writtenVars};
         }
 
         // Call the solver and set return value
