@@ -955,9 +955,16 @@ class ConstraintExprVisitor final : public VNVisitor {
                     new AstConst{varp->fileline(), AstConst::Unsized64{}, randMode.index});
             }
             // Add write_var call to appropriate function
-            AstNodeFTask* initTaskp = m_inlineInitTaskp;
-            if (!initTaskp) {
-                // No randomize context provided, add to new() instead
+            AstNodeFTask* initTaskp = nullptr;
+            const bool isLocalGen = m_genp->isFuncLocal();  // Check if it's a local randomizer
+            if (membersel && m_inlineInitTaskp && !isLocalGen) {
+                // Path-connected variable in global constraint: add to randomize()
+                initTaskp = m_inlineInitTaskp;
+            } else if (m_inlineInitTaskp && isLocalGen) {
+                // For randomize-with: always add to inline function
+                initTaskp = m_inlineInitTaskp;
+            } else {
+                // Direct member variable: add to new() for one-time registration
                 initTaskp = VN_AS(m_memberMap.findMember(classp, "new"), NodeFTask);
                 UASSERT_OBJ(initTaskp, classp, "No new() in class");
             }
