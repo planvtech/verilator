@@ -1375,6 +1375,9 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc,
     DECL_OPTION("-debug-abort", CbCall, []() {
         V3Error::vlAbort();  // LCOV_EXCL_LINE
     }).undocumented();  // See also --debug-sigseg
+#ifdef VL_ALLOC_RANDOM_CHECKS
+    DECL_OPTION("-debug-alloc-random", Set, &m_debugAllocRandom).undocumented();
+#endif
     DECL_OPTION("-debug-check", OnOff, &m_debugCheck);
     DECL_OPTION("-debug-collision", OnOff, &m_debugCollision).undocumented();
     DECL_OPTION("-debug-emitv", OnOff, &m_debugEmitV).undocumented();
