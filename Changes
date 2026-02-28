@@ -14,7 +14,16 @@ Verilator 5.047 devel
 **Other:**
 
 * Add VPI callback support to --main (#7145).
+* Add V3LiftExpr pass to lower impure expressions and calls (#7141). [Geza Lore, Testorrent USA, Inc.]
+* Improve assignment-compatibility type check (#2843) (#5666) (#7052). [Pawel Kojma, Antmicro Ltd.]
+* Optimize size of trace declaration object code (#7150). [Szymon Gizler, Antmicro Ltd.]
+* Optimize function call return value temporaries (#7152). [Geza Lore, Testorrent USA, Inc.]
+* Fix lambda coroutines (#6106) (#7135). [Nick Brereton]
+* Fix errant integer promotion (#7012). [Todd Strader]
+* Fix parameters inside std::randomize `with` clause  (#7140). [Kamil Danecki, Antmicro Ltd.]
+* Fix forcing unpacked variables (#7149). [Ryszard Rozak, Antmicro Ltd.]
 * Fix wide conditional short circuiting (#7155).
+* Fix eliminating assignments to DPI-read variables (#7158). [Geza Lore, Testorrent USA, Inc.]
 
 
 Verilator 5.046 2026-02-28
