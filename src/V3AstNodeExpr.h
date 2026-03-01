@@ -1244,7 +1244,7 @@ class AstDist final : public AstNodeExpr {
     // @astgen op2 := itemsp : List[AstDistItem]
 public:
     AstDist(FileLine* fl, AstNodeExpr* exprp, AstDistItem* itemsp)
-        : ASTGEN_SUPER_Inside(fl) {
+        : ASTGEN_SUPER_Dist(fl) {
         this->exprp(exprp);
         addItemsp(itemsp);
         dtypeSetBit();
