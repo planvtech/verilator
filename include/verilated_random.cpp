@@ -496,14 +496,9 @@ bool VlRandomizer::next(VlRNG& rngr) {
     std::iostream& os = getSolver();
     if (!os) return false;
 
-    // Set up a single incremental SMT session: declare variables and assert hard constraints
-    // once. Soft constraint relaxation phases use (push)/(pop) to avoid redundant re-setup.
-    //
-    // Multi-phase soft constraint solving (IEEE 1800-2017 18.5.13, last-wins priority):
-    //   Phase 0:   hard + soft[0..N-1]  (all soft)
-    //   Phase k:   hard + soft[k..N-1]  (drop k oldest, keep later-declared ones)
-    //   Phase N:   hard only            (all soft dropped)
-    // First SAT phase wins. If hard-only (phase N) is UNSAT, report UNSATCONSTR.
+    // Soft constraint relaxation (IEEE 1800-2017 18.5.13, last-wins priority):
+    // Try hard + soft[0..N-1], then hard + soft[1..N-1], ..., then hard only.
+    // First SAT phase wins. If hard-only is UNSAT, report via unsat-core.
     os << "(set-option :produce-models true)\n";
     os << "(set-logic QF_ABV)\n";
     os << "(define-fun __Vbv ((b Bool)) (_ BitVec 1) (ite b #b1 #b0))\n";
@@ -517,15 +512,17 @@ bool VlRandomizer::next(VlRNG& rngr) {
         var.second->emitType(os);
         os << ")\n";
     }
+
     for (const std::string& constraint : m_constraints) {
         os << "(assert (= #b1 " << constraint << "))\n";
     }
+
+    // Pin randc values from pre-enumerated queues
     for (const auto& pair : randcPinned) {
         const int w = m_vars.at(pair.first)->width();
         os << "(assert (= " << pair.first << " (_ bv" << pair.second << " " << w << ")))\n";
     }
 
-    // Incremental soft relaxation: push soft constraints, pop on failure
     const size_t nSoft = m_softConstraints.size();
     bool sat = false;
     for (size_t phase = 0; phase <= nSoft && !sat; ++phase) {
@@ -536,14 +533,12 @@ bool VlRandomizer::next(VlRNG& rngr) {
                 os << "(assert (= #b1 " << m_softConstraints[i] << "))\n";
         }
         os << "(check-sat)\n";
-        // log=true on last phase so parseSolution drains the (get-unsat-core) response
-        // before the fresh named-assertion session below
         sat = parseSolution(os, /*log=*/phase == nSoft);
         if (!sat && hasSoft) os << "(pop 1)\n";
     }
 
     if (!sat) {
-        // Hard constraints are UNSAT. Fresh session with named assertions to get unsat-core.
+        // If unsat, use named assertions to get unsat-core
         os << "(reset)\n";
         os << "(set-option :produce-unsat-cores true)\n";
         os << "(set-logic QF_ABV)\n";
@@ -573,14 +568,15 @@ bool VlRandomizer::next(VlRNG& rngr) {
         return false;
     }
 
-    // SAT: apply hash randomization to diversify solutions (incremental, within current scope)
     for (int i = 0; i < _VL_SOLVER_HASH_LEN_TOTAL && sat; ++i) {
         os << "(assert ";
         randomConstraint(os, rngr, _VL_SOLVER_HASH_LEN);
-        os << ")\n\n(check-sat)\n";
+        os << ")\n";
+        os << "\n(check-sat)\n";
         sat = parseSolution(os, false);
         (void)sat;
     }
+
     os << "(reset)\n";
     return true;
 }
@@ -747,8 +743,6 @@ void VlRandomizer::hard(std::string&& constraint, const char* filename, uint32_t
 
 void VlRandomizer::soft(std::string&& constraint, const char* /*filename*/, uint32_t /*linenum*/,
                         const char* /*source*/) {
-    // Soft constraints are relaxed silently when they conflict with hard constraints
-    // (IEEE 1800-2017 18.5.13); no source location tracking needed for warnings.
     m_softConstraints.emplace_back(std::move(constraint));
 }
 

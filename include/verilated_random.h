@@ -203,7 +203,7 @@ class VlRandomizer VL_NOT_FINAL {
     std::vector<std::string> m_constraints;  // Solver-dependent hard constraints
     std::vector<std::string>
         m_constraints_line;  // fileline content of the constraint for unsat constraints
-    std::vector<std::string> m_softConstraints;  // Soft constraints (relaxed on conflict)
+    std::vector<std::string> m_softConstraints;  // Soft constraints
     std::map<std::string, std::shared_ptr<const VlRandomVar>> m_vars;  // Solver-dependent
                                                                        // variables
     ArrayInfoMap m_arr_vars;  // Tracks each element in array structures for iteration
