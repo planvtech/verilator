@@ -745,8 +745,8 @@ void VlRandomizer::hard(std::string&& constraint, const char* filename, uint32_t
     }
 }
 
-void VlRandomizer::soft(std::string&& constraint, const char* /*filename*/,
-                        uint32_t /*linenum*/, const char* /*source*/) {
+void VlRandomizer::soft(std::string&& constraint, const char* /*filename*/, uint32_t /*linenum*/,
+                        const char* /*source*/) {
     // Soft constraints are relaxed silently when they conflict with hard constraints
     // (IEEE 1800-2017 18.5.13); no source location tracking needed for warnings.
     m_softConstraints.emplace_back(std::move(constraint));
