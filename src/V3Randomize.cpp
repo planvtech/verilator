@@ -3360,8 +3360,7 @@ class RandomizeVisitor final : public VNVisitor {
 
                 uint64_t effectiveW = w;
                 if (!ditemp->isWhole()) {  // := weight is per-value; multiply by range size
-                    if (const AstInsideRange* const irp
-                        = VN_CAST(ditemp->rangep(), InsideRange)) {
+                    if (const AstInsideRange* const irp = VN_CAST(ditemp->rangep(), InsideRange)) {
                         const AstConst* const lop = VN_CAST(irp->lhsp(), Const);
                         const AstConst* const hip = VN_CAST(irp->rhsp(), Const);
                         if (lop && hip && hip->toUQuad() >= lop->toUQuad())
@@ -3392,10 +3391,9 @@ class RandomizeVisitor final : public VNVisitor {
             randp->dtypeSetUInt64();
             taskp->addStmtsp(new AstAssign{
                 fl, new AstVarRef{fl, bucketVarp, VAccess::WRITE},
-                new AstAdd{
-                    fl, new AstConst{fl, AstConst::Unsized64{}, 1},
-                    new AstModDiv{fl, randp,
-                                  new AstConst{fl, AstConst::Unsized64{}, totalWeight}}}});
+                new AstAdd{fl, new AstConst{fl, AstConst::Unsized64{}, 1},
+                           new AstModDiv{fl, randp,
+                                         new AstConst{fl, AstConst::Unsized64{}, totalWeight}}}});
 
             // Build AstConstraintIf chain (last-to-first so nesting is natural):
             //   if (bucket <= w0) { exprp == range0 }
@@ -3428,8 +3426,8 @@ class RandomizeVisitor final : public VNVisitor {
                     // Scalar bucket: exprp == value
                     AstNodeExpr* const exprCopyp = distp->exprp()->cloneTreePure(false);
                     exprCopyp->user1(true);
-                    constraintExprp = new AstEq{fl, exprCopyp,
-                                                buckets[i].rangep->cloneTreePure(false)};
+                    constraintExprp
+                        = new AstEq{fl, exprCopyp, buckets[i].rangep->cloneTreePure(false)};
                     constraintExprp->user1(true);
                 }
 
@@ -3440,9 +3438,9 @@ class RandomizeVisitor final : public VNVisitor {
                     chainp = thenp;
                 } else {
                     // Bucket condition: bucketVar <= thisCumWeight (NOT rand-dependent)
-                    AstNodeExpr* const condp = new AstLte{
-                        fl, new AstVarRef{fl, bucketVarp, VAccess::READ},
-                        new AstConst{fl, AstConst::Unsized64{}, thisCumWeight}};
+                    AstNodeExpr* const condp
+                        = new AstLte{fl, new AstVarRef{fl, bucketVarp, VAccess::READ},
+                                     new AstConst{fl, AstConst::Unsized64{}, thisCumWeight}};
                     chainp = new AstConstraintIf{fl, condp, thenp, chainp};
                 }
             }
