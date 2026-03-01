@@ -499,7 +499,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
     // Set up a single incremental SMT session: declare variables and assert hard constraints
     // once. Soft constraint relaxation phases use (push)/(pop) to avoid redundant re-setup.
     //
-    // Multi-phase soft constraint solving (IEEE 1800-2017 §18.5.13, last-wins priority):
+    // Multi-phase soft constraint solving (IEEE 1800-2017 18.5.13, last-wins priority):
     //   Phase 0:   hard + soft[0..N-1]  (all soft)
     //   Phase k:   hard + soft[k..N-1]  (drop k oldest, keep later-declared ones)
     //   Phase N:   hard only            (all soft dropped)
@@ -748,7 +748,7 @@ void VlRandomizer::hard(std::string&& constraint, const char* filename, uint32_t
 void VlRandomizer::soft(std::string&& constraint, const char* /*filename*/,
                         uint32_t /*linenum*/, const char* /*source*/) {
     // Soft constraints are relaxed silently when they conflict with hard constraints
-    // (IEEE 1800-2017 §18.5.13); no source location tracking needed for warnings.
+    // (IEEE 1800-2017 18.5.13); no source location tracking needed for warnings.
     m_softConstraints.emplace_back(std::move(constraint));
 }
 

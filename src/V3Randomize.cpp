@@ -1906,7 +1906,7 @@ class ConstraintExprVisitor final : public VNVisitor {
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
         }
-        // Emit as soft or hard constraint per IEEE 1800-2017 §18.5.13
+        // Emit as soft or hard constraint per IEEE 1800-2017 18.5.13
         const VCMethod method
             = nodep->isSoft() ? VCMethod::RANDOMIZER_SOFT : VCMethod::RANDOMIZER_HARD;
         AstCMethodHard* const callp = new AstCMethodHard{
