@@ -699,6 +699,12 @@ class RandomizeMarkVisitor final : public VNVisitor {
                      || (nodep->op3p() && nodep->op3p()->user1())
                      || (nodep->op4p() && nodep->op4p()->user1()));
     }
+    void visit(AstArg* nodep) override {
+        iterateChildrenConst(nodep);
+        if (!m_constraintExprGenp && !m_inStdWith) return;
+        nodep->user1(nodep->exprp() && nodep->exprp()->user1());
+    }
+
     void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
 public:
@@ -744,6 +750,17 @@ class ConstraintExprVisitor final : public VNVisitor {
             return buildMemberPath(selp) + "." + memberSelp->name();
         }
         memberSelp->v3fatalSrc("Unexpected node type in MemberSel chain");
+        return "";
+    }
+
+    // Extract SMT variable name from a solve-before expression.
+    // Returns empty string if the expression is not a simple variable reference.
+    std::string extractSolveBeforeVarName(AstNodeExpr* exprp) {
+        if (const AstMemberSel* const memberSelp = VN_CAST(exprp, MemberSel)) {
+            return buildMemberPath(memberSelp);
+        } else if (const AstVarRef* const varrefp = VN_CAST(exprp, VarRef)) {
+            return varrefp->name();
+        }
         return "";
     }
 
@@ -1721,10 +1738,10 @@ class ConstraintExprVisitor final : public VNVisitor {
         // Convert to plain foreach
         FileLine* const fl = nodep->fileline();
 
-        if (!nodep->stmtsp()) {
+        if (!nodep->bodyp()) {
             nodep->unlinkFrBack();
         } else if (m_wantSingle) {
-            AstNodeExpr* const itemp = editSingle(fl, nodep->stmtsp());
+            AstNodeExpr* const itemp = editSingle(fl, nodep->bodyp());
             AstCStmt* const cstmtp = new AstCStmt{fl};
             cstmtp->add("ret += \" \";\n");
             cstmtp->add("ret += ");
@@ -1734,21 +1751,54 @@ class ConstraintExprVisitor final : public VNVisitor {
             cexprp->dtypeSetString();
             cexprp->add("([&]{\nstd::string ret;\n");
             cexprp->add(new AstBegin{
-                fl, "", new AstForeach{fl, nodep->arrayp()->unlinkFrBack(), cstmtp}, true});
+                fl, "", new AstForeach{fl, nodep->headerp()->unlinkFrBack(), cstmtp}, true});
             cexprp->add("return ret.empty() ? \"#b1\" : \"(bvand\" + ret + \")\";\n})()");
             nodep->replaceWith(new AstSFormatF{fl, "%@", false, cexprp});
         } else {
-            iterateAndNextNull(nodep->stmtsp());
-            nodep->replaceWith(
-                new AstBegin{fl, "",
-                             new AstForeach{fl, nodep->arrayp()->unlinkFrBack(),
-                                            nodep->stmtsp()->unlinkFrBackWithNext()},
-                             true});
+            iterateAndNextNull(nodep->bodyp());
+            nodep->replaceWith(new AstBegin{fl, "",
+                                            new AstForeach{fl, nodep->headerp()->unlinkFrBack(),
+                                                           nodep->bodyp()->unlinkFrBackWithNext()},
+                                            true});
         }
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
     void visit(AstConstraintBefore* nodep) override {
-        nodep->v3warn(CONSTRAINTIGN, "Constraint expression ignored (imperfect distribution)");
+        // Generate solveBefore() calls for each (lhs, rhs) variable pair.
+        // Do NOT iterate children -- these are variable references, not constraint expressions.
+        FileLine* const fl = nodep->fileline();
+        AstNodeModule* const genModp = VN_AS(m_genp->user2p(), NodeModule);
+
+        for (AstNodeExpr* lhsp = nodep->lhssp(); lhsp; lhsp = VN_CAST(lhsp->nextp(), NodeExpr)) {
+            const std::string lhsName = extractSolveBeforeVarName(lhsp);
+            if (lhsName.empty()) {
+                lhsp->v3warn(CONSTRAINTIGN,
+                             "Unsupported: non-variable expression in solve...before");
+                continue;
+            }
+            for (AstNodeExpr* rhsp = nodep->rhssp(); rhsp;
+                 rhsp = VN_CAST(rhsp->nextp(), NodeExpr)) {
+                const std::string rhsName = extractSolveBeforeVarName(rhsp);
+                if (rhsName.empty()) {
+                    rhsp->v3warn(CONSTRAINTIGN,
+                                 "Unsupported: non-variable expression in solve...before");
+                    continue;
+                }
+                AstCMethodHard* const callp = new AstCMethodHard{
+                    fl, new AstVarRef{fl, genModp, m_genp, VAccess::READWRITE},
+                    VCMethod::RANDOMIZER_SOLVE_BEFORE};
+                callp->dtypeSetVoid();
+                AstNodeExpr* const beforeNamep
+                    = new AstCExpr{fl, AstCExpr::Pure{}, "\"" + lhsName + "\""};
+                beforeNamep->dtypeSetUInt32();
+                AstNodeExpr* const afterNamep
+                    = new AstCExpr{fl, AstCExpr::Pure{}, "\"" + rhsName + "\""};
+                afterNamep->dtypeSetUInt32();
+                callp->addPinsp(beforeNamep);
+                callp->addPinsp(afterNamep);
+                nodep->addHereThisAsNext(callp->makeStmt());
+            }
+        }
         VL_DO_DANGLING(nodep->unlinkFrBack()->deleteTree(), nodep);
     }
     void visit(AstConstraintUnique* nodep) override {
@@ -1911,8 +1961,8 @@ class ConstraintExprVisitor final : public VNVisitor {
             AstVar* const newVarp
                 = new AstVar{fl, VVarType::BLOCKTEMP, "__Vinside", nodep->findSigned32DType()};
             AstNodeExpr* const idxRefp = new AstVarRef{nodep->fileline(), newVarp, VAccess::READ};
-            AstSelLoopVars* const arrayp
-                = new AstSelLoopVars{fl, nodep->fromp()->cloneTreePure(false), newVarp};
+            AstForeachHeader* const headerp
+                = new AstForeachHeader{fl, nodep->fromp()->cloneTreePure(false), newVarp};
             AstNodeExpr* const selp = newSel(nodep->fileline(), nodep->fromp(), idxRefp);
             selp->user1(randArr);
             AstNode* const itemp = new AstEq{fl, selp, nodep->pinsp()->unlinkFrBack()};
@@ -1926,8 +1976,101 @@ class ConstraintExprVisitor final : public VNVisitor {
             AstCExpr* const cexprp = new AstCExpr{fl};
             cexprp->dtypeSetString();
             cexprp->add("([&]{\nstd::string ret;\n");
-            cexprp->add(new AstBegin{fl, "", new AstForeach{fl, arrayp, cstmtp}, true});
+            cexprp->add(new AstBegin{fl, "", new AstForeach{fl, headerp, cstmtp}, true});
             cexprp->add("return ret.empty() ? \"#b0\" : \"(bvor\" + ret + \")\";\n})()");
+            nodep->replaceWith(new AstSFormatF{fl, "%@", false, cexprp});
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
+        }
+
+        // Array reduction without 'with' clause (sum, product, and, or, xor)
+        // For dynamic arrays, V3Width keeps these as AstCMethodHard.
+        // Register each element as individual scalar solver variable at constraint
+        // setup time, then build SMT reduction expression over those variables.
+        if (nodep->fromp()->user1()
+            && (nodep->method() == VCMethod::ARRAY_R_SUM
+                || nodep->method() == VCMethod::ARRAY_R_PRODUCT
+                || nodep->method() == VCMethod::ARRAY_R_AND
+                || nodep->method() == VCMethod::ARRAY_R_OR
+                || nodep->method() == VCMethod::ARRAY_R_XOR)) {
+
+            AstVarRef* const arrRefp = VN_CAST(nodep->fromp(), VarRef);
+            UASSERT_OBJ(arrRefp, nodep, "Array reduction in constraint has non-VarRef source");
+            AstVar* const arrVarp = arrRefp->varp();
+            const std::string smtArrayName = arrVarp->name();
+
+            // Get element width
+            AstNodeDType* elemDtp = arrVarp->dtypep()->skipRefp()->subDTypep();
+            const int elemWidth = elemDtp->width();
+
+            // Compute correctly-sized identity value for empty array case
+            const int hexDigits = (elemWidth + 3) / 4;
+            std::string zeroIdentity = "#x" + std::string(hexDigits, '0');
+            std::string oneIdentity = "#x" + std::string(hexDigits - 1, '0') + "1";
+            std::string allOnesIdentity = "#x" + std::string(hexDigits, 'f');
+
+            // Class module for generating VarRefs
+            AstNodeModule* const classModulep = m_classp ? static_cast<AstNodeModule*>(m_classp)
+                                                         : VN_AS(m_genp->user2p(), NodeModule);
+
+            // Mark array as handled so BasicRand skips it. Solver controls
+            // element values via per-element write_var calls in the foreach below.
+            // Don't generate constructor write_var with dimension>0: dynamic arrays
+            // are empty at construction, so record_arr_table finds no elements.
+            arrVarp->user3(true);
+
+            AstVar* const newVarp
+                = new AstVar{fl, VVarType::BLOCKTEMP, "__Vreduce", nodep->findSigned32DType()};
+            AstForeachHeader* const headerp
+                = new AstForeachHeader{fl, nodep->fromp()->cloneTreePure(false), newVarp};
+
+            // Foreach body: register element as scalar solver var + append name
+            AstCStmt* const cstmtp = new AstCStmt{fl};
+            // char __Vn[128]; VL_SNPRINTF(__Vn, ..., "arrayname_%x", idx);
+            cstmtp->add("{\nchar __Vn[128];\nVL_SNPRINTF(__Vn, sizeof(__Vn), \"" + smtArrayName
+                        + "_%x\", (unsigned)");
+            cstmtp->add(new AstVarRef{fl, newVarp, VAccess::READ});
+            cstmtp->add(");\n");
+            // constraint.write_var(array.atWrite(idx), width, __Vn, 0);
+            cstmtp->add(new AstVarRef{fl, classModulep, m_genp, VAccess::READWRITE});
+            cstmtp->add(".write_var(");
+            cstmtp->add(new AstVarRef{fl, classModulep, arrVarp, VAccess::READWRITE});
+            cstmtp->add(".atWrite(");
+            cstmtp->add(new AstVarRef{fl, newVarp, VAccess::READ});
+            cstmtp->add("), " + std::to_string(elemWidth) + "ULL, __Vn, 0ULL);\n");
+            // ret += " "; ret += __Vn;
+            cstmtp->add("ret += \" \";\nret += __Vn;\n}\n");
+
+            AstCExpr* const cexprp = new AstCExpr{fl};
+            cexprp->dtypeSetString();
+            cexprp->add("([&]{\nstd::string ret;\n");
+            cexprp->add(new AstBegin{fl, "", new AstForeach{fl, headerp, cstmtp}, true});
+
+            const char* smtOp = nullptr;
+            std::string identity;
+            if (nodep->method() == VCMethod::ARRAY_R_SUM) {
+                smtOp = "bvadd";
+                identity = zeroIdentity;
+            } else if (nodep->method() == VCMethod::ARRAY_R_PRODUCT) {
+                smtOp = "bvmul";
+                identity = oneIdentity;
+            } else if (nodep->method() == VCMethod::ARRAY_R_AND) {
+                smtOp = "bvand";
+                identity = allOnesIdentity;
+            } else if (nodep->method() == VCMethod::ARRAY_R_OR) {
+                smtOp = "bvor";
+                identity = zeroIdentity;
+            } else if (nodep->method() == VCMethod::ARRAY_R_XOR) {
+                smtOp = "bvxor";
+                identity = zeroIdentity;
+            } else {
+                nodep->v3fatalSrc("Unhandled reduction method");
+            }
+
+            cexprp->add(std::string("return ret.empty() ? \"") + identity + "\" : \"(" + smtOp
+                        + "\" + ret + \")\";\n})()");
+            // Unlink fromp before replacing (newSel already unlinked it in v1,
+            // but here we used cloneTreePure, so fromp is still linked)
             nodep->replaceWith(new AstSFormatF{fl, "%@", false, cexprp});
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
@@ -2045,7 +2188,7 @@ class CaptureVisitor final : public VNVisitor {
             newVarp->fileline(fileline);
             newVarp->varType(VVarType::BLOCKTEMP);
             newVarp->funcLocal(true);
-            newVarp->direction(m_targetp ? VDirection::INPUT : VDirection::REF);
+            newVarp->direction(VDirection::INPUT);
             newVarp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
             m_varCloneMap.emplace(varrefp->varp(), newVarp);
             varp = newVarp;
@@ -2099,7 +2242,7 @@ class CaptureVisitor final : public VNVisitor {
         const bool varIsFieldOfCaller = AstClass::isClassExtendedFrom(callerClassp, varClassp);
         const bool varIsParam = varRefp->varp()->isParam();
         const bool varIsConstraintIterator
-            = VN_IS(varRefp->varp()->firstAbovep(), SelLoopVars)
+            = VN_IS(varRefp->varp()->firstAbovep(), ForeachHeader)
               && VN_IS(varRefp->varp()->firstAbovep()->firstAbovep(), ConstraintForeach);
         if (refIsXref) return CaptureMode::CAP_VALUE | CaptureMode::CAP_F_XREF;
         if (varIsConstraintIterator) return CaptureMode::CAP_NO;
@@ -2316,6 +2459,13 @@ class RandomizeVisitor final : public VNVisitor {
         if (VN_IS(argExpr, ArraySel) && VN_IS(withExpr, ArraySel)) {
             const AstArraySel* const withASp = VN_AS(withExpr, ArraySel);
             const AstArraySel* const argASp = VN_AS(argExpr, ArraySel);
+            // Before checking Sel type index, check if both are Const
+            if (VN_IS(withASp->bitp(), Const) && VN_IS(argASp->bitp(), Const)) {
+                const AstConst* const withIdxp = VN_AS(withASp->bitp(), Const);
+                const AstConst* const argIdxp = VN_AS(argASp->bitp(), Const);
+                return isSimilarNode(withASp->fromp(), argASp->fromp())
+                       && withIdxp->num().isCaseEq(argIdxp->num());
+            }
             // Index must be Sel type, extract VarRef using fromp()
             if (!VN_IS(withASp->bitp(), Sel) || !VN_IS(argASp->bitp(), Sel)) return false;
             const AstNodeExpr* const withIdxp = VN_AS(withASp->bitp(), Sel)->fromp();
@@ -2796,12 +2946,12 @@ class RandomizeVisitor final : public VNVisitor {
             tempDTypep = tempDTypep->virtRefDTypep();
         }
 
-        AstSelLoopVars* const randLoopVarp
-            = new AstSelLoopVars{fl, exprp->cloneTree(false), randLoopIndxp};
+        AstForeachHeader* const headerp
+            = new AstForeachHeader{fl, exprp->cloneTree(false), randLoopIndxp};
         AstNodeStmt* const randStmtsp = newRandStmtsp(fl, tempElementp, nullptr, outputVarp);
         // TODO: we should just not clone in 'newRandStmtsp' if not necessary
         if (!tempElementp->backp()) VL_DO_DANGLING(pushDeletep(tempElementp), tempElementp);
-        return new AstForeach{fl, randLoopVarp, randStmtsp};
+        return new AstForeach{fl, headerp, randStmtsp};
     }
     AstNodeStmt* newRandStmtsp(FileLine* fl, AstNodeExpr* exprp, AstVar* randcVarp,
                                AstVar* const outputVarp, int offset = 0,
