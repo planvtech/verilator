@@ -3479,10 +3479,7 @@ class RandomizeVisitor final : public VNVisitor {
         }
     }
 
-    // Lower dist constraints into weighted bucket selection + AstConstraintIf chains.
-    // Called for each constraint before ConstraintExprVisitor.
-    // taskp:        constraint setup task (bucket var declarations + assignments go here)
-    // constrItemsp: first item in the constraint item list
+    // Replace AstDist with weighted bucket selection via AstConstraintIf chain
     void lowerDistConstraints(AstTask* taskp, AstNode* constrItemsp) {
         for (AstNode *nextip, *itemp = constrItemsp; itemp; itemp = nextip) {
             nextip = itemp->nextp();
@@ -3493,9 +3490,8 @@ class RandomizeVisitor final : public VNVisitor {
 
             FileLine* const fl = distp->fileline();
 
-            // Collect buckets and compute effective weights
             struct BucketInfo final {
-                AstNodeExpr* rangep;  // Points into distItem (will be cloned, not unlinked)
+                AstNodeExpr* rangep;
                 uint64_t effectiveWeight;
             };
             std::vector<BucketInfo> buckets;
@@ -3504,21 +3500,20 @@ class RandomizeVisitor final : public VNVisitor {
             for (AstDistItem* ditemp = distp->itemsp(); ditemp;
                  ditemp = VN_AS(ditemp->nextp(), DistItem)) {
                 const AstConst* const weightp = VN_CAST(ditemp->weightp(), Const);
-                if (!weightp) continue;  // Non-const weight: skip
+                if (!weightp) continue;
                 const uint64_t w = weightp->toUQuad();
-                if (w == 0) continue;  // weight=0 means never
+                if (w == 0) continue;
 
                 uint64_t effectiveW = w;
-                if (!ditemp->isWhole()) {  // := weight is per-value; multiply by range size
+                // := is per-value weight, so multiply by range size
+                if (!ditemp->isWhole()) {
                     if (const AstInsideRange* const irp = VN_CAST(ditemp->rangep(), InsideRange)) {
                         const AstConst* const lop = VN_CAST(irp->lhsp(), Const);
                         const AstConst* const hip = VN_CAST(irp->rhsp(), Const);
                         if (lop && hip && hip->toUQuad() >= lop->toUQuad())
                             effectiveW = w * (hip->toUQuad() - lop->toUQuad() + 1);
                     }
-                    // scalar: effectiveW stays w
                 }
-                // :/ weight: effectiveW stays w (weight for whole range, not per-value)
 
                 buckets.push_back({ditemp->rangep(), effectiveW});
                 totalWeight += effectiveW;
@@ -3526,7 +3521,6 @@ class RandomizeVisitor final : public VNVisitor {
 
             if (buckets.empty() || totalWeight == 0) continue;
 
-            // Create bucket selection variable: uint64_t __Vdist_bucketN
             const std::string bucketName = "__Vdist_bucket" + cvtToStr(m_distNum++);
             AstVar* const bucketVarp
                 = new AstVar{fl, VVarType::BLOCKTEMP, bucketName, taskp->findUInt64DType()};
@@ -3535,8 +3529,7 @@ class RandomizeVisitor final : public VNVisitor {
             bucketVarp->funcLocal(true);
             taskp->addStmtsp(bucketVarp);
 
-            // Assign: bucketVar = (rand64() % totalWeight) + 1
-            // +1 ensures that weight=0 items are never selected
+            // bucketVar = (rand64() % totalWeight) + 1
             AstNodeExpr* randp = new AstRand{fl, nullptr, false};
             randp->dtypeSetUInt64();
             taskp->addStmtsp(new AstAssign{
@@ -3545,10 +3538,7 @@ class RandomizeVisitor final : public VNVisitor {
                            new AstModDiv{fl, randp,
                                          new AstConst{fl, AstConst::Unsized64{}, totalWeight}}}});
 
-            // Build AstConstraintIf chain (last-to-first so nesting is natural):
-            //   if (bucket <= w0) { exprp == range0 }
-            //   else if (bucket <= w0+w1) { exprp in range1 }
-            //   ...
+            // Build if/else chain keyed on cumulative weights
             AstNode* chainp = nullptr;
             uint64_t cumWeight = totalWeight;
 
@@ -3556,10 +3546,8 @@ class RandomizeVisitor final : public VNVisitor {
                 cumWeight -= buckets[i].effectiveWeight;
                 const uint64_t thisCumWeight = cumWeight + buckets[i].effectiveWeight;
 
-                // Build range constraint expression (user1=true for rand-dependent nodes)
                 AstNodeExpr* constraintExprp;
                 if (const AstInsideRange* const irp = VN_CAST(buckets[i].rangep, InsideRange)) {
-                    // Range bucket: exprp >= lo && exprp <= hi
                     AstNodeExpr* const exprCopy1p = distp->exprp()->cloneTreePure(false);
                     exprCopy1p->user1(true);
                     AstNodeExpr* const exprCopy2p = distp->exprp()->cloneTreePure(false);
@@ -3573,7 +3561,6 @@ class RandomizeVisitor final : public VNVisitor {
                     constraintExprp = new AstLogAnd{fl, gtep, ltep};
                     constraintExprp->user1(true);
                 } else {
-                    // Scalar bucket: exprp == value
                     AstNodeExpr* const exprCopyp = distp->exprp()->cloneTreePure(false);
                     exprCopyp->user1(true);
                     constraintExprp
@@ -3584,10 +3571,8 @@ class RandomizeVisitor final : public VNVisitor {
                 AstConstraintExpr* const thenp = new AstConstraintExpr{fl, constraintExprp};
 
                 if (!chainp) {
-                    // Last bucket: no condition needed (always selected when reached)
                     chainp = thenp;
                 } else {
-                    // Bucket condition: bucketVar <= thisCumWeight (NOT rand-dependent)
                     AstNodeExpr* const condp
                         = new AstLte{fl, new AstVarRef{fl, bucketVarp, VAccess::READ},
                                      new AstConst{fl, AstConst::Unsized64{}, thisCumWeight}};
@@ -3596,7 +3581,6 @@ class RandomizeVisitor final : public VNVisitor {
             }
 
             if (chainp) {
-                // Replace AstConstraintExpr(AstDist) with the weighted-bucket chain
                 constrExprp->replaceWith(chainp);
                 VL_DO_DANGLING(constrExprp->deleteTree(), constrExprp);
             }
@@ -3669,7 +3653,6 @@ class RandomizeVisitor final : public VNVisitor {
                 }
 
                 if (constrp->itemsp()) expandUniqueElementList(constrp->itemsp());
-                // Lower dist constraints into weighted bucket selection before SMT encoding
                 if (constrp->itemsp()) lowerDistConstraints(taskp, constrp->itemsp());
                 ConstraintExprVisitor{classp, m_memberMap,  constrp->itemsp(), nullptr,
                                       genp,   randModeVarp, m_writtenVars};

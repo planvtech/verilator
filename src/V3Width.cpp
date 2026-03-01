@@ -3088,9 +3088,7 @@ class WidthVisitor final : public VNVisitor {
                 iterateCheck(nodep, "Dist Item", itemp, CONTEXT_DET, FINAL, subDTypep, EXTEND_EXP);
         }
 
-        // Inside a constraint: keep AstDist alive for V3Randomize to do weighted bucket
-        // selection, but only if all items have const weights and simple ranges (scalar or
-        // InsideRange).  Array/queue-based dist items are not supported by lowerDistConstraints.
+        // Keep AstDist for V3Randomize if all items have const weights and simple ranges
         if (m_constraintp) {
             bool canLower = true;
             for (const AstDistItem* itemp = nodep->itemsp(); itemp;
@@ -3104,7 +3102,7 @@ class WidthVisitor final : public VNVisitor {
             if (canLower) return;
         }
 
-        // Outside constraint: lower to inside expressions (ignores weights - imperfect)
+        // Outside constraint or complex items: lower to inside (ignores weights)
         nodep->v3warn(CONSTRAINTIGN, "Constraint expression ignored (imperfect distribution)");
         AstNodeExpr* newp = nullptr;
         for (AstDistItem* itemp = nodep->itemsp(); itemp;

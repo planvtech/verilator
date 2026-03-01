@@ -10,24 +10,18 @@
 `define check_range(gotv,minv,maxv) do if ((gotv) < (minv) || (gotv) > (maxv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d-%0d\n", `__FILE__,`__LINE__, (gotv), (minv), (maxv)); `stop; end while(0);
 // verilog_format: on
 
-// Test that dist constraint weights (:= and :/) produce correct distributions.
-// IEEE 1800-2017 18.5.4
-
 class DistScalar;
   rand bit [7:0] x;
-  // := weight is per-value: 0 has weight 1, 255 has weight 3 => ~75% should be 255
   constraint c { x dist { 8'd0 := 1, 8'd255 := 3 }; }
 endclass
 
 class DistRange;
   rand bit [7:0] x;
-  // :/ weight is per-range: [0:9] has total weight 1, [10:19] has total weight 3
   constraint c { x dist { [8'd0:8'd9] :/ 1, [8'd10:8'd19] :/ 3 }; }
 endclass
 
 class DistZeroWeight;
   rand bit [7:0] x;
-  // Weight 0 means never selected
   constraint c { x dist { 8'd0 := 0, 8'd1 := 1, 8'd2 := 1 }; }
 endclass
 
@@ -42,18 +36,17 @@ module t;
 
     total = 2000;
 
-    // Test 1: := scalar weights (expect ~75% for value 255)
+    // := scalar weights: expect ~75% for value 255
     sc = new;
     count_high = 0;
     repeat (total) begin
       `checkd(sc.randomize(), 1);
       if (sc.x == 8'd255) count_high++;
-      else `checkd(sc.x, 0);  // Only 0 or 255 should appear
+      else `checkd(sc.x, 0);
     end
-    // 75% of 2000 = 1500, allow wide range for statistical test
     `check_range(count_high, 1200, 1800);
 
-    // Test 2: :/ range weights (expect ~75% in [10:19])
+    // :/ range weights: expect ~75% in [10:19]
     rg = new;
     count_range_high = 0;
     repeat (total) begin
@@ -66,7 +59,7 @@ module t;
     end
     `check_range(count_range_high, 1200, 1800);
 
-    // Test 3: Zero weight exclusion (value 0 should never appear)
+    // Zero weight: value 0 must never appear
     zw = new;
     repeat (total) begin
       `checkd(zw.randomize(), 1);
