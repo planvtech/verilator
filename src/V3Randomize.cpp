@@ -1906,12 +1906,14 @@ class ConstraintExprVisitor final : public VNVisitor {
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
         }
-        // Only hard constraints are currently supported
+        // Emit as soft or hard constraint per IEEE 1800-2017 §18.5.13
+        const VCMethod method
+            = nodep->isSoft() ? VCMethod::RANDOMIZER_SOFT : VCMethod::RANDOMIZER_HARD;
         AstCMethodHard* const callp = new AstCMethodHard{
             nodep->fileline(),
             new AstVarRef{nodep->fileline(), VN_AS(m_genp->user2p(), NodeModule), m_genp,
                           VAccess::READWRITE},
-            VCMethod::RANDOMIZER_HARD, nodep->exprp()->unlinkFrBack()};
+            method, nodep->exprp()->unlinkFrBack()};
         callp->dtypeSetVoid();
         // Pass filename, lineno, and source as separate arguments
         // This allows EmitC to call protect() on filename, similar to VL_STOP
