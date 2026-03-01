@@ -3344,7 +3344,7 @@ class RandomizeVisitor final : public VNVisitor {
             FileLine* const fl = distp->fileline();
 
             // Collect buckets and compute effective weights
-            struct BucketInfo {
+            struct BucketInfo final {
                 AstNodeExpr* rangep;  // Points into distItem (will be cloned, not unlinked)
                 uint64_t effectiveWeight;
             };
