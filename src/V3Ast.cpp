@@ -997,13 +997,15 @@ void AstNode::operator delete(void* objp, size_t size) {
 #endif
 
 #ifdef VL_ALLOC_RANDOM_CHECKS
-void* AstNode::operator new(size_t size) {
+void* AstNode::operator new(size_t size) {  // VL_MT_SAFE
     // Make the following small to debug this routine, larger for performance and better random
     constexpr size_t POOL_SIZE = 65536;  // Ideally large enough to fit all nodes used in tests
     // Randomly select from a large pool (POOL_SIZE) of max-node sized (MAX_NODE_SIZE) pointers
     static uint64_t s_lfsr = 0;  // LFSR, 0 = didn't initialize yet
-    static std::array<void*, POOL_SIZE> s_nodePool;
     if (int seed = v3Global.opt.debugAllocRandom()) {
+        static V3Mutex s_mutex;
+        const V3LockGuard lock{s_mutex};
+        static std::array<void*, POOL_SIZE> s_nodePool VL_GUARDED_BY(s_mutex);
         constexpr uint64_t POLYNOMIAL = 0x80000000000019e2ULL;
         UASSERT_STATIC(size <= ASTGEN_MAX_NODE_SIZE, "fix ASTGEN_MAX_NODE_SIZE");
         if (!s_lfsr) {
