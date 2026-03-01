@@ -3088,8 +3088,20 @@ class WidthVisitor final : public VNVisitor {
                 iterateCheck(nodep, "Dist Item", itemp, CONTEXT_DET, FINAL, subDTypep, EXTEND_EXP);
         }
 
-        // Inside a constraint, V3Randomize handles dist lowering with proper weights
-        if (m_constraintp) return;
+        // Inside a constraint, V3Randomize handles dist lowering with proper weights,
+        // but only for simple scalar/range items. Container-type items (queues, arrays)
+        // must be lowered here via insideItem() which knows how to expand them.
+        if (m_constraintp) {
+            bool canLower = true;
+            for (AstDistItem* ditemp = nodep->itemsp(); ditemp;
+                 ditemp = VN_AS(ditemp->nextp(), DistItem)) {
+                if (!VN_IS(ditemp->rangep(), Const) && !VN_IS(ditemp->rangep(), InsideRange)) {
+                    canLower = false;
+                    break;
+                }
+            }
+            if (canLower) return;
+        }
 
         // Outside constraint: lower to inside (ignores weights)
         AstNodeExpr* newp = nullptr;
