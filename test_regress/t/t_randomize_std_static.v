@@ -44,19 +44,13 @@ module t;
 
   initial begin
     instr_name_t result;
-    int saw_add, saw_sub, saw_mul, saw_and;
 
     instr_base::init();
 
     repeat (20) begin
       result = instr_base::get_rand_instr();
-      // Verify result is in allowed set
       `checkd(result == INSTR_ADD || result == INSTR_SUB
               || result == INSTR_MUL || result == INSTR_AND, 1);
-      if (result == INSTR_ADD) saw_add = 1;
-      if (result == INSTR_SUB) saw_sub = 1;
-      if (result == INSTR_MUL) saw_mul = 1;
-      if (result == INSTR_AND) saw_and = 1;
     end
 
     $write("*-* All Finished *-*\n");
