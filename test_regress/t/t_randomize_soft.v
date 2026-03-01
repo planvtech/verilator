@@ -62,33 +62,35 @@ module t;
     c4 = new;
     c5 = new;
 
-    // Case 1: only soft, no hard -- soft satisfied
-    rand_ok = c1.randomize();
-    `checkd(rand_ok, 1)
-    `checkd(c1.x, 5)
+    repeat (20) begin
+      // Case 1: only soft, no hard -- soft satisfied
+      rand_ok = c1.randomize();
+      `checkd(rand_ok, 1)
+      `checkd(c1.x, 5)
 
-    // Case 2: two soft on same var -- last-wins
-    rand_ok = c2.randomize();
-    `checkd(rand_ok, 1)
-    `checkd(c2.x, 10)
+      // Case 2: two soft on same var -- last-wins
+      rand_ok = c2.randomize();
+      `checkd(rand_ok, 1)
+      `checkd(c2.x, 10)
 
-    // Case 3: soft on different vars -- both satisfied
-    rand_ok = c3.randomize();
-    `checkd(rand_ok, 1)
-    `checkd(c3.x, 7)
-    `checkd(c3.y, 3)
+      // Case 3: soft on different vars -- both satisfied
+      rand_ok = c3.randomize();
+      `checkd(rand_ok, 1)
+      `checkd(c3.x, 7)
+      `checkd(c3.y, 3)
 
-    // Case 4: soft range partially covered by hard -- intersection [5:10]
-    rand_ok = c4.randomize();
-    `checkd(rand_ok, 1)
-    `check_range(c4.x, 5, 10)
+      // Case 4: soft range partially covered by hard -- intersection [5:10]
+      rand_ok = c4.randomize();
+      `checkd(rand_ok, 1)
+      `check_range(c4.x, 5, 10)
 
-    // Case 5: soft completely overridden by hard -- hard wins
-    rand_ok = c5.randomize();
-    `checkd(rand_ok, 1)
-    if (c5.x <= 10) begin
-      $write("%%Error: %s:%0d: x=%0d should be > 10\n", `__FILE__, `__LINE__, c5.x);
-      `stop;
+      // Case 5: soft completely overridden by hard -- hard wins
+      rand_ok = c5.randomize();
+      `checkd(rand_ok, 1)
+      if (c5.x <= 10) begin
+        $write("%%Error: %s:%0d: x=%0d should be > 10\n", `__FILE__, `__LINE__, c5.x);
+        `stop;
+      end
     end
 
     $write("*-* All Finished *-*\n");
