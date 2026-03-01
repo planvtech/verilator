@@ -3631,6 +3631,14 @@ class RandomizeVisitor final : public VNVisitor {
                 constrExprp->replaceWith(chainp);
                 VL_DO_DANGLING(constrExprp->deleteTree(), constrExprp);
             }
+
+            // Clean up nodes used only as clone templates (never inserted into tree)
+            for (auto& bucket : buckets) {
+                VL_DO_DANGLING(bucket.weightExprp->deleteTree(), bucket.weightExprp);
+            }
+            VL_DO_DANGLING(runningSump->deleteTree(), runningSump);
+            // Last cumSum is unused (last bucket is unconditional default)
+            VL_DO_DANGLING(cumSums.back()->deleteTree(), cumSums.back());
         }
     }
 
