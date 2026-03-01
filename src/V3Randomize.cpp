@@ -2376,8 +2376,8 @@ class CaptureVisitor final : public VNVisitor {
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
-    explicit CaptureVisitor(AstNode* const nodep, AstNodeModule* callerp,
-                            AstClass* const targetp, bool staticContext = false)
+    explicit CaptureVisitor(AstNode* const nodep, AstNodeModule* callerp, AstClass* const targetp,
+                            bool staticContext = false)
         : m_argsp{nullptr}
         , m_callerp{callerp}
         , m_targetp{targetp}
@@ -3842,9 +3842,8 @@ class RandomizeVisitor final : public VNVisitor {
             }
             if (withp) {
                 FileLine* const fl = nodep->fileline();
-                withCapturep
-                    = std::make_unique<CaptureVisitor>(withp->exprp(), m_modp, nullptr,
-                                                       inStaticContext);
+                withCapturep = std::make_unique<CaptureVisitor>(withp->exprp(), m_modp, nullptr,
+                                                                inStaticContext);
                 withCapturep->addFunctionArguments(randomizeFuncp);
                 // Clear old constraints and variables for std::randomize with clause
                 if (stdrand) {
