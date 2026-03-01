@@ -3088,22 +3088,10 @@ class WidthVisitor final : public VNVisitor {
                 iterateCheck(nodep, "Dist Item", itemp, CONTEXT_DET, FINAL, subDTypep, EXTEND_EXP);
         }
 
-        // Keep AstDist for V3Randomize if all items have const weights and simple ranges
-        if (m_constraintp) {
-            bool canLower = true;
-            for (const AstDistItem* itemp = nodep->itemsp(); itemp;
-                 itemp = VN_AS(itemp->nextp(), DistItem)) {
-                if (!VN_IS(itemp->weightp(), Const)
-                    || (!VN_IS(itemp->rangep(), Const) && !VN_IS(itemp->rangep(), InsideRange))) {
-                    canLower = false;
-                    break;
-                }
-            }
-            if (canLower) return;
-        }
+        // Inside a constraint, V3Randomize handles dist lowering with proper weights
+        if (m_constraintp) return;
 
-        // Outside constraint or complex items: lower to inside (ignores weights)
-        nodep->v3warn(CONSTRAINTIGN, "Constraint expression ignored (imperfect distribution)");
+        // Outside constraint: lower to inside (ignores weights)
         AstNodeExpr* newp = nullptr;
         for (AstDistItem* itemp = nodep->itemsp(); itemp;
              itemp = VN_AS(itemp->nextp(), DistItem)) {

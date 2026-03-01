@@ -25,11 +25,25 @@ class DistZeroWeight;
   constraint c { x dist { 8'd0 := 0, 8'd1 := 1, 8'd2 := 1 }; }
 endclass
 
+class DistVarWeight;
+  rand bit [7:0] x;
+  int w1, w2;
+  constraint c { x dist { 8'd0 := w1, 8'd255 := w2 }; }
+endclass
+
+class DistVarWeightRange;
+  rand bit [7:0] x;
+  int w1, w2;
+  constraint c { x dist { [8'd0:8'd9] :/ w1, [8'd10:8'd19] :/ w2 }; }
+endclass
+
 module t;
   initial begin
     DistScalar sc;
     DistRange rg;
     DistZeroWeight zw;
+    DistVarWeight vw;
+    DistVarWeightRange vwr;
     int count_high;
     int count_range_high;
     int total;
@@ -69,6 +83,33 @@ module t;
       end
       `check_range(zw.x, 1, 2);
     end
+
+    // Variable := scalar weights: w1=1, w2=3 => expect ~75% for value 255
+    vw = new;
+    vw.w1 = 1;
+    vw.w2 = 3;
+    count_high = 0;
+    repeat (total) begin
+      `checkd(vw.randomize(), 1);
+      if (vw.x == 8'd255) count_high++;
+      else `checkd(vw.x, 0);
+    end
+    `check_range(count_high, 1200, 1800);
+
+    // Variable :/ range weights: w1=1, w2=3 => expect ~75% in [10:19]
+    vwr = new;
+    vwr.w1 = 1;
+    vwr.w2 = 3;
+    count_range_high = 0;
+    repeat (total) begin
+      `checkd(vwr.randomize(), 1);
+      if (vwr.x >= 8'd10 && vwr.x <= 8'd19) count_range_high++;
+      else if (vwr.x > 8'd9) begin
+        $write("%%Error: x=%0d outside valid range [0:19]\n", vwr.x);
+        `stop;
+      end
+    end
+    `check_range(count_range_high, 1200, 1800);
 
     $write("*-* All Finished *-*\n");
     $finish;
