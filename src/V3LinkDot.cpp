@@ -4943,6 +4943,16 @@ class LinkDotResolveVisitor final : public VNVisitor {
         }
         if (nodep->classOrPackagep() && nodep->taskp()) {
             // References into packages don't care about cell hierarchy.
+            if (nodep->name() == "randomize") {
+                fprintf(stderr,
+                        "[LINKDOT_DEBUG] randomize EARLY-SKIP: pass=%s "
+                        "classOrPkg=%s(%s) taskp=%s at %s\n",
+                        m_statep->forPrimary() ? "PRIMARY" : "PARAMED",
+                        nodep->classOrPackagep()->typeName(),
+                        nodep->classOrPackagep()->name().c_str(),
+                        nodep->taskp()->name().c_str(),
+                        nodep->fileline()->ascii().c_str());
+            }
         } else if (!m_modSymp) {
             // Module that is not in hierarchy.  We'll be dead code eliminating it later.
             UINFO(9, indent() << "Dead module for " << nodep);
@@ -4991,6 +5001,23 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     return;
                 }
             }
+            if (nodep->name() == "randomize") {
+                fprintf(stderr,
+                        "[LINKDOT_DEBUG] randomize found: pass=%s first=%d m_modp=%s(%s) "
+                        "nodep at %s dotted='%s' classOrPkg=%s(%s) taskp=%s\n",
+                        m_statep->forPrimary() ? "PRIMARY" : "PARAMED",
+                        first, m_modp ? m_modp->typeName() : "null",
+                        m_modp ? m_modp->name().c_str() : "null",
+                        nodep->fileline()->ascii().c_str(),
+                        nodep->dotted().c_str(),
+                        nodep->classOrPackagep()
+                            ? nodep->classOrPackagep()->typeName()
+                            : "null",
+                        nodep->classOrPackagep()
+                            ? nodep->classOrPackagep()->name().c_str()
+                            : "null",
+                        nodep->taskp() ? nodep->taskp()->name().c_str() : "(null)");
+            }
             if (first && nodep->name() == "randomize" && VN_IS(m_modp, Class)) {
                 // need special handling to avoid falling back to std::randomize
                 VMemberMap memberMap;
@@ -4999,6 +5026,9 @@ class LinkDotResolveVisitor final : public VNVisitor {
                 nodep->taskp(randFuncp);
                 nodep->classOrPackagep(VN_AS(m_modp, Class));
                 m_curSymp = m_statep->insertBlock(m_curSymp, nodep->name(), randFuncp, m_modp);
+                // Already linked to the class randomize function, skip findSymPrefixed
+                // which may find std::randomize and overwrite classOrPackagep (bug fix)
+                return;
             }
             if (m_insideClassExtParam) {
                 // The reference may point to a method declared in a super class, which is proved
@@ -5013,6 +5043,22 @@ class LinkDotResolveVisitor final : public VNVisitor {
                 = m_statep->findSymPrefixed(dotSymp, nodep->name(), baddot, first);
             AstNodeFTask* const taskp
                 = foundp ? VN_CAST(foundp->nodep(), NodeFTask) : nullptr;  // Maybe nullptr
+            if (nodep->name() == "randomize") {
+                fprintf(stderr,
+                        "[LINKDOT_DEBUG] findSymPrefixed: pass=%s found=%d taskp=%p "
+                        "foundCop=%s(%s) dotSymp=%p m_curSymp=%p "
+                        "nodep at %s first=%d\n",
+                        m_statep->forPrimary() ? "PRIMARY" : "PARAMED",
+                        foundp ? 1 : 0, (void*)taskp,
+                        (foundp && foundp->classOrPackagep())
+                            ? foundp->classOrPackagep()->typeName()
+                            : "null",
+                        (foundp && foundp->classOrPackagep())
+                            ? foundp->classOrPackagep()->name().c_str()
+                            : "null",
+                        (void*)dotSymp, (void*)m_curSymp,
+                        nodep->fileline()->ascii().c_str(), first);
+            }
             if (taskp) {
                 if (staticAccess && !taskp->isStatic()) {
                     // TODO bug4077
@@ -5066,6 +5112,13 @@ class LinkDotResolveVisitor final : public VNVisitor {
                         nodep->classOrPackagep(classp);
                     } else if (nodep->name() == "randomize") {
                         // A std::randomize resolved in V3Width
+                        fprintf(stderr,
+                                "[LINKDOT_DEBUG] randomize() fallback to std! "
+                                "m_modp=%s(%s) nodep at %s first=%d dotted='%s'\n",
+                                m_modp ? m_modp->typeName() : "null",
+                                m_modp ? m_modp->name().c_str() : "null",
+                                nodep->fileline()->ascii().c_str(),
+                                first, nodep->dotted().c_str());
                         nodep->classOrPackagep(v3Global.rootp()->stdPackagep());
                     } else {
                         nodep->v3error("Calling implicit class method "
