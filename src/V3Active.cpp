@@ -497,15 +497,7 @@ class ActiveVisitor final : public VNVisitor {
 
     void visit(AstInitialStatic* nodep) override { moveUnderSpecial<AstSenItem::Static>(nodep); }
     void visit(AstInitial* nodep) override {
-        // When timing is enabled and the initial block contains timing controls
-        // (e.g. inlined tasks with delays/event controls), NBAs must be preserved
-        // for V3Timing to handle rather than being converted to blocking assignments
-        const bool suspendable
-            = v3Global.opt.timing().isSetTrue()
-              && nodep->exists([](const AstNode* np) { return np->isTimingControl(); });
-        const ActiveDlyVisitor dlyvisitor{nodep, suspendable
-                                                     ? ActiveDlyVisitor::CT_SUSPENDABLE
-                                                     : ActiveDlyVisitor::CT_INITIAL};
+        const ActiveDlyVisitor dlyvisitor{nodep, ActiveDlyVisitor::CT_INITIAL};
         visitSenItems(nodep);
         moveUnderSpecial<AstSenItem::Initial>(nodep);
     }

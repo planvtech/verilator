@@ -152,7 +152,7 @@ private:
             std::string varType;
             const AstNodeDType* const varDtp = varp->dtypep()->skipRefp();
             if (varp->lifetime().isAutomatic() && !VN_IS(varDtp, IfaceRefDType)
-                && !varp->isFuncLocal())
+                && !(varp->isFuncLocal() && varp->isIO()))
                 varType = "Automatic lifetime";
             else if (varp->isClassMember() && !varp->lifetime().isStatic()
                      && !VN_IS(varDtp, IfaceRefDType))
