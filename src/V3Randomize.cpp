@@ -4092,7 +4092,32 @@ class RandomizeVisitor final : public VNVisitor {
             return;
         }
 
+        {
+            const char* copName = nodep->classOrPackagep()
+                                      ? nodep->classOrPackagep()->name().c_str()
+                                      : "(null)";
+            const char* copType = nodep->classOrPackagep()
+                                      ? nodep->classOrPackagep()->typeName()
+                                      : "(null)";
+            fprintf(stderr,
+                    "[V3RAND_DEBUG] randomize() call: classOrPackagep=%s(%s) "
+                    "m_modp=%s(%s) at %s isMethodCall=%d\n",
+                    copType, copName,
+                    m_modp ? m_modp->typeName() : "null",
+                    m_modp ? m_modp->name().c_str() : "null",
+                    nodep->fileline()->ascii().c_str(),
+                    VN_IS(nodep, MethodCall) ? 1 : 0);
+        }
+
         if (nodep->classOrPackagep() && nodep->classOrPackagep()->name() == "std") {
+            fprintf(stderr,
+                    "[V3RAND_DEBUG] ENTER std::randomize path! nodep at %s m_modp=%s(%s) "
+                    "isMethodCall=%d taskp=%s\n",
+                    nodep->fileline()->ascii().c_str(),
+                    m_modp ? m_modp->typeName() : "null",
+                    m_modp ? m_modp->name().c_str() : "null",
+                    VN_IS(nodep, MethodCall) ? 1 : 0,
+                    nodep->taskp() ? nodep->taskp()->name().c_str() : "(null)");
             // Handle std::randomize; create wrapper function that calls basicStdRandomization on
             // each varref argument, then transform nodep to call that wrapper
             const bool inStaticContext = m_ftaskp && m_ftaskp->isStatic();
@@ -4475,6 +4500,10 @@ AstFunc* V3Randomize::newRandomizeFunc(VMemberMap& memberMap, AstClass* nodep,
 
 AstFunc* V3Randomize::newRandomizeStdFunc(VMemberMap& memberMap, AstNodeModule* nodep,
                                           const std::string& name) {
+    fprintf(stderr,
+            "[V3RAND_DEBUG] newRandomizeStdFunc: name='%s' module=%s(%s) at %s\n",
+            name.c_str(), nodep->typeName(), nodep->name().c_str(),
+            nodep->fileline()->ascii().c_str());
     AstFunc* funcp = nullptr;
     v3Global.useRandomizeMethods(true);
     AstNodeDType* const dtypep = nodep->findBitDType(32, 32, VSigning::SIGNED);
