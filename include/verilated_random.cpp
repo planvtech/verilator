@@ -32,8 +32,6 @@
 #define _VL_SOLVER_HASH_LEN 1
 #define _VL_SOLVER_HASH_LEN_TOTAL 4
 
-
-
 // clang-format off
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
 # define _VL_SOLVER_PIPE  // Allow pipe SMT solving.  Needs fork()
@@ -530,8 +528,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
     if (nSoft > 0) {
         // Fast path: try all soft constraints at once
         os << "(push 1)\n";
-        for (const auto& s : m_softConstraints)
-            os << "(assert (= #b1 " << s << "))\n";
+        for (const auto& s : m_softConstraints) os << "(assert (= #b1 " << s << "))\n";
         os << "(check-sat)\n";
         sat = parseSolution(os, false);
         if (!sat) {

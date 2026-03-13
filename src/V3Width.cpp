@@ -7057,14 +7057,10 @@ class WidthVisitor final : public VNVisitor {
                 fprintf(stderr,
                         "[V3WIDTH_DEBUG] randomize FuncRef: classOrPackagep=%s(%s) "
                         "classp=%p taskp=%s at %s\n",
-                        nodep->classOrPackagep()
-                            ? nodep->classOrPackagep()->typeName()
-                            : "null",
-                        nodep->classOrPackagep()
-                            ? nodep->classOrPackagep()->name().c_str()
-                            : "null",
-                        (void*)classp,
-                        nodep->taskp() ? nodep->taskp()->name().c_str() : "(null)",
+                        nodep->classOrPackagep() ? nodep->classOrPackagep()->typeName() : "null",
+                        nodep->classOrPackagep() ? nodep->classOrPackagep()->name().c_str()
+                                                 : "null",
+                        (void*)classp, nodep->taskp() ? nodep->taskp()->name().c_str() : "(null)",
                         nodep->fileline()->ascii().c_str());
             }
             if (nodep->classOrPackagep() && nodep->classOrPackagep()->name() == "std") {

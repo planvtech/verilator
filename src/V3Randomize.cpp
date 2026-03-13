@@ -1309,8 +1309,7 @@ class ConstraintExprVisitor final : public VNVisitor {
                 if (!initTaskp) {
                     varp->user3(true);
                     if (membersel) {
-                        initTaskp = VN_AS(
-                            m_memberMap.findMember(classp, "randomize"), NodeFTask);
+                        initTaskp = VN_AS(m_memberMap.findMember(classp, "randomize"), NodeFTask);
                         // Inherited rand members may belong to a base class
                         // that has no randomize(); use the caller's function
                         if (!initTaskp) initTaskp = m_memberselInitTaskp;
@@ -2901,17 +2900,16 @@ class RandomizeVisitor final : public VNVisitor {
             // setup functions, the generated code references this->__Vrandmode.at(index).
             // We must ensure this class's __Vrandmode is initialized to cover those indices.
             {
-                std::function<void(AstClass*)> findSubObjRandModes
-                    = [&](AstClass* subClassp) {
-                          subClassp->foreachMember([&](AstClass*, AstNode* subMemberp) {
-                              if (AstVar* const subVarp = VN_CAST(subMemberp, Var)) {
-                                  const RandomizeMode rm = {.asInt = subVarp->user1()};
-                                  if (!rm.usesMode) return;
-                                  const uint32_t needed = rm.index + 1;
-                                  if (needed > randModeCount) randModeCount = needed;
-                              }
-                          });
-                      };
+                std::function<void(AstClass*)> findSubObjRandModes = [&](AstClass* subClassp) {
+                    subClassp->foreachMember([&](AstClass*, AstNode* subMemberp) {
+                        if (AstVar* const subVarp = VN_CAST(subMemberp, Var)) {
+                            const RandomizeMode rm = {.asInt = subVarp->user1()};
+                            if (!rm.usesMode) return;
+                            const uint32_t needed = rm.index + 1;
+                            if (needed > randModeCount) randModeCount = needed;
+                        }
+                    });
+                };
                 classp->foreachMember([&](AstClass*, AstVar* memberVarp) {
                     if (!memberVarp->globalConstrained()) return;
                     const AstNodeDType* const dtypep = memberVarp->dtypep()->skipRefp();
@@ -3941,8 +3939,7 @@ class RandomizeVisitor final : public VNVisitor {
                 if (constrp->itemsp()) expandUniqueElementList(constrp->itemsp());
                 if (constrp->itemsp()) lowerDistConstraints(taskp, constrp->itemsp());
                 ConstraintExprVisitor{classp, m_memberMap,  constrp->itemsp(), nullptr,
-                                      genp,   randModeVarp, m_writtenVars,
-                                      randomizep};
+                                      genp,   randModeVarp, m_writtenVars,     randomizep};
                 if (constrp->itemsp()) {
                     taskp->addStmtsp(wrapIfConstraintMode(
                         nodep, constrp, constrp->itemsp()->unlinkFrBackWithNext()));
