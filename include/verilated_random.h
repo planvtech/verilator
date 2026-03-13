@@ -221,6 +221,7 @@ class VlRandomizer VL_NOT_FINAL {
     // PRIVATE METHODS
     void randomConstraint(std::ostream& os, VlRNG& rngr, int bits);
     bool parseSolution(std::iostream& file, bool log = false);
+    bool checkSat(std::iostream& os);  // Check sat/unsat without reading values
     void enumerateRandcValues(const std::string& varName, VlRNG& rngr);
     size_t hashConstraints() const;
     bool nextPhased(VlRNG& rngr);  // Phased solving for solve...before

@@ -32,15 +32,7 @@
 #define _VL_SOLVER_HASH_LEN 1
 #define _VL_SOLVER_HASH_LEN_TOTAL 4
 
-// Debug helper: set VL_RAND_DEBUG=1 to trace SMT queries and solutions
-static bool vlRandDebug() {
-    static int s_debug = -1;
-    if (VL_UNLIKELY(s_debug < 0)) {
-        const char* env = std::getenv("VL_RAND_DEBUG");
-        s_debug = (env && env[0] == '1') ? 1 : 0;
-    }
-    return s_debug != 0;
-}
+
 
 // clang-format off
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
@@ -459,20 +451,7 @@ void VlRandomizer::enumerateRandcValues(const std::string& varName, VlRNG& rngr)
 }
 
 bool VlRandomizer::next(VlRNG& rngr) {
-    // Unconditional trace to stderr — always fires regardless of VL_RAND_DEBUG
-    fprintf(stderr, "[RAND_TRACE] next() called: vars=%zu constraints=%zu soft=%zu\n",
-            m_vars.size(), m_constraints.size(), m_softConstraints.size());
-    // VL_RAND_DEBUG: dump state at entry (before any early returns)
-    if (VL_UNLIKELY(vlRandDebug())) {
-        VL_PRINTF("[VL_RAND_DEBUG] === next() ENTRY === vars=%zu constraints=%zu soft=%zu\n",
-                  m_vars.size(), m_constraints.size(), m_softConstraints.size());
-    }
-    if (m_vars.empty() && m_unique_arrays.empty()) {
-        if (VL_UNLIKELY(vlRandDebug())) {
-            VL_PRINTF("[VL_RAND_DEBUG] EARLY RETURN: m_vars empty, returning true (no-op)\n");
-        }
-        return true;
-    }
+    if (m_vars.empty() && m_unique_arrays.empty()) return true;
     for (const std::string& baseName : m_unique_arrays) {
         const auto it = m_vars.find(baseName);
         const uint32_t size = m_unique_array_sizes.at(baseName);
@@ -519,34 +498,6 @@ bool VlRandomizer::next(VlRNG& rngr) {
     std::iostream& os = getSolver();
     if (!os) return false;
 
-    // VL_RAND_DEBUG: dump registered variables and constraints
-    if (VL_UNLIKELY(vlRandDebug())) {
-        VL_PRINTF("[VL_RAND_DEBUG] === next() called ===\n");
-        VL_PRINTF("[VL_RAND_DEBUG] Registered variables (%zu):\n", m_vars.size());
-        for (const auto& var : m_vars) {
-            VL_PRINTF("[VL_RAND_DEBUG]   var: %s  width=%d  dim=%d  datap=%p  randModeIdx=%u\n",
-                      var.first.c_str(), var.second->width(), var.second->dimension(),
-                      var.second->datap(0), var.second->randModeIdx());
-        }
-        if (m_randmodep) {
-            VL_PRINTF("[VL_RAND_DEBUG] rand_mode array (%d entries):\n", m_randmodep->size());
-            for (int i = 0; i < m_randmodep->size(); ++i) {
-                VL_PRINTF("[VL_RAND_DEBUG]   rand_mode[%d] = %d\n", i,
-                          (int)m_randmodep->at(i));
-            }
-        }
-        VL_PRINTF("[VL_RAND_DEBUG] Hard constraints (%zu):\n", m_constraints.size());
-        for (size_t i = 0; i < m_constraints.size(); ++i) {
-            VL_PRINTF("[VL_RAND_DEBUG]   [%zu] %s\n", i, m_constraints[i].c_str());
-            if (i < m_constraints_line.size())
-                VL_PRINTF("[VL_RAND_DEBUG]        @ %s\n", m_constraints_line[i].c_str());
-        }
-        VL_PRINTF("[VL_RAND_DEBUG] Soft constraints (%zu):\n", m_softConstraints.size());
-        for (size_t i = 0; i < m_softConstraints.size(); ++i) {
-            VL_PRINTF("[VL_RAND_DEBUG]   [%zu] %s\n", i, m_softConstraints[i].c_str());
-        }
-    }
-
     // Soft constraint relaxation (IEEE 1800-2017 18.5.13, last-wins priority):
     // Try hard + soft[0..N-1], then hard + soft[1..N-1], ..., then hard only.
     // First SAT phase wins. If hard-only is UNSAT, report via unsat-core.
@@ -576,16 +527,39 @@ bool VlRandomizer::next(VlRNG& rngr) {
 
     const size_t nSoft = m_softConstraints.size();
     bool sat = false;
-    for (size_t phase = 0; phase <= nSoft && !sat; ++phase) {
-        const bool hasSoft = (phase < nSoft);
-        if (hasSoft) {
-            os << "(push 1)\n";
-            for (size_t i = phase; i < nSoft; ++i)
-                os << "(assert (= #b1 " << m_softConstraints[i] << "))\n";
-        }
+    if (nSoft > 0) {
+        // Fast path: try all soft constraints at once
+        os << "(push 1)\n";
+        for (const auto& s : m_softConstraints)
+            os << "(assert (= #b1 " << s << "))\n";
         os << "(check-sat)\n";
-        sat = parseSolution(os, /*log=*/phase == nSoft);
-        if (!sat && hasSoft) os << "(pop 1)\n";
+        sat = parseSolution(os, false);
+        if (!sat) {
+            // Some soft constraints conflict with hard constraints.
+            // Incrementally add soft constraints from back (highest priority first),
+            // keeping only those compatible with hard + already-kept soft.
+            // This preserves the maximum set of compatible soft constraints
+            // rather than dropping all lower-priority ones when a conflict exists.
+            os << "(pop 1)\n";
+            for (int i = static_cast<int>(nSoft) - 1; i >= 0; --i) {
+                os << "(push 1)\n";
+                os << "(assert (= #b1 " << m_softConstraints[i] << "))\n";
+                os << "(check-sat)\n";
+                if (checkSat(os)) {
+                    // Compatible — keep this push level
+                } else {
+                    // Incompatible — remove this soft constraint
+                    os << "(pop 1)\n";
+                }
+            }
+            // Read solution with remaining compatible soft constraints
+            os << "(check-sat)\n";
+            sat = parseSolution(os, false);
+        }
+    } else {
+        // No soft constraints — hard-only
+        os << "(check-sat)\n";
+        sat = parseSolution(os, false);
     }
 
     if (!sat) {
@@ -632,13 +606,15 @@ bool VlRandomizer::next(VlRNG& rngr) {
     return true;
 }
 
+bool VlRandomizer::checkSat(std::iostream& os) {
+    std::string result;
+    do { std::getline(os, result); } while (result.empty());
+    return result == "sat";
+}
+
 bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
     std::string sat;
     do { std::getline(os, sat); } while (sat == "");
-    if (VL_UNLIKELY(vlRandDebug())) {
-        VL_PRINTF("[VL_RAND_DEBUG] parseSolution: solver response = '%s' (log=%d)\n",
-                  sat.c_str(), (int)log);
-    }
     if (sat == "unsat") {
         if (!log) return false;
         os << "(get-unsat-core) \n";
@@ -733,21 +709,10 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
         }
         std::getline(os, value, ')');
         const auto it = m_vars.find(name);
-        if (it == m_vars.end()) {
-            if (VL_UNLIKELY(vlRandDebug())) {
-                VL_PRINTF("[VL_RAND_DEBUG]   SKIP var '%s': not found in m_vars\n", name.c_str());
-            }
-            continue;
-        }
+        if (it == m_vars.end()) continue;
         const VlRandomVar& varr = *it->second;
         if (m_randmodep && !varr.randModeIdxNone()) {
-            if (!m_randmodep->at(varr.randModeIdx())) {
-                if (VL_UNLIKELY(vlRandDebug())) {
-                    VL_PRINTF("[VL_RAND_DEBUG]   SKIP var '%s': rand_mode[%u]=0\n",
-                              name.c_str(), varr.randModeIdx());
-                }
-                continue;
-            }
+            if (!m_randmodep->at(varr.randModeIdx())) continue;
         }
         if (!indices.empty()) {
             std::ostringstream oss;
@@ -786,14 +751,8 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
                             "indexed_name not found in m_arr_vars");
             }
         }
-        if (VL_UNLIKELY(vlRandDebug())) {
-            VL_PRINTF("[VL_RAND_DEBUG]   set var '%s' idx='%s' value='%s' datap=%p width=%d\n",
-                      name.c_str(), idx.c_str(), value.c_str(), varr.datap(0), varr.width());
-        }
         const bool setOk = varr.set(idx, value);
-        if (VL_UNLIKELY(vlRandDebug())) {
-            VL_PRINTF("[VL_RAND_DEBUG]   set result: %s\n", setOk ? "OK" : "FAILED");
-        }
+        (void)setOk;
     }
     return true;
 }
