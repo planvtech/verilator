@@ -425,15 +425,11 @@ private:
             if (m_inSynchDrive) {
                 // ##0 has no effect in synchronous drives (IEEE 1800-2023 14.11)
                 VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
-            VL_DO_DANGLING(valuep->deleteTree(), valuep);
-            if (m_inSynchDrive) {
-                // ##0 has no effect in synchronous drives (IEEE 1800-2023 14.11)
-                VL_DO_DANGLING(nodep->unlinkFrBack()->deleteTree(), nodep);
                 return;
             }
             if (m_inPExpr) {
                 // ##0 in sequence context = zero delay = same clock tick
-                VL_DO_DANGLING(nodep->unlinkFrBack()->deleteTree(), nodep);
+                VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
                 return;
             }
             // Procedural ##0: synchronize with default clocking event (IEEE 1800-2023 14.11)
@@ -442,7 +438,7 @@ private:
             if (!m_defaultClockingp) {
                 nodep->v3error("Usage of cycle delays requires default clocking"
                                " (IEEE 1800-2023 14.11)");
-                VL_DO_DANGLING(nodep->unlinkFrBack()->deleteTree(), nodep);
+                VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
                 return;
             }
             AstVar* const evtVarp = m_defaultClkEvtVarp;
@@ -457,7 +453,7 @@ private:
                 nullptr};
             AstIf* const ifp = new AstIf{flp, new AstNot{flp, isTriggeredp}, waitp};
             nodep->replaceWith(ifp);
-            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            VL_DO_DANGLING(pushDeletep(nodep), nodep);
             return;
         }
         AstSenItem* sensesp = nullptr;
