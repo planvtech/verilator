@@ -120,7 +120,7 @@ static bool containsSExpr(const AstNode* nodep) {
 }
 
 // A single step in a sequence timeline: delay cycles followed by an expression check
-struct SeqStep {
+struct SeqStep final {
     int delayCycles;  // Cycle delay before this check (0 for first step)
     AstNodeExpr* exprp;  // Expression to evaluate at this step
 };
@@ -178,7 +178,7 @@ class AssertPropLowerVisitor final : public VNVisitor {
         const std::vector<SeqStep> rhsTimeline = extractTimeline(nodep->rhsp());
 
         // Compute absolute cycle for each step
-        struct AbsStep {
+        struct AbsStep final {
             int cycle;
             AstNodeExpr* exprp;
             int branchId;  // 0=lhs, 1=rhs

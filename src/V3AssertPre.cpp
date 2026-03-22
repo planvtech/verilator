@@ -48,7 +48,7 @@ static bool containsSExpr(const AstNode* nodep) {
 }
 
 // A single step in a sequence timeline
-struct SeqStep {
+struct SeqStep final {
     int delayCycles;
     AstNodeExpr* exprp;
 };
@@ -771,7 +771,7 @@ private:
             AstIf* const guardp = new AstIf{flp, condp, origStmtsp};
             bodyp->addStmtsp(guardp);
             nodep->replaceWith(pexprp);
-            // Don't iterate pexprp here — it was already iterated when created
+            // Don't iterate pexprp here -- it was already iterated when created
             // (in visit(AstSOr*) or visit(AstSExpr*)), so delays and disable iff
             // are already processed.
         } else if (nodep->isOverlapped()) {
@@ -949,7 +949,7 @@ private:
         const std::vector<SeqStep> lhsTimeline = extractTimeline(nodep->lhsp());
         const std::vector<SeqStep> rhsTimeline = extractTimeline(nodep->rhsp());
 
-        struct AbsStep {
+        struct AbsStep final {
             int cycle;
             AstNodeExpr* exprp;
             int branchId;
