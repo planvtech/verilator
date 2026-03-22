@@ -121,8 +121,8 @@ static bool containsSExpr(const AstNode* nodep) {
 
 // A single step in a sequence timeline: delay cycles followed by an expression check
 struct SeqStep {
-    int delayCycles;       // Cycle delay before this check (0 for first step)
-    AstNodeExpr* exprp;    // Expression to evaluate at this step
+    int delayCycles;  // Cycle delay before this check (0 for first step)
+    AstNodeExpr* exprp;  // Expression to evaluate at this step
 };
 
 // Extract a timeline of (delay, expression) pairs from a sequence expression.
@@ -201,19 +201,14 @@ class AssertPropLowerVisitor final : public VNVisitor {
         const int maxCycle = std::max(lhsMaxCycle, rhsMaxCycle);
 
         // Sort by absolute cycle, then by branch id
-        std::stable_sort(allSteps.begin(), allSteps.end(),
-                         [](const AbsStep& a, const AbsStep& b) {
-                             if (a.cycle != b.cycle) return a.cycle < b.cycle;
-                             return a.branchId < b.branchId;
-                         });
+        std::stable_sort(allSteps.begin(), allSteps.end(), [](const AbsStep& a, const AbsStep& b) {
+            if (a.cycle != b.cycle) return a.cycle < b.cycle;
+            return a.branchId < b.branchId;
+        });
 
         // Build AstPExprClause terminals
-        auto makePass = [&]() -> AstPExprClause* {
-            return new AstPExprClause{flp, true};
-        };
-        auto makeFail = [&]() -> AstPExprClause* {
-            return new AstPExprClause{flp, false};
-        };
+        auto makePass = [&]() -> AstPExprClause* { return new AstPExprClause{flp, true}; };
+        auto makeFail = [&]() -> AstPExprClause* { return new AstPExprClause{flp, false}; };
 
         {
             // AND: all checks must pass. Generate nested if/delay chain.
@@ -249,8 +244,8 @@ class AssertPropLowerVisitor final : public VNVisitor {
                 // Add delay if needed (from this cycle to previous inner cycle)
                 if (prevCycle > cycle) {
                     const int delayCycles = prevCycle - cycle;
-                    AstDelay* const dlyp
-                        = new AstDelay{flp, new AstConst{flp, static_cast<uint32_t>(delayCycles)}, true};
+                    AstDelay* const dlyp = new AstDelay{
+                        flp, new AstConst{flp, static_cast<uint32_t>(delayCycles)}, true};
                     thenp->addStmtsp(dlyp);
                     dlyp->addStmtsp(innerp);
                 } else {
@@ -277,9 +272,8 @@ class AssertPropLowerVisitor final : public VNVisitor {
             lowerSeqAnd(nodep);
         } else {
             // Pure boolean operands: lower to LogAnd
-            AstLogAnd* const newp
-                = new AstLogAnd{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
-                                nodep->rhsp()->unlinkFrBack()};
+            AstLogAnd* const newp = new AstLogAnd{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
+                                                  nodep->rhsp()->unlinkFrBack()};
             newp->dtypeFrom(nodep);
             nodep->replaceWith(newp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
@@ -292,9 +286,8 @@ class AssertPropLowerVisitor final : public VNVisitor {
             // be safely created (V3Broken checks AstVar after V3AssertProp)
         } else {
             // Pure boolean operands: lower to LogOr
-            AstLogOr* const newp
-                = new AstLogOr{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
-                               nodep->rhsp()->unlinkFrBack()};
+            AstLogOr* const newp = new AstLogOr{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
+                                                nodep->rhsp()->unlinkFrBack()};
             newp->dtypeFrom(nodep);
             nodep->replaceWith(newp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);

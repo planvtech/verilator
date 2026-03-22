@@ -973,36 +973,30 @@ private:
         }
         int br0MaxCycle = -1, br1MaxCycle = -1;
         for (const auto& step : allSteps) {
-            if (step.branchId == 0) br0MaxCycle = step.cycle;
-            else br1MaxCycle = step.cycle;
+            if (step.branchId == 0)
+                br0MaxCycle = step.cycle;
+            else
+                br1MaxCycle = step.cycle;
         }
 
         // Build body with dead-tracking variables
         AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
 
-        AstVar* const br0Deadp = new AstVar{
-            flp, VVarType::MODULETEMP, m_seqBrNames.get("0_dead"),
-            nodep->findBitDType(1, 1, VSigning::UNSIGNED)};
+        AstVar* const br0Deadp = new AstVar{flp, VVarType::MODULETEMP, m_seqBrNames.get("0_dead"),
+                                            nodep->findBitDType(1, 1, VSigning::UNSIGNED)};
         br0Deadp->lifetime(VLifetime::STATIC_EXPLICIT);
-        AstVar* const br1Deadp = new AstVar{
-            flp, VVarType::MODULETEMP, m_seqBrNames.get("1_dead"),
-            nodep->findBitDType(1, 1, VSigning::UNSIGNED)};
+        AstVar* const br1Deadp = new AstVar{flp, VVarType::MODULETEMP, m_seqBrNames.get("1_dead"),
+                                            nodep->findBitDType(1, 1, VSigning::UNSIGNED)};
         br1Deadp->lifetime(VLifetime::STATIC_EXPLICIT);
         m_modp->addStmtsp(br0Deadp);
         m_modp->addStmtsp(br1Deadp);
-        bodyp->addStmtsp(new AstAssign{
-            flp, new AstVarRef{flp, br0Deadp, VAccess::WRITE},
-            new AstConst{flp, AstConst::BitFalse{}}});
-        bodyp->addStmtsp(new AstAssign{
-            flp, new AstVarRef{flp, br1Deadp, VAccess::WRITE},
-            new AstConst{flp, AstConst::BitFalse{}}});
+        bodyp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, br0Deadp, VAccess::WRITE},
+                                       new AstConst{flp, AstConst::BitFalse{}}});
+        bodyp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, br1Deadp, VAccess::WRITE},
+                                       new AstConst{flp, AstConst::BitFalse{}}});
 
-        auto makePass = [&]() -> AstPExprClause* {
-            return new AstPExprClause{flp, true};
-        };
-        auto makeFail = [&]() -> AstPExprClause* {
-            return new AstPExprClause{flp, false};
-        };
+        auto makePass = [&]() -> AstPExprClause* { return new AstPExprClause{flp, true}; };
+        auto makeFail = [&]() -> AstPExprClause* { return new AstPExprClause{flp, false}; };
 
         // Build inside-out: from last cycle to first
         AstNode* innerp = makeFail();
@@ -1014,48 +1008,38 @@ private:
 
             for (const auto& [brId, exprp] : rit->second) {
                 AstVar* const deadVarp = (brId == 0) ? br0Deadp : br1Deadp;
-                AstNodeExpr* const sampledp
-                    = new AstSampled{flp, exprp->cloneTree(false)};
+                AstNodeExpr* const sampledp = new AstSampled{flp, exprp->cloneTree(false)};
                 sampledp->dtypeSetBit();
                 AstNodeExpr* const condp = new AstLogAnd{
-                    flp,
-                    new AstLogNot{flp,
-                                  new AstVarRef{flp, deadVarp, VAccess::READ}},
+                    flp, new AstLogNot{flp, new AstVarRef{flp, deadVarp, VAccess::READ}},
                     new AstLogNot{flp, sampledp}};
                 condp->dtypeSetBit();
-                cycleBlock->addStmtsp(new AstIf{
-                    flp, condp,
-                    new AstAssign{flp,
-                                  new AstVarRef{flp, deadVarp, VAccess::WRITE},
-                                  new AstConst{flp, AstConst::BitTrue{}}}});
+                cycleBlock->addStmtsp(
+                    new AstIf{flp, condp,
+                              new AstAssign{flp, new AstVarRef{flp, deadVarp, VAccess::WRITE},
+                                            new AstConst{flp, AstConst::BitTrue{}}}});
             }
 
             if (cycle == br0MaxCycle) {
-                cycleBlock->addStmtsp(new AstIf{
-                    flp,
-                    new AstLogNot{flp,
-                                  new AstVarRef{flp, br0Deadp, VAccess::READ}},
-                    makePass()});
+                cycleBlock->addStmtsp(
+                    new AstIf{flp, new AstLogNot{flp, new AstVarRef{flp, br0Deadp, VAccess::READ}},
+                              makePass()});
             }
             if (cycle == br1MaxCycle) {
-                cycleBlock->addStmtsp(new AstIf{
-                    flp,
-                    new AstLogNot{flp,
-                                  new AstVarRef{flp, br1Deadp, VAccess::READ}},
-                    makePass()});
+                cycleBlock->addStmtsp(
+                    new AstIf{flp, new AstLogNot{flp, new AstVarRef{flp, br1Deadp, VAccess::READ}},
+                              makePass()});
             }
 
-            AstNodeExpr* const allDeadp = new AstLogAnd{
-                flp, new AstVarRef{flp, br0Deadp, VAccess::READ},
-                new AstVarRef{flp, br1Deadp, VAccess::READ}};
+            AstNodeExpr* const allDeadp
+                = new AstLogAnd{flp, new AstVarRef{flp, br0Deadp, VAccess::READ},
+                                new AstVarRef{flp, br1Deadp, VAccess::READ}};
             allDeadp->dtypeSetBit();
             cycleBlock->addStmtsp(new AstIf{flp, allDeadp, makeFail()});
 
             if (nextCycle > cycle) {
                 AstDelay* const dlyp = new AstDelay{
-                    flp,
-                    new AstConst{flp, static_cast<uint32_t>(nextCycle - cycle)},
-                    true};
+                    flp, new AstConst{flp, static_cast<uint32_t>(nextCycle - cycle)}, true};
                 cycleBlock->addStmtsp(dlyp);
                 dlyp->addStmtsp(innerp);
             }
