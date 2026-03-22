@@ -999,7 +999,7 @@ private:
         auto makeFail = [&]() -> AstPExprClause* { return new AstPExprClause{flp, false}; };
 
         // Build inside-out: from last cycle to first
-        AstNode* innerp = makeFail();
+        AstNode* innerp = nullptr;
         int nextCycle = -1;
 
         for (auto rit = cycleChecks.rbegin(); rit != cycleChecks.rend(); ++rit) {
@@ -1043,7 +1043,7 @@ private:
                 AstDelay* const dlyp = new AstDelay{
                     flp, new AstConst{flp, static_cast<uint32_t>(nextCycle - cycle)}, true};
                 cycleBlock->addStmtsp(dlyp);
-                dlyp->addStmtsp(innerp);
+                if (innerp) dlyp->addStmtsp(innerp);
             }
 
             innerp = cycleBlock;
