@@ -1006,7 +1006,9 @@ private:
             const int cycle = rit->first;
             AstBegin* const cycleBlock = new AstBegin{flp, "", nullptr, true};
 
-            for (const auto& [brId, exprp] : rit->second) {
+            for (const auto& entry : rit->second) {
+                const int brId = entry.first;
+                AstNodeExpr* const exprp = entry.second;
                 AstVar* const deadVarp = (brId == 0) ? br0Deadp : br1Deadp;
                 AstNodeExpr* const sampledp = new AstSampled{flp, exprp->cloneTree(false)};
                 sampledp->dtypeSetBit();
