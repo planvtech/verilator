@@ -306,11 +306,11 @@ class AssertPropLowerVisitor final : public VNVisitor {
         }
 
         // Create dead-tracking variables at module level
-        AstVar* const br0Deadp = new AstVar{flp, VVarType::MODULETEMP,
-                                            m_seqBrNames.get("0_dead"), VFlagBitPacked{}, 1};
+        AstVar* const br0Deadp = new AstVar{flp, VVarType::MODULETEMP, m_seqBrNames.get("0_dead"),
+                                            VFlagBitPacked{}, 1};
         br0Deadp->lifetime(VLifetime::STATIC_EXPLICIT);
-        AstVar* const br1Deadp = new AstVar{flp, VVarType::MODULETEMP,
-                                            m_seqBrNames.get("1_dead"), VFlagBitPacked{}, 1};
+        AstVar* const br1Deadp = new AstVar{flp, VVarType::MODULETEMP, m_seqBrNames.get("1_dead"),
+                                            VFlagBitPacked{}, 1};
         br1Deadp->lifetime(VLifetime::STATIC_EXPLICIT);
         m_modp->addStmtsp(br0Deadp);
         m_modp->addStmtsp(br1Deadp);
@@ -329,12 +329,10 @@ class AssertPropLowerVisitor final : public VNVisitor {
             // For each branch's check at this cycle
             for (const auto& entry : rit->second) {
                 AstVar* const deadVarp = (entry.branchId == 0) ? br0Deadp : br1Deadp;
-                const int brMaxCycle
-                    = (entry.branchId == 0) ? br0MaxCycle : br1MaxCycle;
+                const int brMaxCycle = (entry.branchId == 0) ? br0MaxCycle : br1MaxCycle;
                 const bool isLast = (cycle == brMaxCycle);
 
-                AstNodeExpr* const sampledp
-                    = new AstSampled{flp, entry.exprp->cloneTree(false)};
+                AstNodeExpr* const sampledp = new AstSampled{flp, entry.exprp->cloneTree(false)};
                 sampledp->dtypeSetBit();
                 AstNodeExpr* const alivep
                     = new AstLogNot{flp, new AstVarRef{flp, deadVarp, VAccess::READ}};
@@ -342,30 +340,29 @@ class AssertPropLowerVisitor final : public VNVisitor {
 
                 if (isLast) {
                     // Last check: alive && passes -> pass
-                    AstNodeExpr* const passCond
-                        = new AstLogAnd{flp, alivep, sampledp};
+                    AstNodeExpr* const passCond = new AstLogAnd{flp, alivep, sampledp};
                     passCond->dtypeSetBit();
                     cycleBlock->addStmtsp(new AstIf{flp, passCond, makePass()});
                     // alive && fails -> dead
-                    AstNodeExpr* const alive2p = new AstLogNot{
-                        flp, new AstVarRef{flp, deadVarp, VAccess::READ}};
+                    AstNodeExpr* const alive2p
+                        = new AstLogNot{flp, new AstVarRef{flp, deadVarp, VAccess::READ}};
                     alive2p->dtypeSetBit();
                     AstNodeExpr* const failCond = new AstLogAnd{
                         flp, alive2p, new AstLogNot{flp, sampledp->cloneTree(false)}};
                     failCond->dtypeSetBit();
-                    cycleBlock->addStmtsp(new AstIf{
-                        flp, failCond,
-                        new AstAssign{flp, new AstVarRef{flp, deadVarp, VAccess::WRITE},
-                                      new AstConst{flp, AstConst::BitTrue{}}}});
+                    cycleBlock->addStmtsp(
+                        new AstIf{flp, failCond,
+                                  new AstAssign{flp, new AstVarRef{flp, deadVarp, VAccess::WRITE},
+                                                new AstConst{flp, AstConst::BitTrue{}}}});
                 } else {
                     // Non-last: alive && fails -> dead
                     AstNodeExpr* const failCond
                         = new AstLogAnd{flp, alivep, new AstLogNot{flp, sampledp}};
                     failCond->dtypeSetBit();
-                    cycleBlock->addStmtsp(new AstIf{
-                        flp, failCond,
-                        new AstAssign{flp, new AstVarRef{flp, deadVarp, VAccess::WRITE},
-                                      new AstConst{flp, AstConst::BitTrue{}}}});
+                    cycleBlock->addStmtsp(
+                        new AstIf{flp, failCond,
+                                  new AstAssign{flp, new AstVarRef{flp, deadVarp, VAccess::WRITE},
+                                                new AstConst{flp, AstConst::BitTrue{}}}});
                 }
             }
 

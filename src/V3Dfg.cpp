@@ -692,9 +692,7 @@ void DfgVertex::typeCheck(const DfgGraph& dfg) const {
     }
 
     case VDfgType::SAnd:
-    case VDfgType::SOr:
-        UASSERT_OBJ(false, this, "SAnd/SOr should be removed before DFG");
-        return;
+    case VDfgType::SOr: UASSERT_OBJ(false, this, "SAnd/SOr should be removed before DFG"); return;
 
     case VDfgType::LogAnd:
     case VDfgType::LogEq:
