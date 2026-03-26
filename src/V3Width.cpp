@@ -241,6 +241,7 @@ class WidthVisitor final : public VNVisitor {
     std::map<const AstNode*, const AstClass*>
         m_containingClassp;  // Containing class cache for containingClass() function
     std::unordered_set<AstVar*> m_aliasedVars;  // Variables referenced in alias
+    std::unordered_set<const AstVar*> m_ifaceVars;  // Variables declared inside interfaces
 
     static constexpr int ENUM_LOOKUP_BITS = 16;  // Maximum # bits to make enum lookup table
 
@@ -2835,7 +2836,13 @@ class WidthVisitor final : public VNVisitor {
                    && (!m_ftaskp || !m_ftaskp->isConstructor())
                    && !VN_IS(m_procedurep, InitialAutomatic) && !VN_IS(m_procedurep, InitialStatic)
                    && !VN_IS(nodep->abovep(), AssignForce) && !VN_IS(nodep->abovep(), Release)) {
-            nodep->v3warn(ASSIGNIN, "Assigning to input/const variable: " << nodep->prettyNameQ());
+            // Driving an interface input port from the instantiating scope is legal
+            // (IEEE 1800-2023 25.4). Skip ASSIGNIN when the variable belongs to an
+            // interface and the current module is not that interface.
+            if (!m_ifaceVars.count(nodep->varp()) || VN_IS(m_modep, Iface)) {
+                nodep->v3warn(ASSIGNIN,
+                              "Assigning to input/const variable: " << nodep->prettyNameQ());
+            }
         } else if (nodep->access().isWriteOrRW() && nodep->varp()->isConst() && !m_paramsOnly
                    && (!m_ftaskp || !m_ftaskp->isConstructor())
                    && !VN_IS(m_procedurep, InitialAutomatic)
@@ -3519,8 +3526,47 @@ class WidthVisitor final : public VNVisitor {
                     nodep->varp(varp);
                     AstIface* const ifacep = adtypep->ifacep();
                     varp->sensIfacep(ifacep);
+                    // Prevent constant-folding: the variable may be written through any
+                    // interface instance at runtime via the virtual interface handle.
+                    varp->noSubst(true);
                     nodep->didWidth(true);
                     return;
+                }
+                if (AstModport* const modportp = VN_CAST(foundp, Modport)) {
+                    // Modport selection on a virtual interface handle
+                    // (e.g. vif.passive_mp) is a compile-time type narrowing:
+                    // the runtime value is unchanged, only the type gains modport
+                    // qualification.  Replace MemberSel with fromp re-typed.
+                    AstIfaceRefDType* const newDtypep = new AstIfaceRefDType{
+                        nodep->fileline(), nodep->fileline(), adtypep->cellName(),
+                        adtypep->ifaceName(), modportp->name()};
+                    newDtypep->ifacep(adtypep->ifacep());
+                    newDtypep->cellp(adtypep->cellp());
+                    newDtypep->modportp(modportp);
+                    newDtypep->isVirtual(adtypep->isVirtual());
+                    v3Global.rootp()->typeTablep()->addTypesp(newDtypep);
+                    AstNodeExpr* const fromp = nodep->fromp()->unlinkFrBack();
+                    fromp->dtypep(newDtypep);
+                    nodep->replaceWith(fromp);
+                    VL_DO_DANGLING(pushDeletep(nodep), nodep);
+                    return;
+                }
+                // When a function/task is accessed through a virtual interface,
+                // mark ALL member variables of the interface as sensIfacep.
+                // The function body may write to any member, and the write will
+                // be directed to an arbitrary instance at compile time. Without
+                // this, optimization passes (V3Gate) may incorrectly constant-fold
+                // member variables on non-target instances. See #5116.
+                if (VN_IS(foundp, NodeFTask) && adtypep->isVirtual()) {
+                    AstIface* const ifacep = adtypep->ifacep();
+                    if (ifacep) {
+                        for (AstNode* itemp = ifacep->stmtsp(); itemp;
+                             itemp = itemp->nextp()) {
+                            if (AstVar* const mvarp = VN_CAST(itemp, Var)) {
+                                mvarp->sensIfacep(ifacep);
+                            }
+                        }
+                    }
                 }
                 UINFO(1, "found object " << foundp);
                 nodep->v3fatalSrc("MemberSel of non-variable\n"
@@ -4435,6 +4481,16 @@ class WidthVisitor final : public VNVisitor {
         if (AstNodeFTask* const ftaskp
             = VN_CAST(m_memberMap.findMember(ifacep, nodep->name()), NodeFTask)) {
             UINFO(5, __FUNCTION__ << "AstNodeFTask" << nodep);
+            // When a function/task is called through a virtual interface, its body may
+            // write to interface member variables. Mark all members as sensIfacep so
+            // optimization passes do not constant-fold them across instances. See #5116.
+            if (adtypep->isVirtual()) {
+                for (AstNode* itemp = ifacep->stmtsp(); itemp; itemp = itemp->nextp()) {
+                    if (AstVar* const mvarp = VN_CAST(itemp, Var)) {
+                        mvarp->sensIfacep(ifacep);
+                    }
+                }
+            }
             userIterate(ftaskp, nullptr);
             if (ftaskp->isStatic()) {
                 AstArg* const argsp = nodep->argsp();
@@ -7357,6 +7413,12 @@ class WidthVisitor final : public VNVisitor {
         } else {
             VL_RESTORER(m_modep);
             m_modep = nodep;
+            // Collect interface variables so ASSIGNIN can distinguish
+            // external drives (legal per IEEE 1800-2023 25.4) from
+            // internal drives (illegal).
+            if (VN_IS(nodep, Iface)) {
+                nodep->foreach([this](const AstVar* varp) { m_ifaceVars.insert(varp); });
+            }
             userIterateChildren(nodep, nullptr);
         }
     }

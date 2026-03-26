@@ -3098,7 +3098,8 @@ class ConstVisitor final : public VNVisitor {
         iterateChildren(nodep);
         UASSERT_OBJ(nodep->varp(), nodep, "Not linked");
         bool did = false;
-        if (m_doV && nodep->varp()->valuep() && !m_attrp) {
+        if (m_doV && nodep->varp()->valuep() && !m_attrp
+            && !nodep->varp()->sensIfacep()) {  // Not read via virtual interface
             // UINFOTREE(1, valuep, "", "visitvaref");
             iterateAndNextNull(nodep->varp()->valuep());  // May change nodep->varp()->valuep()
             AstNode* const valuep = nodep->varp()->valuep();
@@ -3423,6 +3424,7 @@ class ConstVisitor final : public VNVisitor {
             && !varrefp->varp()->hasStrengthAssignment()  // Strengths are resolved in V3Tristate
             && !varrefp->varp()->valuep()  // Not already constified
             && !varrefp->varScopep()  // Not scoped (or each scope may have different initial val.)
+            && !varrefp->varp()->sensIfacep()  // Not read via virtual interface (value may differ per instance)
             && !varrefp->varp()->isForced()  // Not forced (not really a constant)
         ) {
             // ASSIGNW (VARREF, const) -> INITIAL ( ASSIGN (VARREF, const) )

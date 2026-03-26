@@ -421,6 +421,10 @@ class GateOkVisitor final : public VNVisitorConst {
         ++m_ops;
         // Don't want to eliminate the VL_ASSIGN_S*
         if (nodep->varScopep()->varp()->isSc()) clearSimple("SystemC sig");
+        // Don't substitute logic that writes to a virtual-interface-sensitive variable,
+        // as the variable may be written through any instance at runtime.
+        if (nodep->access().isWriteOnly() && nodep->varScopep()->varp()->sensIfacep())
+            clearSimple("VirtIface member");
 
         if (nodep->access().isRW()) {
             clearSimple("R/W");

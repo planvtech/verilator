@@ -892,7 +892,12 @@ class TimingControlVisitor final : public VNVisitor {
         m_underProcedure = true;
         // Workaround for killing `always` processes (doing that is pretty much UB)
         // TODO: Disallow killing `always` at runtime (throw an error)
-        if (hasFlags(nodep, T_HAS_PROC)) addFlags(nodep, T_SUSPENDEE);
+        // Combo-sensitive blocks (always @*) must not become coroutines just
+        // because they contain process::self() (e.g. from `uvm_fatal macro expansion).
+        // A coroutine without co_await spins forever, blocking all initial blocks.
+        if (hasFlags(nodep, T_HAS_PROC)
+            && !(m_activep && m_activep->sentreep() && m_activep->sentreep()->hasCombo()))
+            addFlags(nodep, T_SUSPENDEE);
 
         iterateChildren(nodep);
         if (hasFlags(nodep, T_HAS_PROC)) nodep->setNeedProcess();
@@ -1317,13 +1322,29 @@ class TimingControlVisitor final : public VNVisitor {
         }
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
+    // Returns true if the expression tree references a variable that is read through
+    // a virtual interface (sensIfacep set). Such variables must not be constant-folded
+    // because the write may come from any interface instance at runtime.
+    static bool refsVirtIfaceMember(const AstNode* const nodep) {
+        return nodep->exists([](const AstNode* const np) {
+            if (const AstNodeVarRef* const refp = VN_CAST(np, NodeVarRef)) {
+                return refp->varp()->sensIfacep() != nullptr;
+            }
+            return false;
+        });
+    }
     void visit(AstWait* nodep) override {
         // Wait on changed events related to the vars in the wait statement
         UINFO(9, "control-visit " << nodep);
         FileLine* const flp = nodep->fileline();
         AstNode* const stmtsp = nodep->stmtsp();
         if (stmtsp) stmtsp->unlinkFrBackWithNext();
-        AstNodeExpr* const condp = V3Const::constifyEdit(nodep->condp()->unlinkFrBack());
+        // Check for virtual interface member references BEFORE constify, because
+        // V3Const may incorrectly fold them to constant when multiple interface
+        // instances exist (the write goes to an arbitrary instance at compile time).
+        const bool hasVifRef = refsVirtIfaceMember(nodep->condp());
+        AstNodeExpr* condp = nodep->condp()->unlinkFrBack();
+        if (!hasVifRef) condp = V3Const::constifyEdit(condp);
         auto* const constp = VN_CAST(condp, Const);
         if (constp) {
             if (constp->isZero()) {
