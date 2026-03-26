@@ -3560,8 +3560,7 @@ class WidthVisitor final : public VNVisitor {
                 if (VN_IS(foundp, NodeFTask) && adtypep->isVirtual()) {
                     AstIface* const ifacep = adtypep->ifacep();
                     if (ifacep) {
-                        for (AstNode* itemp = ifacep->stmtsp(); itemp;
-                             itemp = itemp->nextp()) {
+                        for (AstNode* itemp = ifacep->stmtsp(); itemp; itemp = itemp->nextp()) {
                             if (AstVar* const mvarp = VN_CAST(itemp, Var)) {
                                 mvarp->sensIfacep(ifacep);
                             }
@@ -4486,9 +4485,7 @@ class WidthVisitor final : public VNVisitor {
             // optimization passes do not constant-fold them across instances. See #5116.
             if (adtypep->isVirtual()) {
                 for (AstNode* itemp = ifacep->stmtsp(); itemp; itemp = itemp->nextp()) {
-                    if (AstVar* const mvarp = VN_CAST(itemp, Var)) {
-                        mvarp->sensIfacep(ifacep);
-                    }
+                    if (AstVar* const mvarp = VN_CAST(itemp, Var)) { mvarp->sensIfacep(ifacep); }
                 }
             }
             userIterate(ftaskp, nullptr);

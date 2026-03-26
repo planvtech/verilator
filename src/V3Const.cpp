@@ -3424,7 +3424,8 @@ class ConstVisitor final : public VNVisitor {
             && !varrefp->varp()->hasStrengthAssignment()  // Strengths are resolved in V3Tristate
             && !varrefp->varp()->valuep()  // Not already constified
             && !varrefp->varScopep()  // Not scoped (or each scope may have different initial val.)
-            && !varrefp->varp()->sensIfacep()  // Not read via virtual interface (value may differ per instance)
+            && !varrefp->varp()->sensIfacep()  // Not read via virtual interface (value may differ
+                                               // per instance)
             && !varrefp->varp()->isForced()  // Not forced (not really a constant)
         ) {
             // ASSIGNW (VARREF, const) -> INITIAL ( ASSIGN (VARREF, const) )
