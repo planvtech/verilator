@@ -294,7 +294,7 @@ class WidthVisitor final : public VNVisitor {
     // Widths: 1 bit out, lhs 1 bit, rhs 1 bit; Real: converts via compare with 0
     void visit(AstLogAnd* nodep) override { visit_log_and_or(nodep); }
     void visit(AstLogOr* nodep) override { visit_log_and_or(nodep); }
-    // Sequence and/or/intersect (IEEE 1800-2023 16.9.5-6), same width rules as LogAnd/LogOr
+    // Sequence and/or/intersect (IEEE 1800-2023 16.9.5-7), same width rules as LogAnd/LogOr
     void visit(AstSAnd* nodep) override { visit_log_and_or(nodep); }
     void visit(AstSOr* nodep) override { visit_log_and_or(nodep); }
     void visit(AstSIntersect* nodep) override { visit_log_and_or(nodep); }

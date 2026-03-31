@@ -276,7 +276,10 @@ class AssertPropLowerVisitor final : public VNVisitor {
         for (const auto& step : rhsTimeline) rhsTotal += step.delayCycles;
 
         if (lhsTotal != rhsTotal) {
-            // Different lengths: can never match per IEEE 16.9.6
+            // Different constant lengths: can never match per IEEE 16.9.6
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: intersect operands have different constant lengths ("
+                              + cvtToStr(lhsTotal) + " vs " + cvtToStr(rhsTotal) + ")");
             FileLine* const flp = nodep->fileline();
             AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
             bodyp->addStmtsp(new AstPExprClause{flp, false});
