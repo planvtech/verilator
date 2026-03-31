@@ -495,6 +495,14 @@ private:
             beginp->addStmtsp(
                 new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
                               new AstConst{flp, AstConst::BitTrue{}}});
+            // Check throughout condition at start tick (tick 0, before delay loop)
+            AstSampled* const initSampledp
+                = new AstSampled{flp, throughoutp->cloneTreePure(false)};
+            initSampledp->dtypeSetBit();
+            beginp->addStmtsp(new AstIf{
+                flp, new AstLogNot{flp, initSampledp},
+                new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
+                              new AstConst{flp, AstConst::BitFalse{}}}});
         }
 
         {

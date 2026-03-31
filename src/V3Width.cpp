@@ -1663,8 +1663,12 @@ class WidthVisitor final : public VNVisitor {
         m_hasSExpr = true;
         assertAtExpr(nodep);
         if (m_vup->prelim()) {
-            // condp is a boolean expression, NOT a sequence -- don't set m_underSExpr
-            iterateCheckBool(nodep, "condp", nodep->condp(), BOTH);
+            // condp is a boolean expression, NOT a sequence -- clear m_underSExpr
+            {
+                VL_RESTORER(m_underSExpr);
+                m_underSExpr = false;
+                iterateCheckBool(nodep, "condp", nodep->condp(), BOTH);
+            }
             {
                 VL_RESTORER(m_underSExpr);
                 m_underSExpr = true;
