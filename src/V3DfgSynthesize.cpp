@@ -145,6 +145,7 @@ class AstToDfgConverter final : public VNVisitor {
     // Returns {nullptr, 0}, if the given LValue expression is not supported.
     std::pair<DfgVertexSplice*, uint32_t> convertLValue(AstNodeExpr* nodep) {
         if (const AstVarRef* const vrefp = VN_CAST(nodep, VarRef)) {
+            UASSERT_OBJ(vrefp->access().isWriteOnly(), vrefp, "Non-WriteOnly reference");
             if (!isSupported(vrefp)) {
                 ++m_ctx.m_conv.nonRepLValue;
                 return {nullptr, 0};
@@ -355,7 +356,7 @@ class AstToDfgConverter final : public VNVisitor {
     // VISITORS
 
     // Unhandled node
-    void visit(AstNode* nodep) override {
+    void visit(AstNode* /*nodep*/) override {
         if (!m_foundUnhandled && m_converting) ++m_ctx.m_conv.nonRepUnknown;
         m_foundUnhandled = true;
     }
@@ -366,7 +367,8 @@ class AstToDfgConverter final : public VNVisitor {
         UASSERT_OBJ(!nodep->user2p(), nodep, "Already has Dfg vertex");
         if (unhandled(nodep)) return;
         // This visit method is only called on RValues, where only read refs are supported
-        if (!nodep->access().isReadOnly() || !isSupported(nodep)) {
+        UASSERT_OBJ(nodep->access().isReadOnly(), nodep, "Non-ReadOnly reference");
+        if (!isSupported(nodep)) {
             m_foundUnhandled = true;
             ++m_ctx.m_conv.nonRepVarRef;
             return;
@@ -522,14 +524,8 @@ public:
         , m_ctx{ctx} {}
 };
 
-// For debugging, we can stop synthesizing after a certain number of vertices.
-// for this we need a global counter (inside the template makes multiple copies)
-static size_t s_dfgSynthDebugCount = 0;
-// The number of vertices we stop after can be passed in through the environment
-// you can then use a bisection search over this value and look at the dumps
-// produced with the lowest failing value
-static const size_t s_dfgSynthDebugLimit
-    = std::stoull(V3Os::getenvStr("VERILATOR_DFG_SYNTH_DEBUG", "0"));
+// Debug aid - outisde 'AstToDfgSynthesize' as it is a template, but want one instance
+V3DebugBisect s_dfgSynthDebugBisect{"DfgSynthesize"};
 
 template <bool T_Scoped>
 class AstToDfgSynthesize final {
@@ -1235,7 +1231,7 @@ class AstToDfgSynthesize final {
     std::vector<Driver> computePropagatedDrivers(const std::vector<Driver>& newDrivers,
                                                  DfgVertexVar* oldp) {
         // Gather drivers of 'oldp' - they are in incresing range order with no overlaps
-        std::vector<Driver> oldDrivers = gatherDrivers(oldp->srcp()->as<DfgVertexSplice>());
+        const std::vector<Driver> oldDrivers = gatherDrivers(oldp->srcp()->as<DfgVertexSplice>());
         UASSERT_OBJ(!oldDrivers.empty(), oldp, "Should have a proper driver");
 
         // Additional drivers of 'newp' propagated from 'oldp'
@@ -1769,18 +1765,15 @@ class AstToDfgSynthesize final {
             UASSERT_OBJ(logicp->selectedForSynthesis(), logicp, "Unselected DfgLogic remains");
 
             // Debug aid
-            if (VL_UNLIKELY(s_dfgSynthDebugLimit)) {
-                if (s_dfgSynthDebugCount == s_dfgSynthDebugLimit) break;
-                ++s_dfgSynthDebugCount;
-                if (s_dfgSynthDebugCount == s_dfgSynthDebugLimit) {
-                    // This is the breaking logic
-                    m_debugLogicp = logicp;
-                    // Dump it
-                    UINFOTREE(0, logicp->nodep(), "Problematic DfgLogic: " << logicp, "  ");
-                    V3EmitV::debugVerilogForTree(logicp->nodep(), std::cout);
-                    debugDump("synth-lastok");
-                }
-            }
+            const auto debugCallback = [&]() -> void {
+                // This is the breaking logic
+                m_debugLogicp = logicp;
+                // Dump it
+                UINFOTREE(0, logicp->nodep(), "Problematic DfgLogic: " << logicp, "  ");
+                V3EmitV::debugVerilogForTree(logicp->nodep(), std::cout);
+                debugDump("synth-lastok");
+            };
+            if (VL_UNLIKELY(s_dfgSynthDebugBisect.stop(debugCallback))) break;
 
             // Synthesize it, if failed, enqueue for reversion
             if (!synthesize(*logicp)) {

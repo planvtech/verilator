@@ -150,7 +150,7 @@ protected:
 
 public:
     // METHODS
-    bool displayEmitHeader(AstNode* nodep, bool isScan);
+    bool displayEmitHeader(AstNode* nodep);
     void displayNode(AstNode* nodep, AstSFormatF* fmtp, const string& vformat, AstNode* exprsp,
                      bool isScan);
 
@@ -185,7 +185,7 @@ public:
                     AstNode* thsp);
     void emitCCallArgs(const AstNodeCCall* nodep, const string& selfPointer, bool inProcess);
     void emitDereference(AstNode* nodep, const string& pointer);
-    std::string dereferenceString(const std::string& pointer);
+    std::string dereferenceString(const std::string& pointer) const;
     void emitCvtPackStr(AstNode* nodep);
     void emitCvtWideArray(AstNode* nodep, AstNode* fromp);
     void emitConstant(AstConst* nodep);
@@ -456,12 +456,23 @@ public:
     void visit(AstCvtArrayToPacked* nodep) override {
         AstNodeDType* const fromDtp = nodep->fromp()->dtypep()->skipRefp();
         AstNodeDType* const elemDtp = fromDtp->subDTypep()->skipRefp();
+        const bool descending = [&]() {
+            if (const AstUnpackArrayDType* const unpackDtp = VN_CAST(fromDtp, UnpackArrayDType))
+                return !unpackDtp->declRange().ascending();
+            return false;
+        }();
         puts("VL_PACK_");
         emitIQW(nodep);
         puts("_");
         emitRU(fromDtp);
         emitIQW(elemDtp);
-        emitOpName(nodep, "(%nw, %rw, %P, %li)", nodep->fromp(), elemDtp, nullptr);
+        if (descending) {
+            // Wrap source in VL_PACK_REVERSED so VL_PACK sees ascending order
+            emitOpName(nodep, "(%nw, %rw, %P, VL_PACK_REVERSED(%li))", nodep->fromp(), elemDtp,
+                       nullptr);
+        } else {
+            emitOpName(nodep, "(%nw, %rw, %P, %li)", nodep->fromp(), elemDtp, nullptr);
+        }
     }
 
     void visit(AstCvtUnpackedToQueue* nodep) override {
@@ -499,6 +510,7 @@ public:
         bool paren = true;
         bool decind = false;
         bool rhs = true;
+        bool reverseUnpack = false;  // Set for descending CvtPackedToArray
         if (AstSel* const selp = VN_CAST(nodep->lhsp(), Sel)) {
             UASSERT_OBJ(selp->widthMin() == selp->widthConst(), selp, "Width mismatch");
             if (selp->widthMin() == 1) {
@@ -567,6 +579,11 @@ public:
             puts(", ");
             rhs = false;
             iterateAndNextConstNull(castp->fromp());
+            // Descending unpacked dest: reverse after unpack
+            if (const AstUnpackArrayDType* const unpackDtp
+                = VN_CAST(nodep->dtypep()->skipRefp(), UnpackArrayDType)) {
+                if (!unpackDtp->declRange().ascending()) reverseUnpack = true;
+            }
         } else if (const AstCvtArrayToArray* const castp
                    = VN_CAST(nodep->rhsp(), CvtArrayToArray)) {
             if (castp->reverse()) {
@@ -618,6 +635,11 @@ public:
         if (paren) puts(")");
         if (decind) ofp()->blockDec();
         puts(";\n");
+        if (reverseUnpack) {
+            puts("VL_UNPACK_REVERSED(");
+            iterateAndNextConstNull(nodep->lhsp());
+            puts(");\n");
+        }
     }
     void visit(AstAssocSel* nodep) override {
         iterateAndNextConstNull(nodep->fromp());
@@ -963,17 +985,7 @@ public:
         puts(")");
     }
     void visit(AstFGetS* nodep) override {
-        checkMaxWords(nodep);
         emitOpName(nodep, nodep->emitC(), nodep->strgp(), nodep->filep(), nullptr);
-    }
-
-    void checkMaxWords(AstNode* nodep) {
-        if (nodep->widthWords() > VL_VALUE_STRING_MAX_WORDS) {
-            nodep->v3error(
-                "String of "
-                << nodep->width()
-                << " bits exceeds hardcoded limit VL_VALUE_STRING_MAX_WORDS in verilatedos.h");
-        }
     }
     void visit(AstFOpen* nodep) override {
         putns(nodep, "VL_FOPEN_NN(");
@@ -1122,7 +1134,6 @@ public:
             puts(cvtToStr(nodep->lhsp()->widthWords()));
             putbs(", ");
         }
-        checkMaxWords(nodep->lhsp());
         iterateAndNextConstNull(nodep->lhsp());
         puts(");\n");
     }
@@ -1134,7 +1145,6 @@ public:
             puts(cvtToStr(nodep->lhsp()->widthWords()));
             putbs(", ");
         }
-        checkMaxWords(nodep->lhsp());
         iterateAndNextConstNull(nodep->lhsp());
         puts(")");
     }
@@ -1522,7 +1532,7 @@ public:
     }
     void visit(AstNewCopy* nodep) override {
         // Polymorphic shallow clone: preserves runtime type via virtual clone()
-        // VL_NULL_CHECK enforces null check per IEEE 1800-2017 8.7
+        // VL_NULL_CHECK enforces null check per IEEE 1800-2023 8.7
         putns(nodep, "VL_NULL_CHECK(");
         if (VN_IS(nodep->rhsp(), Const) && VN_AS(nodep->rhsp(), Const)->isNull()) {
             // V3Const folded rhs to null: emit a typed empty ref so VL_NULL_CHECK fires

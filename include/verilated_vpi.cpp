@@ -221,10 +221,8 @@ public:
     // If the array is unpacked, returns the bitsize of a single underlying packed element.
     // If the array is packed, returns the bitsize of the whole array.
     uint32_t bitSize() const {
-        if (isIndexedDimUnpacked())
-            return varp()->entBits();
-        else
-            return size();
+        if (isIndexedDimUnpacked()) return varp()->entBits();
+        return size();
     }
     const VerilatedRange* rangep() const override { return get_range(); }
     const char* name() const override { return m_varp->name(); }
@@ -395,6 +393,7 @@ public:
         return dynamic_cast<VerilatedVpioVar*>(reinterpret_cast<VerilatedVpio*>(h));
     }
     uint32_t bitOffset() const override { return m_bitOffset; }
+    int32_t partselBits() const { return m_partselBits; }
     uint32_t bitSize() const {
         if (m_partselBits >= 0) return static_cast<uint32_t>(m_partselBits);
         return VerilatedVpioVarBase::bitSize();
@@ -465,10 +464,8 @@ public:
         case VLVT_STRING: type = vpiStringVar; break;
         default: type = varp()->isBitVar() ? vpiBitVar : vpiReg; break;
         }
-        if (isIndexedDimUnpacked())
-            return vpiRegArray;
-        else
-            return type;
+        if (isIndexedDimUnpacked()) return vpiRegArray;
+        return type;
     }
     const char* fullname() const override {
         static thread_local std::string t_out;
@@ -532,16 +529,14 @@ public:
                 if (const VerilatedVar* topvarp = m_topscopep->varFind(m_it->second.name())) {
                     if (topvarp->isParam()) {
                         return ((new VerilatedVpioParam{topvarp, m_topscopep})->castVpiHandle());
-                    } else {
-                        return ((new VerilatedVpioVar{topvarp, m_topscopep})->castVpiHandle());
                     }
+                    return ((new VerilatedVpioVar{topvarp, m_topscopep})->castVpiHandle());
                 }
             }
             if (m_it->second.isParam()) {
                 return ((new VerilatedVpioParam{&(m_it->second), m_scopep})->castVpiHandle());
-            } else {
-                return ((new VerilatedVpioVar{&(m_it->second), m_scopep})->castVpiHandle());
             }
+            return ((new VerilatedVpioVar{&(m_it->second), m_scopep})->castVpiHandle());
         }
     }
 };
@@ -588,8 +583,7 @@ public:
             if (m_nextIndex.at(it) <= m_ranges.at(it).high()
                 && m_nextIndex.at(it) >= m_ranges.at(it).low())
                 break;
-            else if (it > 0)
-                m_nextIndex.at(it) = m_ranges.at(it).right();
+            if (it > 0) m_nextIndex.at(it) = m_ranges.at(it).right();
         }
 
         return ret->castVpiHandle();
@@ -832,6 +826,7 @@ public:
             m_value.value.vector = m_storage.vec.data();
             break;
         }
+        default: break;
         }
     }
 
@@ -851,6 +846,7 @@ public:
             new (&m_storage.vec) std::vector<s_vpi_vecval>{o.m_storage.vec};
             break;
         }
+        default: break;
         }
     }
 
@@ -870,6 +866,7 @@ public:
             new (&m_storage.vec) std::vector<s_vpi_vecval>{std::move(o.m_storage.vec)};
             break;
         }
+        default: break;
         }
     }
 
@@ -881,6 +878,7 @@ public:
         case vpiHexStrVal:  // FALLTHRU
         case vpiStringVal: m_storage.str.~basic_string(); break;
         case vpiVectorVal: m_storage.vec.~vector(); break;
+        default: break;
         }
     }
 
@@ -1119,7 +1117,7 @@ public:
         }
         s().m_inertialPuts.clear();
     }
-    static auto getForceControlSignals(const VerilatedVpioVarBase* vop);
+    static auto getForceControlSignals(const VerilatedVpioVar* vop);
 
     static std::size_t vlTypeSize(VerilatedVarType vltype);
     static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
@@ -1278,7 +1276,7 @@ void VerilatedVpiImp::dumpCbs() VL_MT_UNSAFE_ONE {
     assertOneCheck();
     VL_DBG_MSGF("- vpi: dumpCbs\n");
     for (uint32_t reason = 0; reason < CB_ENUM_MAX_VALUE; ++reason) {
-        VpioCbList& cbObjList = s().m_cbCurrentLists[reason];
+        const VpioCbList& cbObjList = s().m_cbCurrentLists[reason];
         for (auto& ho : cbObjList) {
             if (VL_UNLIKELY(!ho.invalid())) {
                 VL_DBG_MSGF("- vpi:   reason=%d=%s  id=%" PRId64 "\n", reason,
@@ -1314,15 +1312,16 @@ VerilatedVpiError* VerilatedVpiImp::error_info() VL_MT_UNSAFE_ONE {
     return s().m_errorInfop;
 }
 
-auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const baseSignalVop) {
+auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVar* const baseSignalVop) {
     const VerilatedForceControlSignals* const forceControlSignals
         = baseSignalVop->varp()->forceControlSignals();
     // LCOV_EXCL_START - Would require a Verilation time error, so cannot test
     if (VL_UNLIKELY(!forceControlSignals)) {
-        VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: VPI force or release requested for '%s', but signal has no force "
-                      "control signals. Ensure signal is marked as forceable",
-                      __func__, baseSignalVop->fullname());
+        VL_VPI_ERROR_(
+            __FILE__, __LINE__,
+            "%s: VPI put or get requested for forceable signal '%s', but signal has no force "
+            "control signals.",
+            __func__, baseSignalVop->fullname());
         return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
             nullptr, nullptr};
     }  // LCOV_EXCL_STOP
@@ -1331,26 +1330,141 @@ auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const b
     // LCOV_EXCL_START - Would require a Verilation time error, so cannot test
     if (VL_UNLIKELY(!forceEnableSignalVarp)) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: VPI force or release requested for '%s', but force enable signal could "
-                      "not be found. Ensure signal is marked as forceable",
+                      "%s: VPI put or get requested for forceable signal '%s', but force enable "
+                      "signal could not be found.",
                       __func__, baseSignalVop->fullname());
         return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
             nullptr, nullptr};
     }
     if (VL_UNLIKELY(!forceValueSignalVarp)) {
-        VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: VPI force or release requested for '%s', but force value signal could "
-                      "not be found. Ensure signal is marked as forceable",
-                      __func__, baseSignalVop->fullname());
+        VL_VPI_ERROR_(
+            __FILE__, __LINE__,
+            "%s: VPI put or get requested for forceable signal '%s', but force value signal could "
+            "not be found.",
+            __func__, baseSignalVop->fullname());
         return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
             nullptr, nullptr};
     }
     // LCOV_EXCL_STOP
-    VerilatedVpioVar forceEnableSignal{forceEnableSignalVarp, baseSignalVop->scopep()};
-    VerilatedVpioVar forceValueSignal{forceValueSignalVarp, baseSignalVop->scopep()};
+
+    // Adjust dimension and partselect to match the base signal, so that forcing a partial signal
+    // doesn't exceed the bounds given by the base signal
+    VerilatedVpioVar* forceEnableSignalVop
+        = new VerilatedVpioVar{forceEnableSignalVarp, baseSignalVop->scopep()};
+    VerilatedVpioVar* forceValueSignalVop
+        = new VerilatedVpioVar{forceValueSignalVarp, baseSignalVop->scopep()};
+
+    for (const int idx : baseSignalVop->index()) {
+        VerilatedVpioVar* const nextForceEnableSignalVop = forceEnableSignalVop->withIndex(idx);
+        VerilatedVpioVar* const nextForceValueSignalVop = forceValueSignalVop->withIndex(idx);
+        VL_DO_DANGLING(delete forceEnableSignalVop, forceEnableSignalVop);
+        VL_DO_DANGLING(delete forceValueSignalVop, forceValueSignalVop);
+        forceEnableSignalVop = nextForceEnableSignalVop;
+        forceValueSignalVop = nextForceValueSignalVop;
+        if (!forceEnableSignalVop || !forceValueSignalVop) break;  // LCOV_EXCL_LINE
+    }
+
+    // LCOV_EXCL_START - Would require a Verilation time error, so cannot test
+    if (VL_UNLIKELY(!forceEnableSignalVop)) {
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "%s: VPI put or get requested for forceable signal '%s', but force enable "
+                      "signal could not be indexed to the same dimension as the base signal.",
+                      __func__, baseSignalVop->fullname());
+        if (VL_UNLIKELY(forceValueSignalVop))
+            VL_DO_DANGLING(delete forceValueSignalVop, forceValueSignalVop);
+        return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
+            nullptr, nullptr};
+    }
+    if (VL_UNLIKELY(!forceValueSignalVop)) {
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "%s: VPI put or get requested for forceable signal '%s', but force value "
+                      "signal could not be indexed to the same dimension as the base signal.",
+                      __func__, baseSignalVop->fullname());
+        if (VL_UNLIKELY(forceEnableSignalVop))
+            VL_DO_DANGLING(delete forceEnableSignalVop, forceEnableSignalVop);
+        return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
+            nullptr, nullptr};
+    }
+    // LCOV_EXCL_STOP
+
+    if (VL_UNLIKELY(baseSignalVop->partselBits() != -1)) {
+        // Bits are stored left-to-right in memory, which can either be ascending or descending. To
+        // match the bitOffset of the base signal, the distance to the rightmost bit, rather than
+        // to the lowest indexed bit, must be determined
+        const int currentDimRight = baseSignalVop->rangep()->right();
+        const int32_t offsetFromRight
+            = static_cast<int32_t>(static_cast<int64_t>(baseSignalVop->bitOffset())
+                                   - static_cast<int64_t>(forceValueSignalVop->bitOffset()));
+        const bool isDescending
+            = baseSignalVop->rangep()->left() >= baseSignalVop->rangep()->right();
+
+        const int32_t partSelIndexRight
+            = isDescending ? currentDimRight + offsetFromRight : currentDimRight - offsetFromRight;
+        const int32_t partSelIndexLeft
+            = isDescending ? partSelIndexRight + (baseSignalVop->partselBits() - 1)
+                           : partSelIndexRight - (baseSignalVop->partselBits() - 1);
+        const int32_t partSelIndexHigh = std::max(partSelIndexLeft, partSelIndexRight);
+        const int32_t partSelIndexLow = std::min(partSelIndexLeft, partSelIndexRight);
+
+        VerilatedVpioVar* partIndexedForceEnableSignalVop
+            = forceEnableSignalVop->withPartSelect(partSelIndexHigh, partSelIndexLow);
+        VerilatedVpioVar* partIndexedForceValueSignalVop
+            = forceValueSignalVop->withPartSelect(partSelIndexHigh, partSelIndexLow);
+
+        VL_DO_DANGLING(delete forceEnableSignalVop, forceEnableSignalVop);
+        VL_DO_DANGLING(delete forceValueSignalVop, forceValueSignalVop);
+        forceEnableSignalVop = partIndexedForceEnableSignalVop;
+        forceValueSignalVop = partIndexedForceValueSignalVop;
+    }
+
+    // LCOV_EXCL_START - Would require a Verilation time error, so cannot test
+    if (VL_UNLIKELY(!forceEnableSignalVop)) {
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "%s: VPI put or get requested for forceable signal '%s', but part selection "
+                      "could not be applied to the force enable signal.",
+                      __func__, baseSignalVop->fullname());
+        if (VL_UNLIKELY(forceValueSignalVop))
+            VL_DO_DANGLING(delete forceValueSignalVop, forceValueSignalVop);
+        return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
+            nullptr, nullptr};
+    }
+    if (VL_UNLIKELY(!forceValueSignalVop)) {
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "%s: VPI put or get requested for forceable signal '%s', but part selection "
+                      "could not be applied to the force value signal.",
+                      __func__, baseSignalVop->fullname());
+        if (VL_UNLIKELY(forceEnableSignalVop))
+            VL_DO_DANGLING(delete forceEnableSignalVop, forceEnableSignalVop);
+        return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
+            nullptr, nullptr};
+    }
+    // LCOV_EXCL_STOP
+
+#ifdef VL_DEBUG
+    // Sanity checks: Offsets, widths, and dimensions should all match between the base signal and
+    // the force control signals, so that they always refer to the same bits
+    assert(forceEnableSignalVop->bitSize() == baseSignalVop->bitSize());
+    assert(forceValueSignalVop->bitSize() == baseSignalVop->bitSize());
+    assert(forceEnableSignalVop->indexedDim() == baseSignalVop->indexedDim());
+    assert(forceValueSignalVop->indexedDim() == baseSignalVop->indexedDim());
+    assert(forceEnableSignalVop->index() == baseSignalVop->index());
+    assert(forceValueSignalVop->index() == baseSignalVop->index());
+    assert(forceEnableSignalVop->bitOffset() == baseSignalVop->bitOffset());
+    assert(forceValueSignalVop->bitOffset() == baseSignalVop->bitOffset());
+    assert(forceEnableSignalVop->partselBits() == baseSignalVop->partselBits());
+    assert(forceValueSignalVop->partselBits() == baseSignalVop->partselBits());
+    // entSize can differ because the force enable signal can have a different vltyp than the base
+    // signal (e.g. the base signal can be of type VLVT_REAL, while the force enable signal is
+    // still of type VLVT_UINT8), but for now entSize is only used for unpacked arrays, which
+    // cannot be forced through VPI yet
+    // assert(forceEnableSignalVop->entSize() == baseSignalVop->entSize());
+    assert(forceValueSignalVop->entSize() == baseSignalVop->entSize());
+    assert(forceEnableSignalVop->varDatap() == forceEnableSignalVarp->datap());
+    assert(forceValueSignalVop->varDatap() == forceValueSignalVarp->datap());
+#endif  // VL_DEBUG
+
     return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
-        std::make_unique<VerilatedVpioVar>(forceEnableSignal),
-        std::make_unique<VerilatedVpioVar>(forceValueSignal)};
+        forceEnableSignalVop, forceValueSignalVop};
 }
 
 std::size_t VerilatedVpiImp::vlTypeSize(const VerilatedVarType vltype) {
@@ -1639,14 +1753,11 @@ const char* VerilatedVpiError::strFromVpiObjType(PLI_INT32 vpiVal) VL_PURE {
         "vpiPropFormalDecl",
     };
     // clang-format on
-    if (VL_UNCOVERABLE(vpiVal < 0))
-        return names[0];
-    else if (vpiVal <= vpiAutomatics)
-        return names[vpiVal];
-    else if (vpiVal >= vpiPackage && vpiVal <= vpiPropFormalDecl)
+    if (VL_UNCOVERABLE(vpiVal < 0)) return names[0];
+    if (vpiVal <= vpiAutomatics) return names[vpiVal];
+    if (vpiVal >= vpiPackage && vpiVal <= vpiPropFormalDecl)
         return sv_names1[(vpiVal - vpiPackage)];
-    else
-        return names[0];
+    return names[0];
 }
 const char* VerilatedVpiError::strFromVpiMethod(PLI_INT32 vpiVal) VL_PURE {
     // clang-format off
@@ -2317,11 +2428,11 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
         if (scopep) {  // Whole thing found as a scope
             if (scopep->type() == VerilatedScope::SCOPE_MODULE) {
                 return (new VerilatedVpioModule{scopep})->castVpiHandle();
-            } else if (scopep->type() == VerilatedScope::SCOPE_PACKAGE) {
-                return (new VerilatedVpioPackage{scopep})->castVpiHandle();
-            } else {
-                return (new VerilatedVpioScope{scopep})->castVpiHandle();
             }
+            if (scopep->type() == VerilatedScope::SCOPE_PACKAGE) {
+                return (new VerilatedVpioPackage{scopep})->castVpiHandle();
+            }
+            return (new VerilatedVpioScope{scopep})->castVpiHandle();
         }
         std::string basename = scopeAndName;
         std::string scopename;
@@ -2380,16 +2491,26 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
 
     // If we have indices, apply them using vpi_handle_by_multi_index
     if (hasIndices && !indices.empty()) {
-        resultHandle = vpi_handle_by_multi_index(resultHandle, indices.size(), indices.data());
+        vpiHandle indexedHandle = vpi_handle_by_multi_index(
+            resultHandle, static_cast<PLI_INT32>(indices.size()), indices.data());
+        vpi_release_handle(resultHandle);
+        resultHandle = indexedHandle;
         if (!resultHandle) return nullptr;
     }
 
     // If we have a bit range part-select, apply it
     if (bitRange.valid) {
         VerilatedVpioVar* const varop = VerilatedVpioVar::castp(resultHandle);
-        if (!varop) return nullptr;
+        if (!varop) {
+            vpi_release_handle(resultHandle);
+            return nullptr;
+        }
         VerilatedVpioVar* const partsel = varop->withPartSelect(bitRange.hi, bitRange.lo);
-        if (!partsel) return nullptr;
+        if (!partsel) {
+            vpi_release_handle(resultHandle);
+            return nullptr;
+        }
+        vpi_release_handle(resultHandle);
         resultHandle = partsel->castVpiHandle();
     }
 
@@ -2427,7 +2548,8 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
         if (const VerilatedVpioVarBase* const vop = VerilatedVpioVarBase::castp(object)) {
             if (VL_UNLIKELY(!vop->rangep())) return nullptr;
             return (new VerilatedVpioConst{vop->rangep()->left()})->castVpiHandle();
-        } else if (const VerilatedVpioRange* const vop = VerilatedVpioRange::castp(object)) {
+        }
+        if (const VerilatedVpioRange* const vop = VerilatedVpioRange::castp(object)) {
             if (VL_UNLIKELY(!vop->rangep())) return nullptr;
             return (new VerilatedVpioConst{vop->rangep()->left()})->castVpiHandle();
         }
@@ -2440,7 +2562,8 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
         if (const VerilatedVpioVarBase* const vop = VerilatedVpioVarBase::castp(object)) {
             if (VL_UNLIKELY(!vop->rangep())) return nullptr;
             return (new VerilatedVpioConst{vop->rangep()->right()})->castVpiHandle();
-        } else if (const VerilatedVpioRange* const vop = VerilatedVpioRange::castp(object)) {
+        }
+        if (const VerilatedVpioRange* const vop = VerilatedVpioRange::castp(object)) {
             if (VL_UNLIKELY(!vop->rangep())) return nullptr;
             return (new VerilatedVpioConst{vop->rangep()->right()})->castVpiHandle();
         }
@@ -2646,73 +2769,78 @@ void vpi_put_delays(vpiHandle /*object*/, p_vpi_delay /*delay_p*/) { VL_VPI_UNIM
 // value processing
 bool vl_check_format(const VerilatedVpioVarBase* vop, const p_vpi_value valuep, bool isGetValue) {
     const VerilatedVar* varp = vop->varp();
-    bool status = true;
-    if ((valuep->format == vpiVectorVal) || (valuep->format == vpiBinStrVal)
-        || (valuep->format == vpiOctStrVal) || (valuep->format == vpiHexStrVal)) {
+    switch (valuep->format) {
+    case vpiVectorVal:  // FALLTHRU
+    case vpiBinStrVal:  // FALLTHRU
+    case vpiOctStrVal:  // FALLTHRU
+    case vpiHexStrVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32:
         case VLVT_UINT64:
-        case VLVT_WDATA: return status;
-        default: status = false;  // LCOV_EXCL_LINE
+        case VLVT_WDATA: return true;
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiDecStrVal) {
+        break;
+    case vpiDecStrVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32:
-        case VLVT_UINT64: return status;
-        default: status = false;  // LCOV_EXCL_LINE
+        case VLVT_UINT64: return true;
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiStringVal) {
+        break;
+    case vpiStringVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32:
         case VLVT_UINT64:
-        case VLVT_WDATA: return status;
+        case VLVT_WDATA: return true;
         case VLVT_STRING:
             // string parameter values can't be changed
             if (isGetValue || !varp->isParam()) {
-                return status;
+                return true;
             } else {
-                status = false;
                 break;
             }
-        default: status = false;  // LCOV_EXCL_LINE
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiIntVal) {
+        break;
+    case vpiIntVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32:
         case VLVT_UINT64:
-        case VLVT_WDATA: return status;
-        default: status = false;  // LCOV_EXCL_LINE
+        case VLVT_WDATA: return true;
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiRealVal) {
+        break;
+    case vpiRealVal:
         switch (varp->vltype()) {
-        case VLVT_REAL: return status;
-        default: status = false;  // LCOV_EXCL_LINE
+        case VLVT_REAL: return true;
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiScalarVal) {
+        break;
+    case vpiScalarVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32:
         case VLVT_UINT64:
-        case VLVT_WDATA: return status;
-        default: status = false;  // LCOV_EXCL_LINE
+        case VLVT_WDATA: return true;
+        default:;  // LCOV_EXCL_LINE
         }
-    } else if (valuep->format == vpiSuppressVal) {
-        return status;
-    } else {
-        status = false;
+        break;
+    case vpiSuppressVal: return true;
+    default: break;
     }
-    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) for %s", __func__,
+    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) for '%s'", __func__,
                   VerilatedVpiError::strFromVpiVal(valuep->format), vop->fullname());
-    return status;
+    return false;
 }
 
 // Get a VPI format that can be used to fully represent a signal of the given type
@@ -2736,7 +2864,8 @@ PLI_INT32 vl_get_vltype_format(VerilatedVarType vlType) {
 }
 
 static void vl_strprintf(std::string& buffer, char const* fmt, ...) {
-    va_list args, args_copy;
+    va_list args;
+    va_list args_copy;
     va_start(args, fmt);
     buffer.clear();
     // Make copy of args since we may need to call VL_VSNPRINTF more than once
@@ -2828,8 +2957,7 @@ T vl_vpi_get_word_gen(const VerilatedVpioVarBase* vop, size_t bitCount, size_t a
         return ((info.m_datap[info.m_wordOffset] & info.m_maskLo) >> info.m_bitOffset)
                | ((info.m_datap[info.m_wordOffset + 1] & info.m_maskHi)
                   << (wordBits - info.m_bitOffset));
-    else
-        return (info.m_datap[info.m_wordOffset] & info.m_maskLo) >> info.m_bitOffset;
+    return (info.m_datap[info.m_wordOffset] & info.m_maskLo) >> info.m_bitOffset;
 }
 
 template <typename T>
@@ -2892,11 +3020,15 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     // __VforceRd already has the correct value, but that signal is not public and thus not present
     // in the scope's m_varsp map, will be removed entirely eventually (#7092), so its value has to
     // be recreated using the __VforceEn and __VforceVal signals.
-    const auto forceControlSignals
-        = vop->varp()->isForceable()
-              ? VerilatedVpiImp::getForceControlSignals(vop)
-              : std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
-                    nullptr, nullptr};
+    const auto forceControlSignals = [vop]() {
+        if (vop->varp()->isForceable()) {
+            const VerilatedVpioVar* varVop = dynamic_cast<const VerilatedVpioVar*>(vop);
+            assert(varVop);  // VerilatedVpioParams cannot be forced
+            return VerilatedVpiImp::getForceControlSignals(varVop);
+        }
+        return std::pair<std::unique_ptr<VerilatedVpioVar>, std::unique_ptr<VerilatedVpioVar>>{
+            nullptr, nullptr};
+    }();
     const VerilatedVpioVarBase* const forceEnableSignalVop = forceControlSignals.first.get();
     const VerilatedVpioVarBase* const forceValueSignalVop = forceControlSignals.second.get();
     t_vpi_error_info getForceControlSignalsError{};
@@ -2950,34 +3082,32 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     if (valuep->format == vpiVectorVal) {
         // Vector pointer must come from our memory pool
         // It only needs to persist until the next vpi_get_value
-        static thread_local t_vpi_vecval t_out[VL_VALUE_STRING_MAX_WORDS * 2];
-        valuep->value.vector = t_out;
+        static thread_local std::vector<t_vpi_vecval> t_out;
         if (varp->vltype() == VLVT_WDATA) {
             const int words = VL_WORDS_I(varBits);
-            if (VL_UNCOVERABLE(words >= VL_VALUE_STRING_MAX_WORDS)) {
-                VL_VPI_ERROR_(
-                    __FILE__, __LINE__,
-                    "vpi_get_value with more than VL_VALUE_STRING_MAX_WORDS; increase and "
-                    "recompile");
-                return;
-            }
+            t_out.resize(words);
+            valuep->value.vector = t_out.data();
             for (int i = 0; i < words; ++i) {
                 t_out[i].aval = get_word(vop, 32, i * 32);
                 t_out[i].bval = 0;
             }
             return;
-        } else if (varp->vltype() == VLVT_UINT64 && varBits > 32) {
+        }
+        if (varp->vltype() == VLVT_UINT64 && varBits > 32) {
+            t_out.resize(2);
+            valuep->value.vector = t_out.data();
             const QData data = get_word(vop, 64, 0);
             t_out[1].aval = static_cast<IData>(data >> 32ULL);
             t_out[1].bval = 0;
             t_out[0].aval = static_cast<IData>(data);
             t_out[0].bval = 0;
             return;
-        } else {
-            t_out[0].aval = get_word(vop, 32, 0);
-            t_out[0].bval = 0;
-            return;
         }
+        t_out.resize(1);
+        valuep->value.vector = t_out.data();
+        t_out[0].aval = get_word(vop, 32, 0);
+        t_out[0].bval = 0;
+        return;
     } else if (valuep->format == vpiBinStrVal) {
         t_outDynamicStr.resize(varBits);
 
@@ -3038,11 +3168,10 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             if (varp->isParam()) {
                 valuep->value.str = reinterpret_cast<char*>(varDatap);
                 return;
-            } else {
-                t_outDynamicStr = *vop->varStringDatap();
-                valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
-                return;
             }
+            t_outDynamicStr = *vop->varStringDatap();
+            valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
+            return;
         } else {
             const int chars = VL_BYTES_I(varBits);
             t_outDynamicStr.resize(chars);
@@ -3058,7 +3187,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         valuep->value.integer = get_word(vop, 32, 0);
         return;
     } else if (valuep->format == vpiRealVal) {
-        // Only cover the scalar case, since reals cannot be packed (IEEE 1800, section 7.4.1), and
+        // Only cover the scalar case, since reals cannot be packed (IEEE 1800-2023 7.4.1), and
         // unpacked arrays are not supported for forcing in Verilator (#4735).
         if (vop->varp()->isForceable() && *forceEnableSignalVop->varCDatap())
             valuep->value.real = *forceValueSignalVop->varRealDatap();
@@ -3072,8 +3201,8 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     } else if (valuep->format == vpiSuppressVal) {
         return;
     }
-    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for %s", __func__,
-                  VerilatedVpiError::strFromVpiVal(valuep->format), vop->fullname());
+    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for '%s'",
+                  __func__, VerilatedVpiError::strFromVpiVal(valuep->format), vop->fullname());
 }
 
 void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
@@ -3085,15 +3214,17 @@ void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
     if (const VerilatedVpioVar* const vop = VerilatedVpioVar::castp(object)) {
         vl_vpi_get_value(vop, valuep);
         return;
-    } else if (const VerilatedVpioParam* const vop = VerilatedVpioParam::castp(object)) {
+    }
+    if (const VerilatedVpioParam* const vop = VerilatedVpioParam::castp(object)) {
         vl_vpi_get_value(vop, valuep);
         return;
-    } else if (const VerilatedVpioConst* const vop = VerilatedVpioConst::castp(object)) {
+    }
+    if (const VerilatedVpioConst* const vop = VerilatedVpioConst::castp(object)) {
         if (valuep->format == vpiIntVal) {
             valuep->value.integer = vop->num();
             return;
         }
-        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) for %s", __func__,
+        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) for '%s'", __func__,
                       VerilatedVpiError::strFromVpiVal(valuep->format), vop->fullname());
         return;
     }
@@ -3284,7 +3415,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 unsigned char digit = valuep->value.str[len - i - 1] - '0';
                 if (digit > 7) {  // If str was < '0', then as unsigned, digit > 7
                     VL_VPI_WARNING_(__FILE__, __LINE__,
-                                    "%s: Non octal character '%c' in '%s' as value %s for %s",
+                                    "%s: Non octal character '%c' in '%s' as value %s for '%s'",
                                     __func__, digit + '0', valuep->value.str,
                                     VerilatedVpiError::strFromVpiVal(valuep->format),
                                     valueVop->fullname());
@@ -3299,15 +3430,15 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             const int success = std::sscanf(valuep->value.str, "%30llu%15s",  // lintok-format-ll
                                             &val, remainder);
             if (success < 1) {
-                VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Parsing failed for '%s' as value %s for %s",
-                              __func__, valuep->value.str,
-                              VerilatedVpiError::strFromVpiVal(valuep->format),
+                VL_VPI_ERROR_(__FILE__, __LINE__,
+                              "%s: Parsing failed for '%s' as value %s for '%s'", __func__,
+                              valuep->value.str, VerilatedVpiError::strFromVpiVal(valuep->format),
                               valueVop->fullname());
                 return nullptr;
             }
             if (success > 1) {
                 VL_VPI_WARNING_(
-                    __FILE__, __LINE__, "%s: Trailing garbage '%s' in '%s' as value %s for %s",
+                    __FILE__, __LINE__, "%s: Trailing garbage '%s' in '%s' as value %s for '%s'",
                     __func__, remainder, valuep->value.str,
                     VerilatedVpiError::strFromVpiVal(valuep->format), valueVop->fullname());
             }
@@ -3332,7 +3463,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                         hex = digit - 'A' + 10;
                     } else {
                         VL_VPI_WARNING_(__FILE__, __LINE__,
-                                        "%s: Non hex character '%c' in '%s' as value %s for %s",
+                                        "%s: Non hex character '%c' in '%s' as value %s for '%s'",
                                         __func__, digit, valuep->value.str,
                                         VerilatedVpiError::strFromVpiVal(valuep->format),
                                         valueVop->fullname());
@@ -3350,15 +3481,15 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 // Does not use valueVop, because strings are not forceable anyway
                 *(baseSignalVop->varStringDatap()) = valuep->value.str;
                 return object;
-            } else {
-                const int chars = VL_BYTES_I(varBits);
-                const int len = std::strlen(valuep->value.str);
-                for (int i = 0; i < chars; ++i) {
-                    // prepend with 0 values before placing string the least significant bytes
-                    const char c = (i < len) ? valuep->value.str[len - i - 1] : 0;
-                    vl_vpi_put_word(valueVop, c, 8, i * 8);
-                }
             }
+            const int chars = VL_BYTES_I(varBits);
+            const int len = std::strlen(valuep->value.str);
+            for (int i = 0; i < chars; ++i) {
+                // prepend with 0 values before placing string the least significant bytes
+                const char c = (i < len) ? valuep->value.str[len - i - 1] : 0;
+                vl_vpi_put_word(valueVop, c, 8, i * 8);
+            }
+
             return object;
         } else if (valuep->format == vpiIntVal) {
             vl_vpi_put_word(valueVop, valuep->value.integer, 64, 0);
@@ -3372,16 +3503,18 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             vl_vpi_put_word(valueVop, (valuep->value.scalar == vpi1 ? 1 : 0), 1, 0);
             return object;
         }
-        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for %s",
+        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for '%s'",
                       __func__, VerilatedVpiError::strFromVpiVal(valuep->format),
                       valueVop->fullname());
         return nullptr;
-    } else if (const VerilatedVpioParam* const vop = VerilatedVpioParam::castp(object)) {
-        VL_VPI_WARNING_(__FILE__, __LINE__, "%s: Ignoring vpi_put_value to vpiParameter: %s",
+    }
+    if (const VerilatedVpioParam* const vop = VerilatedVpioParam::castp(object)) {
+        VL_VPI_WARNING_(__FILE__, __LINE__, "%s: Ignoring vpi_put_value to vpiParameter '%s'",
                         __func__, vop->fullname());
         return nullptr;
-    } else if (const VerilatedVpioConst* const vop = VerilatedVpioConst::castp(object)) {
-        VL_VPI_WARNING_(__FILE__, __LINE__, "%s: Ignoring vpi_put_value to vpiConstant: %s",
+    }
+    if (const VerilatedVpioConst* const vop = VerilatedVpioConst::castp(object)) {
+        VL_VPI_WARNING_(__FILE__, __LINE__, "%s: Ignoring vpi_put_value to vpiConstant '%s'",
                         __func__, vop->fullname());
         return nullptr;
     }
@@ -3391,7 +3524,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
 bool vl_check_array_format(const VerilatedVar* varp, const p_vpi_arrayvalue arrayvalue_p,
                            const char* fullname) {
-    if (arrayvalue_p->format == vpiVectorVal) {
+    switch (arrayvalue_p->format) {
+    case vpiVectorVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
@@ -3400,15 +3534,17 @@ bool vl_check_array_format(const VerilatedVar* varp, const p_vpi_arrayvalue arra
         case VLVT_WDATA: return true;
         default:;  // LCOV_EXCL_LINE
         }
-    } else if (arrayvalue_p->format == vpiIntVal) {
+        break;
+    case vpiIntVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
         case VLVT_UINT32: return true;
         default:;  // LCOV_EXCL_LINE
         }
-    } else if ((arrayvalue_p->format == vpiRawTwoStateVal)
-               || (arrayvalue_p->format == vpiRawFourStateVal)) {
+        break;
+    case vpiRawTwoStateVal:
+    case vpiRawFourStateVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
@@ -3417,13 +3553,15 @@ bool vl_check_array_format(const VerilatedVar* varp, const p_vpi_arrayvalue arra
         case VLVT_WDATA: return true;
         default:;  // LCOV_EXCL_LINE
         }
-    } else if (arrayvalue_p->format == vpiShortIntVal) {
+        break;
+    case vpiShortIntVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16: return true;
         default:;  // LCOV_EXCL_LINE
         }
-    } else if (arrayvalue_p->format == vpiLongIntVal) {
+        break;
+    case vpiLongIntVal:
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
@@ -3431,18 +3569,19 @@ bool vl_check_array_format(const VerilatedVar* varp, const p_vpi_arrayvalue arra
         case VLVT_UINT64: return true;
         default:;  // LCOV_EXCL_LINE
         }
+        break;
+    default:;
     }
 
-    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for %s", __func__,
-                  VerilatedVpiError::strFromVpiVal(arrayvalue_p->format), fullname);
-
+    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for '%s'",
+                  __func__, VerilatedVpiError::strFromVpiVal(arrayvalue_p->format), fullname);
     return false;
 }
 
 template <typename T, typename K>
 void vl_get_value_array_integrals(unsigned index, const unsigned num, const unsigned size,
-                                  const unsigned packedSize, const bool leftIsLow, const T* src,
-                                  K* dst) {
+                                  const unsigned /*packedSize*/, const bool leftIsLow,
+                                  const T* src, K* dst) {
     static_assert(sizeof(K) >= sizeof(T), "size of type K is less than size of type T");
     for (int i = 0; i < num; ++i) {
         dst[i] = src[index];
@@ -3506,7 +3645,7 @@ void vl_get_value_array_vectors(unsigned index, const unsigned num, const unsign
 template <typename T>
 void vl_put_value_array_vectors(unsigned index, const unsigned num, const unsigned size,
                                 const unsigned packedSize, const bool leftIsLow,
-                                const bool fourState, const p_vpi_vecval src, T* dst) {
+                                const bool /*fourState*/, const p_vpi_vecval src, T* dst) {
     static_assert(std::is_unsigned<T>::value, "type T is not unsigned");
     static_assert(std::is_integral<T>::value, "type T is not an integral type");
     const unsigned element_size_bytes VL_BYTES_I(packedSize);
@@ -3606,7 +3745,7 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
     const VerilatedVar* const varp = vop->varp();
 
-    static thread_local EData t_out_data[VL_VALUE_STRING_MAX_WORDS * 2];
+    static thread_local std::vector<EData> t_out_data;
 
     const unsigned size = vop->size();
     if (VL_UNCOVERABLE(num > size)) {
@@ -3620,13 +3759,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
         = leftIsLow ? index_p[0] - vop->rangep()->left() : vop->rangep()->left() - index_p[0];
 
     if (arrayvalue_p->format == vpiShortIntVal) {
-        if (VL_UNCOVERABLE((sizeof(PLI_INT16) * num) >= VL_VALUE_STRING_MAX_CHARS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize(num * sizeof(PLI_INT16) / sizeof(EData));
 
-        PLI_INT16* shortintsp = reinterpret_cast<PLI_INT16*>(t_out_data);
+        PLI_INT16* shortintsp = reinterpret_cast<PLI_INT16*>(t_out_data.data());
         arrayvalue_p->value.shortints = shortintsp;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3639,13 +3774,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
         return;
     } else if (arrayvalue_p->format == vpiIntVal) {
-        if (VL_UNCOVERABLE(num >= VL_VALUE_STRING_MAX_WORDS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize(num * sizeof(PLI_INT32) / sizeof(EData));
 
-        PLI_INT32* integersp = reinterpret_cast<PLI_INT32*>(t_out_data);
+        PLI_INT32* integersp = reinterpret_cast<PLI_INT32*>(t_out_data.data());
         arrayvalue_p->value.integers = integersp;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3661,13 +3792,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
         return;
     } else if (arrayvalue_p->format == vpiLongIntVal) {
-        if (VL_UNCOVERABLE((sizeof(PLI_INT64) * num) >= VL_VALUE_STRING_MAX_CHARS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize(num * sizeof(PLI_INT64) / sizeof(EData));
 
-        PLI_INT64* longintsp = reinterpret_cast<PLI_INT64*>(t_out_data);
+        PLI_INT64* longintsp = reinterpret_cast<PLI_INT64*>(t_out_data.data());
         arrayvalue_p->value.longints = longintsp;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3686,13 +3813,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
         return;
     } else if (arrayvalue_p->format == vpiVectorVal) {
-        if (VL_UNCOVERABLE((VL_WORDS_I(varp->entBits()) * 2 * num) >= VL_VALUE_STRING_MAX_WORDS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize((VL_WORDS_I(varp->entBits()) * 4 * num));
 
-        p_vpi_vecval vectorsp = reinterpret_cast<p_vpi_vecval>(t_out_data);
+        p_vpi_vecval vectorsp = reinterpret_cast<p_vpi_vecval>(t_out_data.data());
         arrayvalue_p->value.vectors = vectorsp;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3714,13 +3837,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
         return;
     } else if (arrayvalue_p->format == vpiRawFourStateVal) {
-        if (VL_UNCOVERABLE((VL_BYTES_I(varp->entBits()) * 2 * num) >= VL_VALUE_STRING_MAX_CHARS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize((VL_BYTES_I(varp->entBits()) * 4 * num) / sizeof(EData));
 
-        PLI_BYTE8* valuep = reinterpret_cast<PLI_BYTE8*>(t_out_data);
+        PLI_BYTE8* valuep = reinterpret_cast<PLI_BYTE8*>(t_out_data.data());
         arrayvalue_p->value.rawvals = valuep;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3742,13 +3861,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
 
         return;
     } else if (arrayvalue_p->format == vpiRawTwoStateVal) {
-        if (VL_UNCOVERABLE((VL_BYTES_I(varp->entBits()) * num) >= VL_VALUE_STRING_MAX_CHARS)) {
-            VL_FATAL_MT(__FILE__, __LINE__, "",
-                        "vpi_get_value_array with more than VL_VALUE_STRING_MAX_WORDS; "
-                        "increase and recompile");
-        }
+        t_out_data.resize((VL_BYTES_I(varp->entBits()) * 2 * num) / sizeof(EData));
 
-        PLI_BYTE8* valuep = reinterpret_cast<PLI_BYTE8*>(t_out_data);
+        PLI_BYTE8* valuep = reinterpret_cast<PLI_BYTE8*>(t_out_data.data());
         arrayvalue_p->value.rawvals = valuep;
 
         if (varp->vltype() == VLVT_UINT8) {
@@ -3771,8 +3886,9 @@ void vl_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
         return;
     }
 
-    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for %s", __func__,
-                  VerilatedVpiError::strFromVpiVal(arrayvalue_p->format), vop->fullname());
+    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for '%s'",
+                  __func__, VerilatedVpiError::strFromVpiVal(arrayvalue_p->format),
+                  vop->fullname());
 }
 
 void vpi_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, PLI_INT32* index_p,
@@ -3954,8 +4070,9 @@ void vl_put_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, const P
         return;
     }
 
-    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for %s", __func__,
-                  VerilatedVpiError::strFromVpiVal(arrayvalue_p->format), vop->fullname());
+    VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported format (%s) as requested for '%s'",
+                  __func__, VerilatedVpiError::strFromVpiVal(arrayvalue_p->format),
+                  vop->fullname());
 }
 
 void vpi_put_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, PLI_INT32* index_p,
@@ -3999,7 +4116,7 @@ void vpi_put_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p, PLI_IN
     if (VL_UNLIKELY(!vop->varp()->isPublicRW())) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
                       "Ignoring vpi_put_value_array to signal marked read-only,"
-                      " use public_flat_rw instead: %s",
+                      " use public_flat_rw instead: '%s'",
                       vop->fullname());
         return;
     }
@@ -4030,7 +4147,8 @@ void vpi_get_time(vpiHandle object, p_vpi_time time_p) {
         time_p->low = itime[0];
         time_p->high = itime[1];
         return;
-    } else if (time_p->type == vpiScaledRealTime) {
+    }
+    if (time_p->type == vpiScaledRealTime) {
         double dtime = VL_TIME_D();
         if (const VerilatedVpioScope* const vop = VerilatedVpioScope::castp(object)) {
             const int scalePow10
@@ -4212,11 +4330,13 @@ vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT3
     if (VL_UNLIKELY(!index_array)) return nullptr;
     if (VL_UNLIKELY(num_index <= 0)) return nullptr;
 
-    vpiHandle result_handle = obj;
+    vpiHandle resultHandle = obj;
     for (PLI_INT32 i = 0; i < num_index; ++i) {
-        result_handle = vpi_handle_by_index(result_handle, index_array[i]);
-        if (VL_UNLIKELY(!result_handle)) { return nullptr; }
+        vpiHandle nextIndexHandle = vpi_handle_by_index(resultHandle, index_array[i]);
+        if (i > 0) vpi_release_handle(resultHandle);
+        resultHandle = nextIndexHandle;
+        if (VL_UNLIKELY(!resultHandle)) { return nullptr; }
     }
 
-    return result_handle;
+    return resultHandle;
 }

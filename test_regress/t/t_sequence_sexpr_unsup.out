@@ -1,169 +1,61 @@
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:25:12: Unsupported: sequence
-   25 |   sequence s_a;
-      |            ^~~
-                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:28:12: Unsupported: sequence
-   28 |   sequence s_var;
-      |            ^~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:34:7: Unsupported: within (in sequence expression)
    34 |     a within(b);
       |       ^~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:33:12: Unsupported: sequence
-   33 |   sequence s_within;
-      |            ^~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:38:7: Unsupported: and (in sequence expression)
-   38 |     a and b;
-      |       ^~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:37:12: Unsupported: sequence
-   37 |   sequence s_and;
-      |            ^~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:42:7: Unsupported: or (in sequence expression)
-   42 |     a or b;
-      |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:41:12: Unsupported: sequence
-   41 |   sequence s_or;
-      |            ^~~~
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:46:7: Unsupported: intersect (in sequence expression)
    46 |     a intersect b;
       |       ^~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:45:12: Unsupported: sequence
-   45 |   sequence s_intersect;
-      |            ^~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:49:12: Unsupported: sequence
-   49 |   sequence s_uni_cycdelay_id;
-      |            ^~~~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:52:12: Unsupported: sequence
-   52 |   sequence s_uni_cycdelay_pid;
-      |            ^~~~~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:56:5: Unsupported: ## range cycle delay range expression
-   56 |     ## [1:2] b;
-      |     ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:55:12: Unsupported: sequence
-   55 |   sequence s_uni_cycdelay_range;
-      |            ^~~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:59:5: Unsupported: ## [*] cycle delay range expression
    59 |     ## [*] b;
       |     ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:58:12: Unsupported: sequence
-   58 |   sequence s_uni_cycdelay_star;
-      |            ^~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:62:5: Unsupported: ## [+] cycle delay range expression
    62 |     ## [+] b;
       |     ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:61:12: Unsupported: sequence
-   61 |   sequence s_uni_cycdelay_plus;
-      |            ^~~~~~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:65:12: Unsupported: sequence
-   65 |   sequence s_cycdelay_id;
-      |            ^~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:68:12: Unsupported: sequence
-   68 |   sequence s_cycdelay_pid;
-      |            ^~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:72:7: Unsupported: ## range cycle delay range expression
-   72 |     a ## [1:2] b;
-      |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:71:12: Unsupported: sequence
-   71 |   sequence s_cycdelay_range;
-      |            ^~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:75:7: Unsupported: ## [*] cycle delay range expression
    75 |     a ## [*] b;
       |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:74:12: Unsupported: sequence
-   74 |   sequence s_cycdelay_star;
-      |            ^~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:78:7: Unsupported: ## [+] cycle delay range expression
    78 |     a ## [+] b;
       |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:77:12: Unsupported: sequence
-   77 |   sequence s_cycdelay_plus;
-      |            ^~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:82:7: Unsupported: [*] boolean abbrev expression
-   82 |     a [* 1 ];
-      |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:82:10: Unsupported: boolean abbrev (in sequence expression)
-   82 |     a [* 1 ];
-      |          ^
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:81:12: Unsupported: sequence
-   81 |   sequence s_booleanabbrev_brastar_int;
-      |            ^~~~~~~~~~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:85:7: Unsupported: [*] boolean abbrev expression
    85 |     a [*];
       |       ^~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:85:7: Unsupported: boolean abbrev (in sequence expression)
    85 |     a [*];
       |       ^~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:84:12: Unsupported: sequence
-   84 |   sequence s_booleanabbrev_brastar;
-      |            ^~~~~~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:88:7: Unsupported: [+] boolean abbrev expression
    88 |     a [+];
       |       ^~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:88:7: Unsupported: boolean abbrev (in sequence expression)
    88 |     a [+];
       |       ^~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:87:12: Unsupported: sequence
-   87 |   sequence s_booleanabbrev_plus;
-      |            ^~~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:91:7: Unsupported: [= boolean abbrev expression
    91 |     a [= 1];
       |       ^~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:91:10: Unsupported: boolean abbrev (in sequence expression)
    91 |     a [= 1];
       |          ^
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:90:12: Unsupported: sequence
-   90 |   sequence s_booleanabbrev_eq;
-      |            ^~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:94:7: Unsupported: [= boolean abbrev expression
    94 |     a [= 1:2];
       |       ^~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:94:10: Unsupported: boolean abbrev (in sequence expression)
    94 |     a [= 1:2];
       |          ^
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:93:12: Unsupported: sequence
-   93 |   sequence s_booleanabbrev_eq_range;
-      |            ^~~~~~~~~~~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:97:7: Unsupported: [-> boolean abbrev expression
-   97 |     a [-> 1];
-      |       ^~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:97:11: Unsupported: boolean abbrev (in sequence expression)
-   97 |     a [-> 1];
-      |           ^
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:96:12: Unsupported: sequence
-   96 |   sequence s_booleanabbrev_minusgt;
-      |            ^~~~~~~~~~~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:100:7: Unsupported: [-> boolean abbrev expression
+%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:100:7: Unsupported: [-> range goto repetition
   100 |     a [-> 1:2];
       |       ^~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:100:11: Unsupported: boolean abbrev (in sequence expression)
-  100 |     a [-> 1:2];
-      |           ^
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:99:12: Unsupported: sequence
-   99 |   sequence s_booleanabbrev_minusgt_range;
-      |            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:103:26: Unsupported: sequence argument data type
   103 |   sequence p_arg_seqence(sequence inseq);
       |                          ^~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:103:12: Unsupported: sequence
-  103 |   sequence p_arg_seqence(sequence inseq);
-      |            ^~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:108:5: Unsupported: first_match (in sequence expression)
   108 |     first_match (a);
       |     ^~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:107:12: Unsupported: sequence
-  107 |   sequence s_firstmatch_a;
-      |            ^~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:111:5: Unsupported: first_match (in sequence expression)
   111 |     first_match (a, res0 = 1);
       |     ^~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:110:12: Unsupported: sequence
-  110 |   sequence s_firstmatch_ab;
-      |            ^~~~~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:114:5: Unsupported: first_match (in sequence expression)
   114 |     first_match (a, res0 = 1, res1 = 2);
       |     ^~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_sequence_sexpr_unsup.v:113:12: Unsupported: sequence
-  113 |   sequence s_firstmatch_abc;
-      |            ^~~~~~~~~~~~~~~~
 %Warning-COVERIGN: t/t_sequence_sexpr_unsup.v:117:9: Ignoring unsupported: cover sequence
   117 |   cover sequence (s_a) $display("");
       |         ^~~~~~~~
