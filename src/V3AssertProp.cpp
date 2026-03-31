@@ -136,8 +136,9 @@ static std::vector<SeqStep> extractTimeline(AstNodeExpr* nodep) {
             if (AstConst* const constp = VN_CAST(dlyp->lhsp(), Const)) {
                 cycles = constp->toSInt();
             } else {
-                dlyp->lhsp()->v3warn(E_UNSUPPORTED,
-                                     "Unsupported: non-constant cycle delay in sequence and/or");
+                dlyp->lhsp()->v3warn(
+                    E_UNSUPPORTED,
+                    "Unsupported: non-constant cycle delay in sequence and/or/intersect");
             }
         }
         // The expression after the delay
@@ -259,6 +260,33 @@ class AssertPropLowerVisitor final : public VNVisitor {
             nodep->replaceWith(pexprp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
         }
+    }
+
+    // Lower a multi-cycle sequence 'intersect' (IEEE 1800-2023 16.9.6).
+    // intersect = and + length restriction: both operands must match with the same length.
+    // For constant-delay sequences with equal total delay, this is identical to 'and'.
+    void lowerSeqIntersect(AstNodeBiop* nodep) {
+        // Compute total cycles for each operand
+        const std::vector<SeqStep> lhsTimeline = extractTimeline(nodep->lhsp());
+        const std::vector<SeqStep> rhsTimeline = extractTimeline(nodep->rhsp());
+
+        int lhsTotal = 0;
+        for (const auto& step : lhsTimeline) lhsTotal += step.delayCycles;
+        int rhsTotal = 0;
+        for (const auto& step : rhsTimeline) rhsTotal += step.delayCycles;
+
+        if (lhsTotal != rhsTotal) {
+            // Different lengths: can never match per IEEE 16.9.6
+            FileLine* const flp = nodep->fileline();
+            AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
+            bodyp->addStmtsp(new AstPExprClause{flp, false});
+            AstPExpr* const pexprp = new AstPExpr{flp, bodyp, nodep->dtypep()};
+            nodep->replaceWith(pexprp);
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
+        }
+        // Same length: equivalent to sequence 'and'
+        lowerSeqAnd(nodep);
     }
 
     // Lower a multi-cycle sequence 'or' to an AstPExpr with dead-tracking variables.
@@ -417,6 +445,19 @@ class AssertPropLowerVisitor final : public VNVisitor {
             // Pure boolean operands: lower to LogOr
             AstLogOr* const newp = new AstLogOr{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
                                                 nodep->rhsp()->unlinkFrBack()};
+            newp->dtypeFrom(nodep);
+            nodep->replaceWith(newp);
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+        }
+    }
+    void visit(AstSIntersect* nodep) override {
+        iterateChildren(nodep);
+        if (containsSExpr(nodep->lhsp()) || containsSExpr(nodep->rhsp())) {
+            lowerSeqIntersect(nodep);
+        } else {
+            // Pure boolean operands: lower to LogAnd (same length = 0 always matches)
+            AstLogAnd* const newp = new AstLogAnd{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
+                                                  nodep->rhsp()->unlinkFrBack()};
             newp->dtypeFrom(nodep);
             nodep->replaceWith(newp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
