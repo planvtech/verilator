@@ -1026,8 +1026,7 @@ class RangeDelayExpander final : public VNVisitor {
         // would silently lose per-tick enforcement (IEEE 1800-2023 16.9.9)
         if (AstSExpr* const sexprp = VN_CAST(nodep->seqp(), SExpr)) {
             if (containsRangeDelay(sexprp)) {
-                nodep->v3warn(E_UNSUPPORTED,
-                              "Unsupported: throughout with range delay sequence");
+                nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with range delay sequence");
                 nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
                 VL_DO_DANGLING(nodep->deleteTree(), nodep);
                 return;
@@ -1038,8 +1037,7 @@ class RangeDelayExpander final : public VNVisitor {
         // Replace with false to prevent broken AST in later passes.
         if (VN_IS(nodep->seqp(), SAnd) || VN_IS(nodep->seqp(), SOr)
             || VN_IS(nodep->seqp(), SExprThroughout) || VN_IS(nodep->seqp(), SExprGotoRep)) {
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: throughout with complex sequence operator");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with complex sequence operator");
             nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
