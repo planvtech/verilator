@@ -1634,6 +1634,20 @@ class WidthVisitor final : public VNVisitor {
             nodep->dtypeSetBit();
         }
     }
+    void visit(AstSExprThroughout* nodep) override {
+        m_hasSExpr = true;
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            // condp is a boolean expression, NOT a sequence -- don't set m_underSExpr
+            iterateCheckBool(nodep, "condp", nodep->condp(), BOTH);
+            {
+                VL_RESTORER(m_underSExpr);
+                m_underSExpr = true;
+                iterate(nodep->seqp());
+            }
+            nodep->dtypeSetBit();
+        }
+    }
     void visit(AstURandomRange* nodep) override {
         assertAtExpr(nodep);
         if (m_vup->prelim()) {
