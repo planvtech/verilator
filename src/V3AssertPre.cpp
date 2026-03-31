@@ -492,17 +492,16 @@ private:
                                        nodep->findBasicDType(VBasicDTypeKwd::LOGIC_IMPLICIT)};
             throughoutOkp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
             beginp->addStmtsp(throughoutOkp);
-            beginp->addStmtsp(
-                new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
-                              new AstConst{flp, AstConst::BitTrue{}}});
+            beginp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
+                                            new AstConst{flp, AstConst::BitTrue{}}});
             // Check throughout condition at start tick (tick 0, before delay loop)
             AstSampled* const initSampledp
                 = new AstSampled{flp, throughoutp->cloneTreePure(false)};
             initSampledp->dtypeSetBit();
-            beginp->addStmtsp(new AstIf{
-                flp, new AstLogNot{flp, initSampledp},
-                new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
-                              new AstConst{flp, AstConst::BitFalse{}}}});
+            beginp->addStmtsp(
+                new AstIf{flp, new AstLogNot{flp, initSampledp},
+                          new AstAssign{flp, new AstVarRef{flp, throughoutOkp, VAccess::WRITE},
+                                        new AstConst{flp, AstConst::BitFalse{}}}});
         }
 
         {
@@ -531,8 +530,8 @@ private:
         AstNode* remainp = nodep->nextp() ? nodep->nextp()->unlinkFrBackWithNext() : nullptr;
         if (throughoutOkp) {
             // IEEE 1800-2023 16.9.9: if condition failed during delay, fail assertion
-            remainp = new AstIf{flp, new AstVarRef{flp, throughoutOkp, VAccess::READ},
-                                remainp, new AstPExprClause{flp, /*pass=*/false}};
+            remainp = new AstIf{flp, new AstVarRef{flp, throughoutOkp, VAccess::READ}, remainp,
+                                new AstPExprClause{flp, /*pass=*/false}};
         }
         if (m_disableSeqIfp && remainp) {
             AstIf* const disableSeqIfp = m_disableSeqIfp->cloneTree(false);

@@ -467,15 +467,15 @@ class AssertPropBuildVisitor final : public VNVisitorConst {
             sexprp->foreach([&](AstSExpr* sp) {
                 if (!VN_IS(sp->exprp(), SExpr)) {
                     AstNodeExpr* const origp = sp->exprp()->unlinkFrBack();
-                    AstLogAnd* const andp = new AstLogAnd{origp->fileline(),
-                                                          condp->cloneTreePure(false), origp};
+                    AstLogAnd* const andp
+                        = new AstLogAnd{origp->fileline(), condp->cloneTreePure(false), origp};
                     andp->dtypeSetBit();
                     sp->exprp(andp);
                 }
                 if (sp->preExprp() && !VN_IS(sp->preExprp(), SExpr)) {
                     AstNodeExpr* const origp = sp->preExprp()->unlinkFrBack();
-                    AstLogAnd* const andp = new AstLogAnd{origp->fileline(),
-                                                          condp->cloneTreePure(false), origp};
+                    AstLogAnd* const andp
+                        = new AstLogAnd{origp->fileline(), condp->cloneTreePure(false), origp};
                     andp->dtypeSetBit();
                     sp->preExprp(andp);
                 }
@@ -490,8 +490,7 @@ class AssertPropBuildVisitor final : public VNVisitorConst {
         } else if (VN_IS(seqp, SAnd) || VN_IS(seqp, SOr) || VN_IS(seqp, SExprThroughout)
                    || VN_IS(seqp, SExprGotoRep)) {
             // Temporal operators need recursive throughout lowering -- not yet supported
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: throughout with complex sequence operator");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with complex sequence operator");
             AstLogAnd* const andp = new AstLogAnd{nodep->fileline(), condp, seqp};
             andp->dtypeSetBit();
             nodep->replaceWith(andp);
@@ -1035,8 +1034,7 @@ class RangeDelayExpander final : public VNVisitor {
         // would silently lose per-tick enforcement (IEEE 1800-2023 16.9.9)
         if (AstSExpr* const sexprp = VN_CAST(nodep->seqp(), SExpr)) {
             if (containsRangeDelay(sexprp)) {
-                nodep->v3warn(E_UNSUPPORTED,
-                              "Unsupported: throughout with range delay sequence");
+                nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with range delay sequence");
                 return;
             }
         }
