@@ -1,0 +1,6 @@
+%Error-UNSUPPORTED: t/t_assert_throughout_complex_unsup.v:13:7: Unsupported: throughout with complex sequence operator
+                                                              : ... note: In instance 't'
+   13 |     a throughout ((b ##1 c) and (c ##1 b)));
+      |       ^~~~~~~~~~
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
+%Error: Exiting due to

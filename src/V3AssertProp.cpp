@@ -487,14 +487,6 @@ class AssertPropBuildVisitor final : public VNVisitorConst {
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             VL_DO_DANGLING(condp->deleteTree(), condp);
             visit(sexprp);
-        } else if (VN_IS(seqp, SAnd) || VN_IS(seqp, SOr) || VN_IS(seqp, SExprThroughout)
-                   || VN_IS(seqp, SExprGotoRep)) {
-            // Temporal operators need recursive throughout lowering -- not yet supported
-            nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with complex sequence operator");
-            AstLogAnd* const andp = new AstLogAnd{nodep->fileline(), condp, seqp};
-            andp->dtypeSetBit();
-            nodep->replaceWith(andp);
-            VL_DO_DANGLING(nodep->deleteTree(), nodep);
         } else {
             // Single expression (no delay): just AND cond with it
             AstLogAnd* const andp = new AstLogAnd{nodep->fileline(), condp, seqp};
@@ -1034,9 +1026,23 @@ class RangeDelayExpander final : public VNVisitor {
         // would silently lose per-tick enforcement (IEEE 1800-2023 16.9.9)
         if (AstSExpr* const sexprp = VN_CAST(nodep->seqp(), SExpr)) {
             if (containsRangeDelay(sexprp)) {
-                nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with range delay sequence");
+                nodep->v3warn(E_UNSUPPORTED,
+                              "Unsupported: throughout with range delay sequence");
+                nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
+                VL_DO_DANGLING(nodep->deleteTree(), nodep);
                 return;
             }
+        }
+        // Reject throughout with complex temporal operators (SAnd, SOr, etc.)
+        // that need recursive throughout lowering -- not yet supported.
+        // Replace with false to prevent broken AST in later passes.
+        if (VN_IS(nodep->seqp(), SAnd) || VN_IS(nodep->seqp(), SOr)
+            || VN_IS(nodep->seqp(), SExprThroughout) || VN_IS(nodep->seqp(), SExprGotoRep)) {
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: throughout with complex sequence operator");
+            nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
         }
         iterateChildren(nodep);
     }
