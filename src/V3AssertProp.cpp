@@ -1032,15 +1032,26 @@ class RangeDelayExpander final : public VNVisitor {
                 return;
             }
         }
-        // Reject throughout with complex temporal operators (SAnd, SOr, etc.)
-        // that need recursive throughout lowering -- not yet supported.
-        // Replace with false to prevent broken AST in later passes.
-        if (VN_IS(nodep->seqp(), SAnd) || VN_IS(nodep->seqp(), SOr)
-            || VN_IS(nodep->seqp(), SExprThroughout) || VN_IS(nodep->seqp(), SExprGotoRep)) {
-            nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with complex sequence operator");
+        // Reject throughout with nested throughout or goto repetition
+        if (VN_IS(nodep->seqp(), SExprThroughout) || VN_IS(nodep->seqp(), SExprGotoRep)) {
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: throughout with complex sequence operator");
             nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
+        }
+        // Reject throughout with temporal SAnd/SOr (containing SExpr = multi-cycle).
+        // Pure boolean SAnd/SOr are OK -- AssertPropLowerVisitor lowers them to LogAnd/LogOr.
+        if (VN_IS(nodep->seqp(), SAnd) || VN_IS(nodep->seqp(), SOr)) {
+            bool hasSExpr = false;
+            nodep->seqp()->foreach([&](const AstSExpr*) { hasSExpr = true; });
+            if (hasSExpr) {
+                nodep->v3warn(E_UNSUPPORTED,
+                              "Unsupported: throughout with complex sequence operator");
+                nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
+                VL_DO_DANGLING(nodep->deleteTree(), nodep);
+                return;
+            }
         }
         iterateChildren(nodep);
     }

@@ -11,8 +11,8 @@ module t(input clk);
   assert property (@(posedge clk)
     a throughout (b ##[1:2] c));
 
-  // throughout with complex sequence operator (unsupported)
+  // throughout with temporal sequence 'and' (unsupported)
   assert property (@(posedge clk)
-    a throughout (b and c));
+    a throughout ((b ##1 c) and (c ##1 b)));
 
 endmodule

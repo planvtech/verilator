@@ -5,6 +5,6 @@
                     ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
 %Error-UNSUPPORTED: t/t_assert_throughout_unsup.v:16:7: Unsupported: throughout with complex sequence operator
                                                       : ... note: In instance 't'
-   16 |     a throughout (b and c));
+   16 |     a throughout ((b ##1 c) and (c ##1 b)));
       |       ^~~~~~~~~~
 %Error: Exiting due to
