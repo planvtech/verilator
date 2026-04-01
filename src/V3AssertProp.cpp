@@ -1034,8 +1034,7 @@ class RangeDelayExpander final : public VNVisitor {
         }
         // Reject throughout with nested throughout or goto repetition
         if (VN_IS(nodep->seqp(), SExprThroughout) || VN_IS(nodep->seqp(), SExprGotoRep)) {
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: throughout with complex sequence operator");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: throughout with complex sequence operator");
             nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
             return;
