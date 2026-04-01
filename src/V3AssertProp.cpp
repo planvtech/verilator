@@ -1039,8 +1039,7 @@ class RangeDelayExpander final : public VNVisitor {
         // the length-pairing logic requires knowing each operand's length,
         // which is dynamic for range delays.
         if (subtreeHasRangeDelay(nodep->lhsp()) || subtreeHasRangeDelay(nodep->rhsp())) {
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: intersect with range cycle delay operand");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: intersect with range cycle delay operand");
         }
         iterateChildren(nodep);
     }
