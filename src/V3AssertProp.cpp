@@ -276,10 +276,8 @@ class AssertPropLowerVisitor final : public VNVisitor {
         for (const auto& step : rhsTimeline) rhsTotal += step.delayCycles;
 
         if (lhsTotal != rhsTotal) {
-            // Different constant lengths: can never match per IEEE 16.9.6
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: intersect operands have different constant lengths ("
-                              + cvtToStr(lhsTotal) + " vs " + cvtToStr(rhsTotal) + ")");
+            // Different constant lengths: can never match per IEEE 16.9.6.
+            // Lower to constant-false (assertion will always fail at runtime).
             FileLine* const flp = nodep->fileline();
             AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
             bodyp->addStmtsp(new AstPExprClause{flp, false});
@@ -1024,6 +1022,27 @@ class RangeDelayExpander final : public VNVisitor {
             nodep->replaceWith(checkp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
         }
+    }
+
+    // Check whether a subtree contains any SExpr with a range delay
+    static bool subtreeHasRangeDelay(const AstNode* nodep) {
+        return !nodep->forall([](const AstSExpr* sexprp) {
+            if (const AstDelay* const dlyp = VN_CAST(sexprp->delayp(), Delay)) {
+                if (dlyp->isRangeDelay()) return false;  // found one -- stop
+            }
+            return true;
+        });
+    }
+
+    void visit(AstSIntersect* nodep) override {
+        // Range delays inside intersect cannot be lowered correctly because
+        // the length-pairing logic requires knowing each operand's length,
+        // which is dynamic for range delays.
+        if (subtreeHasRangeDelay(nodep->lhsp()) || subtreeHasRangeDelay(nodep->rhsp())) {
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: intersect with range cycle delay operand");
+        }
+        iterateChildren(nodep);
     }
 
     void visit(AstNode* nodep) override { iterateChildren(nodep); }

@@ -7,9 +7,9 @@
 module t (input clk);
   logic a, b, c, d;
 
-  // Different constant lengths: LHS=1, RHS=3 -- should produce E_UNSUPPORTED
+  // Range delay in intersect operand is unsupported
   assert property (@(posedge clk)
-    (a ##1 b) intersect (c ##3 d)
+    (a ##[1:5] b) intersect (c ##2 d)
   );
 
 endmodule

@@ -1,6 +1,0 @@
-%Error-UNSUPPORTED: t/t_sequence_intersect_bad.v:12:15: Unsupported: intersect operands have different constant lengths (1 vs 3)
-                                                      : ... note: In instance 't'
-   12 |     (a ##1 b) intersect (c ##3 d)
-      |               ^~~~~~~~~
-                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error: Exiting due to
