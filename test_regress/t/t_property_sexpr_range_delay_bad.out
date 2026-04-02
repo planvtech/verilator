@@ -11,7 +11,7 @@
                                                   : ... note: In instance 't'
    24 |   a3: assert property (@(posedge clk) a |-> ##[5:2] b);
       |                                             ^~
-%Error-UNSUPPORTED: t/t_property_sexpr_range_delay_bad.v:27:45: Unsupported: ##0 in range delays
+%Error-UNSUPPORTED: t/t_property_sexpr_range_delay_bad.v:27:45: Unsupported: ##0 in bounded range delays
                                                               : ... note: In instance 't'
    27 |   a4: assert property (@(posedge clk) a |-> ##[0:3] b);
       |                                             ^~

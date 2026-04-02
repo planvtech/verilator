@@ -602,44 +602,67 @@ class RangeDelayExpander final : public VNVisitor {
         AstNodeExpr* exprp;  // Expression to check (nullptr if unary leading delay)
         int delay;  // Fixed delay after this expression (0 for tail)
         bool isRange;  // Whether this step's delay is a range
+        bool isUnbounded;  // Whether the range is unbounded (##[M:$])
         int rangeMin;
-        int rangeMax;
+        int rangeMax;  // -1 for unbounded
     };
 
     // Extract delay bounds from AstDelay. Clones and constifies (does not modify original AST).
-    bool extractDelayBounds(AstDelay* dlyp, bool& isRange, int& minVal, int& maxVal) {
+    bool extractDelayBounds(AstDelay* dlyp, bool& isRange, bool& isUnbounded, int& minVal,
+                            int& maxVal) {
         isRange = dlyp->isRangeDelay();
+        isUnbounded = dlyp->isUnbounded();
         AstNodeExpr* const minExprp = V3Const::constifyEdit(dlyp->lhsp()->cloneTree(false));
         const AstConst* const minConstp = VN_CAST(minExprp, Const);
         if (isRange) {
-            AstNodeExpr* const maxExprp = V3Const::constifyEdit(dlyp->rhsp()->cloneTree(false));
-            const AstConst* const maxConstp = VN_CAST(maxExprp, Const);
-            if (!minConstp || !maxConstp) {
-                dlyp->v3error("Range delay bounds must be elaboration-time constants"
-                              " (IEEE 1800-2023 16.7)");
+            if (isUnbounded) {
+                // ##[M:$], ##[*], ##[+]: only min bound, max is $
+                if (!minConstp) {
+                    dlyp->v3error("Range delay minimum must be an elaboration-time constant"
+                                  " (IEEE 1800-2023 16.7)");
+                    VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
+                    return false;
+                }
+                minVal = minConstp->toSInt();
+                maxVal = -1;
+                VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
+                if (minVal < 0) {
+                    dlyp->v3error("Range delay bounds must be non-negative"
+                                  " (IEEE 1800-2023 16.7)");
+                    return false;
+                }
+            } else {
+                AstNodeExpr* const maxExprp
+                    = V3Const::constifyEdit(dlyp->rhsp()->cloneTree(false));
+                const AstConst* const maxConstp = VN_CAST(maxExprp, Const);
+                if (!minConstp || !maxConstp) {
+                    dlyp->v3error("Range delay bounds must be elaboration-time constants"
+                                  " (IEEE 1800-2023 16.7)");
+                    VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
+                    VL_DO_DANGLING(maxExprp->deleteTree(), maxExprp);
+                    return false;
+                }
+                minVal = minConstp->toSInt();
+                maxVal = maxConstp->toSInt();
                 VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
                 VL_DO_DANGLING(maxExprp->deleteTree(), maxExprp);
-                return false;
-            }
-            minVal = minConstp->toSInt();
-            maxVal = maxConstp->toSInt();
-            VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
-            VL_DO_DANGLING(maxExprp->deleteTree(), maxExprp);
-            if (minVal < 0 || maxVal < 0) {
-                dlyp->v3error("Range delay bounds must be non-negative"
-                              " (IEEE 1800-2023 16.7)");
-                return false;
-            }
-            if (maxVal < minVal) {
-                dlyp->v3error("Range delay maximum must be >= minimum"
-                              " (IEEE 1800-2023 16.7)");
-                return false;
-            }
-            if (minVal == 0) {
-                dlyp->v3warn(E_UNSUPPORTED, "Unsupported: ##0 in range delays");
-                return false;
+                if (minVal < 0 || maxVal < 0) {
+                    dlyp->v3error("Range delay bounds must be non-negative"
+                                  " (IEEE 1800-2023 16.7)");
+                    return false;
+                }
+                if (maxVal < minVal) {
+                    dlyp->v3error("Range delay maximum must be >= minimum"
+                                  " (IEEE 1800-2023 16.7)");
+                    return false;
+                }
+                if (minVal == 0) {
+                    dlyp->v3warn(E_UNSUPPORTED, "Unsupported: ##0 in bounded range delays");
+                    return false;
+                }
             }
         } else {
+            isUnbounded = false;
             minVal = maxVal = minConstp ? minConstp->toSInt() : 0;
             VL_DO_DANGLING(minExprp->deleteTree(), minExprp);
         }
@@ -663,107 +686,127 @@ class RangeDelayExpander final : public VNVisitor {
         AstDelay* const dlyp = VN_CAST(curp->delayp(), Delay);
         UASSERT_OBJ(dlyp, curp, "Expected AstDelay");
         bool isRange = false;
+        bool isUnbounded = false;
         int minVal = 0;
         int maxVal = 0;
-        if (!extractDelayBounds(dlyp, isRange, minVal, maxVal)) return false;
+        if (!extractDelayBounds(dlyp, isRange, isUnbounded, minVal, maxVal)) return false;
         if (isRange) hasRange = true;
 
         if (curp->preExprp() && !VN_IS(curp->preExprp(), SExpr)) {
-            steps.push_back({curp->preExprp(), minVal, isRange, minVal, maxVal});
+            steps.push_back({curp->preExprp(), minVal, isRange, isUnbounded, minVal, maxVal});
         } else {
-            steps.push_back({nullptr, minVal, isRange, minVal, maxVal});
+            steps.push_back({nullptr, minVal, isRange, isUnbounded, minVal, maxVal});
         }
 
         if (AstSExpr* const nextp = VN_CAST(curp->exprp(), SExpr)) {
             return linearizeImpl(nextp, steps, hasRange);
         }
-        steps.push_back({curp->exprp(), 0, false, 0, 0});
+        steps.push_back({curp->exprp(), 0, false, false, 0, 0});
         return true;
     }
 
+    // Build the "on match" action for a range check state.
+    // Single source of truth -- used by CHECK_RANGE, CHECK_UNBOUNDED, and IDLE ##[*].
+    AstNode* makeOnMatchAction(FileLine* flp, AstVar* stateVarp, AstVar* cntVarp, bool isTail,
+                               int afterMatchState, int nextDelay) {
+        if (isTail) {
+            return new AstAssign{flp, new AstVarRef{flp, stateVarp, VAccess::WRITE},
+                                 new AstConst{flp, 0}};
+        }
+        return makeStateTransition(flp, stateVarp, cntVarp, afterMatchState,
+                                   nextDelay > 0 ? nextDelay - 1 : 0);
+    }
+
+    // Build a range CHECK state body.
+    // Bounded: on match advance, on timeout fail, otherwise retry.
+    // Unbounded: on match advance, on no match stay (no timeout).
+    AstNode* makeRangeCheckBody(FileLine* flp, AstVar* stateVarp, AstVar* cntVarp,
+                                AstVar* failVarp, AstNodeExpr* exprp, AstNode* matchActionp,
+                                bool isUnbounded) {
+        if (isUnbounded) {
+            return new AstIf{flp, new AstSampled{flp, exprp->cloneTree(false)}, matchActionp,
+                             nullptr};
+        }
+        // Bounded: fail on timeout, decrement counter otherwise
+        AstBegin* const timeoutp = new AstBegin{flp, "", nullptr, true};
+        timeoutp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, failVarp, VAccess::WRITE},
+                                          new AstConst{flp, AstConst::BitTrue{}}});
+        timeoutp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, stateVarp, VAccess::WRITE},
+                                          new AstConst{flp, 0}});
+        AstNode* const decrementp = new AstAssign{
+            flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+            new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 1}}};
+        AstIf* const failOrRetryp = new AstIf{
+            flp,
+            new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 0}},
+            timeoutp, decrementp};
+        return new AstIf{flp, new AstSampled{flp, exprp->cloneTree(false)}, matchActionp,
+                         failOrRetryp};
+    }
+
     // Build FSM body as if/else chain on state variable.
-    // State 0 = IDLE. Each range delay adds 2 states (wait + check),
-    // each fixed delay adds 1 (wait), each tail expr adds 1 (check).
-    //
-    // Example: a ##[M:N] b ##1 c
-    //   steps: [{a, range[M:N]}, {b, delay=1}, {c, delay=0}]
-    //   State 1: WAIT_MIN (count down M cycles)
-    //   State 2: CHECK_RANGE (check b each cycle, up to N-M retries)
-    //   State 3: WAIT_FIXED (count down 1 cycle for ##1)
-    //   State 4: CHECK_TAIL (check c, report pass/fail)
+    // State 0 = IDLE. Bounded range adds 2 states (wait + check),
+    // unbounded range adds 1 or 2 (wait_min if min>1, then check),
+    // fixed delay adds 1 (wait), tail expr adds 1 (check).
     AstNode* buildFsmBody(FileLine* flp, AstVar* stateVarp, AstVar* cntVarp, AstVar* failVarp,
                           const std::vector<SeqStep>& steps, AstSenItem* /*sensesp*/,
                           AstNodeExpr* antExprp) {
 
         AstNode* fsmChainp = nullptr;
         int nextState = 1;
+        // Captured during loop for ##[*] IDLE immediate-match path
+        int immAfterMatchState = -1;
+        bool immIsTail = false;
+        int immNextDelay = 0;
 
         for (size_t i = 0; i < steps.size(); ++i) {
             const SeqStep& step = steps[i];
 
             if (step.isRange) {
-                // Range delay needs two states: WAIT_MIN and CHECK_RANGE
                 UASSERT(i + 1 < steps.size(), "Range must have next step");
-                const int waitState = nextState++;
-                const int checkState = nextState++;
-                const int rangeWidth = step.rangeMax - step.rangeMin;
                 const SeqStep& nextStep = steps[i + 1];
+                const bool isTail = (i + 2 >= steps.size() && nextStep.delay == 0);
 
-                const int afterMatchState = nextState;
-
-                // WAIT_MIN: count down rangeMin cycles
-                {
-                    AstNode* const bodyp = new AstIf{
+                // WAIT_MIN state: bounded always needs it, unbounded only if min > 1
+                int checkState;
+                const bool needsWait = !step.isUnbounded || step.rangeMin > 1;
+                if (needsWait) {
+                    const int waitState = nextState++;
+                    checkState = nextState++;
+                    const int initCnt
+                        = step.isUnbounded ? 0 : (step.rangeMax - step.rangeMin);
+                    AstNode* const waitBodyp = new AstIf{
                         flp,
                         new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
                                   new AstConst{flp, 0}},
-                        makeStateTransition(flp, stateVarp, cntVarp, checkState, rangeWidth),
-                        new AstAssign{flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
-                                      new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                                                 new AstConst{flp, 1}}}};
-                    fsmChainp = chainState(flp, fsmChainp, stateVarp, waitState, bodyp);
+                        makeStateTransition(flp, stateVarp, cntVarp, checkState, initCnt),
+                        new AstAssign{
+                            flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+                            new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                                       new AstConst{flp, 1}}}};
+                    fsmChainp = chainState(flp, fsmChainp, stateVarp, waitState, waitBodyp);
+                } else {
+                    checkState = nextState++;
                 }
 
-                // CHECK_RANGE: check expr each cycle, fail on timeout
-                {
-                    AstNode* matchActionp = nullptr;
-                    AstNode* const timeoutp = new AstBegin{flp, "", nullptr, true};
-                    VN_AS(timeoutp, Begin)
-                        ->addStmtsp(new AstAssign{flp,
-                                                  new AstVarRef{flp, failVarp, VAccess::WRITE},
-                                                  new AstConst{flp, AstConst::BitTrue{}}});
-                    VN_AS(timeoutp, Begin)
-                        ->addStmtsp(new AstAssign{flp,
-                                                  new AstVarRef{flp, stateVarp, VAccess::WRITE},
-                                                  new AstConst{flp, 0}});
-                    AstNode* const decrementp
-                        = new AstAssign{flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
-                                        new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                                                   new AstConst{flp, 1}}};
+                const int afterMatchState = nextState;
+                AstNode* const matchActionp = makeOnMatchAction(
+                    flp, stateVarp, cntVarp, isTail, afterMatchState, nextStep.delay);
 
-                    AstIf* const failOrRetryp
-                        = new AstIf{flp,
-                                    new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                                              new AstConst{flp, 0}},
-                                    timeoutp, decrementp};
-
-                    if (nextStep.delay > 0) {
-                        matchActionp = makeStateTransition(flp, stateVarp, cntVarp,
-                                                           afterMatchState, nextStep.delay - 1);
-                    } else {
-                        matchActionp
-                            = makeStateTransition(flp, stateVarp, cntVarp, afterMatchState, 0);
-                    }
-
-                    AstIf* const checkp
-                        = new AstIf{flp, new AstSampled{flp, nextStep.exprp->cloneTree(false)},
-                                    matchActionp, failOrRetryp};
-
-                    fsmChainp = chainState(flp, fsmChainp, stateVarp, checkState, checkp);
+                // Capture info for ##[*] IDLE immediate-match path
+                if (i == 0 && step.isUnbounded && step.rangeMin == 0) {
+                    immAfterMatchState = afterMatchState;
+                    immIsTail = isTail;
+                    immNextDelay = nextStep.delay;
                 }
 
-                // Skip next step (already consumed as the range check target)
-                ++i;
+                // CHECK state: shared between bounded and unbounded
+                AstNode* const checkBodyp = makeRangeCheckBody(
+                    flp, stateVarp, cntVarp, failVarp, nextStep.exprp, matchActionp,
+                    step.isUnbounded);
+                fsmChainp = chainState(flp, fsmChainp, stateVarp, checkState, checkBodyp);
+
+                ++i;  // Skip next step (consumed as the range check target)
                 continue;
 
             } else if (step.delay > 0) {
@@ -808,8 +851,6 @@ class RangeDelayExpander final : public VNVisitor {
         } else {
             initCnt = firstStep.delay - 1;
         }
-        AstNode* const startActionp
-            = makeStateTransition(flp, stateVarp, cntVarp, 1, initCnt < 0 ? 0 : initCnt);
 
         // Trigger = antecedent (from implication) AND/OR first step expression
         AstNodeExpr* triggerp = nullptr;
@@ -822,12 +863,35 @@ class RangeDelayExpander final : public VNVisitor {
             triggerp = new AstSampled{flp, firstStep.exprp->cloneTree(false)};
         }
 
-        if (triggerp) {
-            triggerp->dtypeSetBit();
-            idleBodyp = new AstIf{flp, triggerp, startActionp, nullptr};
+        if (firstStep.isUnbounded && firstStep.rangeMin == 0 && steps.size() > 1) {
+            // ##[0:$] / ##[*]: immediate check for ##0 case in IDLE state.
+            // On immediate match: use same action as CHECK_UNBOUNDED.
+            // On no immediate match: transition to CHECK_UNBOUNDED.
+            const SeqStep& nextStep = steps[1];
+            AstNodeExpr* const immCheckp
+                = new AstSampled{flp, nextStep.exprp->cloneTree(false)};
+            immCheckp->dtypeSetBit();
+            AstNode* const toCheckStatep
+                = makeStateTransition(flp, stateVarp, cntVarp, 1, 0);
+            AstNode* const immMatchp = makeOnMatchAction(flp, stateVarp, cntVarp, immIsTail,
+                                                         immAfterMatchState, immNextDelay);
+            AstIf* const immIfp = new AstIf{flp, immCheckp, immMatchp, toCheckStatep};
+
+            if (triggerp) {
+                triggerp->dtypeSetBit();
+                idleBodyp = new AstIf{flp, triggerp, immIfp, nullptr};
+            } else {
+                idleBodyp = immIfp;
+            }
         } else {
-            // Unary form with no antecedent: start unconditionally each cycle
-            idleBodyp = startActionp;
+            AstNode* const startActionp
+                = makeStateTransition(flp, stateVarp, cntVarp, 1, initCnt < 0 ? 0 : initCnt);
+            if (triggerp) {
+                triggerp->dtypeSetBit();
+                idleBodyp = new AstIf{flp, triggerp, startActionp, nullptr};
+            } else {
+                idleBodyp = startActionp;
+            }
         }
 
         // Chain: if (state == 0) idle else if (state == 1) ... else ...
@@ -940,12 +1004,15 @@ class RangeDelayExpander final : public VNVisitor {
         AstVar* const stateVarp = new AstVar{flp, VVarType::MODULETEMP, baseName + "__state",
                                              nodep->findBasicDType(VBasicDTypeKwd::UINT32)};
         stateVarp->lifetime(VLifetime::STATIC_EXPLICIT);
+        stateVarp->noSample(true);
         AstVar* const cntVarp = new AstVar{flp, VVarType::MODULETEMP, baseName + "__cnt",
                                            nodep->findBasicDType(VBasicDTypeKwd::UINT32)};
         cntVarp->lifetime(VLifetime::STATIC_EXPLICIT);
+        cntVarp->noSample(true);
         AstVar* const failVarp = new AstVar{flp, VVarType::MODULETEMP, baseName + "__fail",
                                             nodep->findBasicDType(VBasicDTypeKwd::BIT)};
         failVarp->lifetime(VLifetime::STATIC_EXPLICIT);
+        failVarp->noSample(true);
 
         // Build FSM body
         AstNode* const fsmBodyp
