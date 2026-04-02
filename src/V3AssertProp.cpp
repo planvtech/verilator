@@ -45,6 +45,219 @@
 VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
+// Lower all consecutive repetition forms before DFA graph building.
+// Sole owner of ConsRep lowering -- V3AssertPre only iterates children.
+//
+// Strategy by context:
+//   In SExpr (has ## delay): PExpr with forward-looking loop
+//   Standalone (no delay):   replace with expression (trivial cases)
+//                            or saturating counter (exact [*N] >= 2)
+
+class AssertPropConsRepVisitor final : public VNVisitor {
+    V3UniqueNames m_names{"__VconsRep"};
+
+    // VISITORS
+    void visit(AstSExpr* nodep) override {
+        // Check for ConsRep BEFORE iterating children to prevent premature lowering
+        AstConsRep* const repp = VN_CAST(nodep->preExprp(), ConsRep);
+        if (repp) {
+            lowerInSExpr(nodep, repp);
+            return;
+        }
+        iterateChildren(nodep);
+    }
+    void visit(AstConsRep* nodep) override {
+        // Standalone ConsRep (not in SExpr) -- lower in place
+        if (VN_IS(nodep->backp(), SExpr)) return;  // Handled by visit(AstSExpr)
+        lowerStandalone(nodep);
+    }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
+    // Extract min/max counts from ConsRep
+    struct RepCounts {
+        int minN;
+        int maxN;  // Only meaningful when !unbounded && maxCountp != nullptr
+        bool unbounded;
+    };
+    RepCounts getCounts(const AstConsRep* repp) {
+        const AstConst* const minp = VN_CAST(repp->countp(), Const);
+        UASSERT_OBJ(minp, repp, "ConsRep min count must be constant");
+        RepCounts c;
+        c.minN = minp->toSInt();
+        c.unbounded = repp->unbounded();
+        c.maxN = c.minN;
+        if (repp->maxCountp()) {
+            const AstConst* const maxp = VN_CAST(repp->maxCountp(), Const);
+            UASSERT_OBJ(maxp, repp, "ConsRep max count must be constant");
+            c.maxN = maxp->toSInt();
+        }
+        return c;
+    }
+
+    // ---- Standalone lowering (not in SExpr) ----
+    // Used for antecedent patterns like a[*3] |-> b.
+    // [*1], [+]: replace with expr
+    // [*]:       replace with 1'b1 (always matches)
+    // [*N] N>=2: saturating counter (backward-looking, correct for antecedent)
+    // [*N:M], [*N:$]: unsupported standalone (warn)
+    void lowerStandalone(AstConsRep* nodep) {
+        const RepCounts c = getCounts(nodep);
+        // [*N] exact, N >= 2: leave for V3AssertPre's saturating counter
+        // (needs proper sensitivity tree from enclosing property)
+        if (!nodep->maxCountp() && !c.unbounded && c.minN >= 2) return;
+
+        FileLine* const flp = nodep->fileline();
+        AstNodeExpr* const exprp = nodep->exprp()->unlinkFrBack();
+
+        if (c.minN == 0 && c.unbounded) {
+            // [*] standalone: always matches
+            VL_DO_DANGLING(exprp->deleteTree(), exprp);
+            nodep->replaceWith(new AstConst{flp, AstConst::BitTrue{}});
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
+        }
+        if (c.minN <= 1 && (c.unbounded || !nodep->maxCountp())) {
+            // [+] or [*1] standalone: just the expression
+            nodep->replaceWith(exprp);
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
+        }
+        // Standalone [*N:M] or [*N:$] without ## delay -- not yet supported
+        nodep->v3warn(E_UNSUPPORTED,
+                      "Unsupported: standalone consecutive repetition range");
+        nodep->replaceWith(exprp);
+        VL_DO_DANGLING(nodep->deleteTree(), nodep);
+    }
+
+    // ---- SExpr lowering (has ## delay) ----
+    // Forward-looking PExpr loop for all forms: [*N], [*N:M], [+], [*]
+    void lowerInSExpr(AstSExpr* sexprp, AstConsRep* repp) {
+        const RepCounts c = getCounts(repp);
+        FileLine* const flp = sexprp->fileline();
+        AstNodeExpr* const repExprp = repp->exprp()->unlinkFrBack();
+        AstNodeStmt* const delayp = sexprp->delayp()->unlinkFrBack();
+        AstNodeExpr* const nextExprp = sexprp->exprp()->unlinkFrBack();
+
+        // For [*1] ##1 next: trivial — just SExpr{expr, ##1, next}, let DFA handle
+        if (c.minN == 1 && !c.unbounded && !repp->maxCountp()) {
+            repp->replaceWith(repExprp);
+            VL_DO_DANGLING(repp->deleteTree(), repp);
+            // Re-attach delay and next — restore SExpr for DFA
+            sexprp->delayp(delayp);
+            sexprp->exprp(nextExprp);
+            return;
+        }
+
+        // Variables
+        AstVar* const cntVarp = new AstVar{flp, VVarType::BLOCKTEMP, m_names.get(sexprp),
+                                           sexprp->findBasicDType(VBasicDTypeKwd::UINT32)};
+        cntVarp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
+        AstVar* const doneVarp = new AstVar{flp, VVarType::BLOCKTEMP, m_names.get(sexprp),
+                                            sexprp->findBitDType()};
+        doneVarp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
+
+        // Helpers
+        auto setDone = [&]() {
+            return new AstAssign{flp, new AstVarRef{flp, doneVarp, VAccess::WRITE},
+                                 new AstConst{flp, AstConst::BitTrue{}}};
+        };
+        auto passBlock = [&]() {
+            AstBegin* const bp = new AstBegin{flp, "", nullptr, true};
+            bp->addStmtsp(new AstPExprClause{flp, true});
+            bp->addStmtsp(setDone());
+            return bp;
+        };
+        auto failBlock = [&]() {
+            AstBegin* const bp = new AstBegin{flp, "", nullptr, true};
+            bp->addStmtsp(new AstPExprClause{flp, false});
+            bp->addStmtsp(setDone());
+            return bp;
+        };
+        auto incrCount = [&]() {
+            return new AstAssign{
+                flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+                new AstAdd{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                           new AstConst{flp, 1u}}};
+        };
+
+        // Build loop body: ##1, then branch on count vs min
+        AstLoop* const loopp = new AstLoop{flp};
+        loopp->addStmtsp(delayp);
+
+        // $sampled wrappers
+        AstSampled* const nextSampledp = new AstSampled{flp, nextExprp};
+        nextSampledp->dtypeFrom(nextExprp);
+        AstSampled* const repSampled2p = new AstSampled{flp, repExprp->cloneTreePure(false)};
+        repSampled2p->dtypeFrom(repExprp);
+        AstSampled* const repSampled3p = new AstSampled{flp, repExprp->cloneTreePure(false)};
+        repSampled3p->dtypeFrom(repExprp);
+
+        // Branch: count >= min → can try matching next
+        AstBegin* const exprContBlockp = new AstBegin{flp, "", nullptr, true};
+        exprContBlockp->addStmtsp(incrCount());
+        if (!c.unbounded) {
+            exprContBlockp->addStmtsp(new AstIf{
+                flp,
+                new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                          new AstConst{flp, static_cast<uint32_t>(c.maxN)}},
+                failBlock()});
+        }
+        AstIf* const tryNextp = new AstIf{
+            flp, nextSampledp, passBlock(),
+            new AstIf{flp, repSampled2p, exprContBlockp, failBlock()}};
+
+        // Branch: count < min → still accumulating
+        AstIf* const accumulatep = new AstIf{flp, repSampled3p, incrCount(), failBlock()};
+
+        loopp->addStmtsp(new AstIf{
+            flp,
+            new AstGte{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                       new AstConst{flp, static_cast<uint32_t>(c.minN)}},
+            tryNextp, accumulatep});
+        loopp->addStmtsp(new AstLoopTest{
+            flp, loopp,
+            new AstNot{flp, new AstVarRef{flp, doneVarp, VAccess::READ}}});
+
+        // Consequent: count=1, enter loop
+        AstBegin* const conseqp = new AstBegin{flp, "", nullptr, true};
+        conseqp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+                                         new AstConst{flp, 1u}});
+        conseqp->addStmtsp(loopp);
+
+        // Initial check: if ($sampled(expr)) { consequent } else { fail or zero-skip }
+        AstSampled* const repSampledp = new AstSampled{flp, repExprp};
+        repSampledp->dtypeFrom(repExprp);
+        AstNode* elsep = static_cast<AstNode*>(new AstPExprClause{flp, false});
+        if (c.minN == 0) {
+            // Zero-repetition path: skip directly to ##1 → check next
+            AstBegin* const skipZerop = new AstBegin{flp, "", nullptr, true};
+            skipZerop->addStmtsp(delayp->cloneTree(false));
+            AstSampled* const skipNextp
+                = new AstSampled{flp, nextExprp->cloneTreePure(false)};
+            skipNextp->dtypeFrom(nextExprp);
+            skipZerop->addStmtsp(new AstIf{flp, skipNextp, new AstPExprClause{flp, true},
+                                           new AstPExprClause{flp, false}});
+            elsep = skipZerop;
+        }
+        AstIf* const topIfp = new AstIf{flp, repSampledp, conseqp, elsep};
+
+        // Wrap in PExpr
+        AstBegin* const bodyp = new AstBegin{flp, "", cntVarp, true};
+        bodyp->addStmtsp(doneVarp);
+        bodyp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, doneVarp, VAccess::WRITE},
+                                       new AstConst{flp, AstConst::BitFalse{}}});
+        bodyp->addStmtsp(topIfp);
+
+        sexprp->replaceWith(new AstPExpr{flp, bodyp, sexprp->dtypep()});
+        VL_DO_DANGLING(sexprp->deleteTree(), sexprp);
+    }
+
+public:
+    explicit AssertPropConsRepVisitor(AstNetlist* nodep) { iterate(nodep); }
+    ~AssertPropConsRepVisitor() override = default;
+};
+
+//######################################################################
 // Data structures (graph types)
 
 class DfaVertex VL_NOT_FINAL : public V3GraphVertex {
@@ -996,6 +1209,8 @@ public:
 
 void V3AssertProp::assertPropAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ":");
+    // Lower range/unbounded consecutive repetition before DFA graph building
+    { AssertPropConsRepVisitor{nodep}; }
     { RangeDelayExpander{nodep}; }
     { AssertPropLowerVisitor{nodep}; }
     {

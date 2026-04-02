@@ -981,23 +981,44 @@ public:
     bool rhsIsValue() const { return m_rhsIsValue; }
 };
 class AstConsRep final : public AstNodeExpr {
-    // Consecutive repetition [*N] (IEEE 1800-2023 16.9.2)
-    // Lowered by V3AssertPre to: expr && $past(expr,1) && ... && $past(expr,N-1)
+    // Consecutive repetition [*N], [*N:M], [+], [*] (IEEE 1800-2023 16.9.2)
+    // Lowered by V3AssertPre using a saturating counter.
     // @astgen op1 := exprp : AstNodeExpr
-    // @astgen op2 := countp : AstNodeExpr
+    // @astgen op2 := countp : AstNodeExpr  // Min count (N)
+    // @astgen op3 := maxCountp : Optional[AstNodeExpr]  // Max count (M); nullptr = exact or unbounded
+    const bool m_unbounded = false;  // True when upper bound is $ ([+], [*])
+    // [*N]:   countp=N, maxCountp=nullptr, unbounded=false  (exact N)
+    // [*N:M]: countp=N, maxCountp=M, unbounded=false        (range N to M)
+    // [+]:    countp=1, maxCountp=nullptr, unbounded=true    (= [*1:$])
+    // [*]:    countp=0, maxCountp=nullptr, unbounded=true    (= [*0:$])
 public:
+    // Exact count [*N]
     AstConsRep(FileLine* fl, AstNodeExpr* exprp, AstNodeExpr* countp)
         : ASTGEN_SUPER_ConsRep(fl) {
         this->exprp(exprp);
         this->countp(countp);
     }
+    // Range [*N:M] or unbounded [+]/[*]
+    AstConsRep(FileLine* fl, AstNodeExpr* exprp, AstNodeExpr* countp, AstNodeExpr* maxCountp,
+               bool unbounded)
+        : ASTGEN_SUPER_ConsRep(fl)
+        , m_unbounded{unbounded} {
+        this->exprp(exprp);
+        this->countp(countp);
+        this->maxCountp(maxCountp);
+    }
     ASTGEN_MEMBERS_AstConsRep;
+    void dump(std::ostream& str) const override;
+    void dumpJson(std::ostream& str) const override;
     string emitVerilog() override { V3ERROR_NA_RETURN(""); }
     string emitC() override { V3ERROR_NA_RETURN(""); }
     string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
     bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
     int instrCount() const override { V3ERROR_NA_RETURN(0); }
-    bool sameNode(const AstNode* /*samep*/) const override { V3ERROR_NA_RETURN(false); }
+    bool sameNode(const AstNode* samep) const override {
+        return m_unbounded == VN_DBG_AS(samep, ConsRep)->m_unbounded;
+    }
+    bool unbounded() const { return m_unbounded; }
 };
 class AstConsWildcard final : public AstNodeExpr {
     // Construct a wildcard assoc array and return object, '{}
