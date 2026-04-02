@@ -73,11 +73,9 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             // ConsRep in SExpr exprp() (trailing position, e.g. "b ##1 a[+]"):
             //   - Exact [*N]: falls through to V3AssertPre backward-looking counter (OK)
             //   - Range/unbounded: not yet supported
-            if (nodep == sexprp->exprp()
-                && (nodep->unbounded() || nodep->maxCountp())) {
-                nodep->v3warn(E_UNSUPPORTED,
-                              "Unsupported: trailing consecutive repetition range"
-                              " in sequence expression (e.g. a ##1 b[+])");
+            if (nodep == sexprp->exprp() && (nodep->unbounded() || nodep->maxCountp())) {
+                nodep->v3warn(E_UNSUPPORTED, "Unsupported: trailing consecutive repetition range"
+                                             " in sequence expression (e.g. a ##1 b[+])");
                 AstNodeExpr* const exprp = nodep->exprp()->unlinkFrBack();
                 nodep->replaceWith(exprp);
                 VL_DO_DANGLING(nodep->deleteTree(), nodep);
