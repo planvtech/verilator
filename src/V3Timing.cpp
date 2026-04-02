@@ -657,9 +657,8 @@ class TimingControlVisitor final : public VNVisitor {
         auto it = m_reactTrigScheds.find(sentreep);
         if (it != m_reactTrigScheds.end()) return it->second;
         if (!m_trigSchedDtp) {
-            m_trigSchedDtp
-                = new AstBasicDType{m_scopeTopp->fileline(), VBasicDTypeKwd::TRIGGER_SCHEDULER,
-                                    VSigning::UNSIGNED};
+            m_trigSchedDtp = new AstBasicDType{
+                m_scopeTopp->fileline(), VBasicDTypeKwd::TRIGGER_SCHEDULER, VSigning::UNSIGNED};
             m_netlistp->typeTablep()->addTypesp(m_trigSchedDtp);
         }
         AstVarScope* const trigSchedp
@@ -1151,8 +1150,7 @@ class TimingControlVisitor final : public VNVisitor {
                                                 ? getCreateReactiveTriggerSchedulerp(sentreep)
                                                 : getCreateTriggerSchedulerp(sentreep);
             auto* const triggerMethodp = new AstCMethodHard{
-                flp, new AstVarRef{flp, trigSchedp, VAccess::WRITE},
-                VCMethod::SCHED_TRIGGER};
+                flp, new AstVarRef{flp, trigSchedp, VAccess::WRITE}, VCMethod::SCHED_TRIGGER};
             triggerMethodp->dtypeSetVoid();
             // If it should be committed immediately, pass true, otherwise false
             triggerMethodp->addPinsp(nodep->user2() ? new AstConst{flp, AstConst::BitTrue{}}

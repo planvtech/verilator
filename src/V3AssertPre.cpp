@@ -511,8 +511,7 @@ private:
             // NBA fire at the failing tick rather than at the sequence endpoint,
             // matching the behavior of other simulators for overlapping attempts.
             AstNodeExpr* loopCondp
-                = new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                            new AstConst{flp, 0}};
+                = new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 0}};
             if (throughoutOkp) {
                 loopCondp = new AstLogAnd{flp, loopCondp,
                                           new AstVarRef{flp, throughoutOkp, VAccess::READ}};

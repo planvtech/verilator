@@ -677,11 +677,11 @@ class ForkVisitor final : public VNVisitor {
                 for (AstBegin *itemp = nodep->forksp(), *nextp; itemp; itemp = nextp) {
                     nextp = VN_AS(itemp->nextp(), Begin);
                     if (!itemp->stmtsp()) continue;
-                    AstDelay* const delayp = new AstDelay{
-                        fl,
-                        new AstConst{fl, AstConst::Unsized64{},
-                                     std::numeric_limits<uint64_t>::max()},
-                        false};
+                    AstDelay* const delayp
+                        = new AstDelay{fl,
+                                       new AstConst{fl, AstConst::Unsized64{},
+                                                    std::numeric_limits<uint64_t>::max()},
+                                       false};
                     itemp->stmtsp()->addHereThisAsNext(delayp);
                     moveForkSentinelAfterDisableQueuePushes(itemp);
                 }
