@@ -16,4 +16,16 @@
                                               : ... note: In instance 't'
    18 |   assert property (@(posedge clk) a [*3:1] |-> 1);
       |                                     ^~
+%Error: t/t_assert_prop_consec_rep_bad.v:21:41: Expecting expression to be constant, but variable isn't const: 'n'
+                                              : ... note: In instance 't'
+   21 |   assert property (@(posedge clk) a [*1:n] |-> 1);
+      |                                         ^
+%Error: t/t_assert_prop_consec_rep_bad.v:21:37: Consecutive repetition max count must be constant expression (IEEE 1800-2023 16.9.2)
+                                              : ... note: In instance 't'
+   21 |   assert property (@(posedge clk) a [*1:n] |-> 1);
+      |                                     ^~
+%Error-UNSUPPORTED: t/t_assert_prop_consec_rep_bad.v:24:37: Unsupported: [*N:0] consecutive repetition with zero max count
+                                                          : ... note: In instance 't'
+   24 |   assert property (@(posedge clk) a [*0:0] |-> 1);
+      |                                     ^~
 %Error: Exiting due to

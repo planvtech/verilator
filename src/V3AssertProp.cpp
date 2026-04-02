@@ -74,7 +74,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
     // Extract min/max counts from ConsRep
-    struct RepCounts {
+    struct RepCounts final {
         int minN;
         int maxN;  // Only meaningful when !unbounded && maxCountp != nullptr
         bool unbounded;
@@ -137,11 +137,11 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         AstNodeStmt* const delayp = sexprp->delayp()->unlinkFrBack();
         AstNodeExpr* const nextExprp = sexprp->exprp()->unlinkFrBack();
 
-        // For [*1] ##1 next: trivial — just SExpr{expr, ##1, next}, let DFA handle
+        // For [*1] ##1 next: trivial -- just SExpr{expr, ##1, next}, let DFA handle
         if (c.minN == 1 && !c.unbounded && !repp->maxCountp()) {
             repp->replaceWith(repExprp);
             VL_DO_DANGLING(repp->deleteTree(), repp);
-            // Re-attach delay and next — restore SExpr for DFA
+            // Re-attach delay and next -- restore SExpr for DFA
             sexprp->delayp(delayp);
             sexprp->exprp(nextExprp);
             return;
@@ -190,7 +190,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         AstSampled* const repSampled3p = new AstSampled{flp, repExprp->cloneTreePure(false)};
         repSampled3p->dtypeFrom(repExprp);
 
-        // Branch: count >= min → can try matching next
+        // Branch: count >= min, can try matching next
         AstBegin* const exprContBlockp = new AstBegin{flp, "", nullptr, true};
         exprContBlockp->addStmtsp(incrCount());
         if (!c.unbounded) {
@@ -204,7 +204,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             = new AstIf{flp, nextSampledp, passBlock(),
                         new AstIf{flp, repSampled2p, exprContBlockp, failBlock()}};
 
-        // Branch: count < min → still accumulating
+        // Branch: count < min, still accumulating
         AstIf* const accumulatep = new AstIf{flp, repSampled3p, incrCount(), failBlock()};
 
         loopp->addStmtsp(new AstIf{flp,
@@ -225,7 +225,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         repSampledp->dtypeFrom(repExprp);
         AstNode* elsep = static_cast<AstNode*>(new AstPExprClause{flp, false});
         if (c.minN == 0) {
-            // Zero-repetition path: skip directly to ##1 → check next
+            // Zero-repetition path: skip directly to ##1, check next
             AstBegin* const skipZerop = new AstBegin{flp, "", nullptr, true};
             skipZerop->addStmtsp(delayp->cloneTree(false));
             AstSampled* const skipNextp = new AstSampled{flp, nextExprp->cloneTreePure(false)};

@@ -17,4 +17,10 @@ module t (input clk);
   // Bad: max count < min count
   assert property (@(posedge clk) a [*3:1] |-> 1);
 
+  // Bad: non-constant max count
+  assert property (@(posedge clk) a [*1:n] |-> 1);
+
+  // Bad: zero max count ([*0:0] has max < 1 but max >= min, triggers unsupported)
+  assert property (@(posedge clk) a [*0:0] |-> 1);
+
 endmodule

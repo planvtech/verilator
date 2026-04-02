@@ -1519,9 +1519,6 @@ class WidthVisitor final : public VNVisitor {
             } else if (!nodep->unbounded() && minConstp->toSInt() < 1 && !nodep->maxCountp()) {
                 // [*0] exact zero -- unsupported
                 nodep->v3warn(E_UNSUPPORTED, "Unsupported: [*0] consecutive repetition");
-            } else if (nodep->unbounded() && minConstp->toSInt() < 0) {
-                nodep->v3error("Consecutive repetition minimum count must be non-negative"
-                               " (IEEE 1800-2023 16.9.2)");
             }
             if (nodep->maxCountp()) {
                 userIterateAndNext(nodep->maxCountp(), WidthVP{SELF, BOTH}.p());
