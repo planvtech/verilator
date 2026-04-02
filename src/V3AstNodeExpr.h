@@ -985,7 +985,8 @@ class AstConsRep final : public AstNodeExpr {
     // Lowered by V3AssertPre using a saturating counter.
     // @astgen op1 := exprp : AstNodeExpr
     // @astgen op2 := countp : AstNodeExpr  // Min count (N)
-    // @astgen op3 := maxCountp : Optional[AstNodeExpr]  // Max count (M); nullptr = exact or unbounded
+    // @astgen op3 := maxCountp : Optional[AstNodeExpr]  // Max count (M); nullptr = exact or
+    // unbounded
     const bool m_unbounded = false;  // True when upper bound is $ ([+], [*])
     // [*N]:   countp=N, maxCountp=nullptr, unbounded=false  (exact N)
     // [*N:M]: countp=N, maxCountp=M, unbounded=false        (range N to M)

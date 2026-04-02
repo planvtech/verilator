@@ -123,8 +123,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             return;
         }
         // Standalone [*N:M] or [*N:$] without ## delay -- not yet supported
-        nodep->v3warn(E_UNSUPPORTED,
-                      "Unsupported: standalone consecutive repetition range");
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: standalone consecutive repetition range");
         nodep->replaceWith(exprp);
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
@@ -152,8 +151,8 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         AstVar* const cntVarp = new AstVar{flp, VVarType::BLOCKTEMP, m_names.get(sexprp),
                                            sexprp->findBasicDType(VBasicDTypeKwd::UINT32)};
         cntVarp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
-        AstVar* const doneVarp = new AstVar{flp, VVarType::BLOCKTEMP, m_names.get(sexprp),
-                                            sexprp->findBitDType()};
+        AstVar* const doneVarp
+            = new AstVar{flp, VVarType::BLOCKTEMP, m_names.get(sexprp), sexprp->findBitDType()};
         doneVarp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
 
         // Helpers
@@ -174,10 +173,9 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             return bp;
         };
         auto incrCount = [&]() {
-            return new AstAssign{
-                flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
-                new AstAdd{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                           new AstConst{flp, 1u}}};
+            return new AstAssign{flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+                                 new AstAdd{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                                            new AstConst{flp, 1u}}};
         };
 
         // Build loop body: ##1, then branch on count vs min
@@ -196,27 +194,25 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         AstBegin* const exprContBlockp = new AstBegin{flp, "", nullptr, true};
         exprContBlockp->addStmtsp(incrCount());
         if (!c.unbounded) {
-            exprContBlockp->addStmtsp(new AstIf{
-                flp,
-                new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                          new AstConst{flp, static_cast<uint32_t>(c.maxN)}},
-                failBlock()});
+            exprContBlockp->addStmtsp(
+                new AstIf{flp,
+                          new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                                    new AstConst{flp, static_cast<uint32_t>(c.maxN)}},
+                          failBlock()});
         }
-        AstIf* const tryNextp = new AstIf{
-            flp, nextSampledp, passBlock(),
-            new AstIf{flp, repSampled2p, exprContBlockp, failBlock()}};
+        AstIf* const tryNextp
+            = new AstIf{flp, nextSampledp, passBlock(),
+                        new AstIf{flp, repSampled2p, exprContBlockp, failBlock()}};
 
         // Branch: count < min → still accumulating
         AstIf* const accumulatep = new AstIf{flp, repSampled3p, incrCount(), failBlock()};
 
-        loopp->addStmtsp(new AstIf{
-            flp,
-            new AstGte{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                       new AstConst{flp, static_cast<uint32_t>(c.minN)}},
-            tryNextp, accumulatep});
+        loopp->addStmtsp(new AstIf{flp,
+                                   new AstGte{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                                              new AstConst{flp, static_cast<uint32_t>(c.minN)}},
+                                   tryNextp, accumulatep});
         loopp->addStmtsp(new AstLoopTest{
-            flp, loopp,
-            new AstNot{flp, new AstVarRef{flp, doneVarp, VAccess::READ}}});
+            flp, loopp, new AstNot{flp, new AstVarRef{flp, doneVarp, VAccess::READ}}});
 
         // Consequent: count=1, enter loop
         AstBegin* const conseqp = new AstBegin{flp, "", nullptr, true};
@@ -232,8 +228,7 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             // Zero-repetition path: skip directly to ##1 → check next
             AstBegin* const skipZerop = new AstBegin{flp, "", nullptr, true};
             skipZerop->addStmtsp(delayp->cloneTree(false));
-            AstSampled* const skipNextp
-                = new AstSampled{flp, nextExprp->cloneTreePure(false)};
+            AstSampled* const skipNextp = new AstSampled{flp, nextExprp->cloneTreePure(false)};
             skipNextp->dtypeFrom(nextExprp);
             skipZerop->addStmtsp(new AstIf{flp, skipNextp, new AstPExprClause{flp, true},
                                            new AstPExprClause{flp, false}});

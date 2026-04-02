@@ -1516,8 +1516,7 @@ class WidthVisitor final : public VNVisitor {
             if (!minConstp) {
                 nodep->v3error("Consecutive repetition count must be constant expression"
                                " (IEEE 1800-2023 16.9.2)");
-            } else if (!nodep->unbounded() && minConstp->toSInt() < 1
-                       && !nodep->maxCountp()) {
+            } else if (!nodep->unbounded() && minConstp->toSInt() < 1 && !nodep->maxCountp()) {
                 // [*0] exact zero -- unsupported
                 nodep->v3warn(E_UNSUPPORTED, "Unsupported: [*0] consecutive repetition");
             } else if (nodep->unbounded() && minConstp->toSInt() < 0) {
@@ -1535,9 +1534,8 @@ class WidthVisitor final : public VNVisitor {
                     nodep->v3error("Consecutive repetition max count must be >= min count"
                                    " (IEEE 1800-2023 16.9.2)");
                 } else if (maxConstp->toSInt() < 1) {
-                    nodep->v3warn(E_UNSUPPORTED,
-                                  "Unsupported: [*N:0] consecutive repetition"
-                                  " with zero max count");
+                    nodep->v3warn(E_UNSUPPORTED, "Unsupported: [*N:0] consecutive repetition"
+                                                 " with zero max count");
                 }
             }
             nodep->dtypeSetBit();
