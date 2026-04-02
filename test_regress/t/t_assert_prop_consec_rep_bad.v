@@ -14,4 +14,7 @@ module t (input clk);
   // Bad: [*0] consecutive repetition unsupported
   assert property (@(posedge clk) a [*0] |-> 1);
 
+  // Bad: max count < min count
+  assert property (@(posedge clk) a [*3:1] |-> 1);
+
 endmodule

@@ -12,4 +12,8 @@
    15 |   assert property (@(posedge clk) a [*0] |-> 1);
       |                                     ^~
                     ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
+%Error: t/t_assert_prop_consec_rep_bad.v:18:37: Consecutive repetition max count must be >= min count (IEEE 1800-2023 16.9.2)
+                                              : ... note: In instance 't'
+   18 |   assert property (@(posedge clk) a [*3:1] |-> 1);
+      |                                     ^~
 %Error: Exiting due to
