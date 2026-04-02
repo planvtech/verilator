@@ -737,8 +737,7 @@ class RangeDelayExpander final : public VNVisitor {
             flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
             new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 1}}};
         AstIf* const failOrRetryp = new AstIf{
-            flp,
-            new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 0}},
+            flp, new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 0}},
             timeoutp, decrementp};
         return new AstIf{flp, new AstSampled{flp, exprp->cloneTree(false)}, matchActionp,
                          failOrRetryp};
@@ -773,25 +772,23 @@ class RangeDelayExpander final : public VNVisitor {
                 if (needsWait) {
                     const int waitState = nextState++;
                     checkState = nextState++;
-                    const int initCnt
-                        = step.isUnbounded ? 0 : (step.rangeMax - step.rangeMin);
+                    const int initCnt = step.isUnbounded ? 0 : (step.rangeMax - step.rangeMin);
                     AstNode* const waitBodyp = new AstIf{
                         flp,
                         new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
                                   new AstConst{flp, 0}},
                         makeStateTransition(flp, stateVarp, cntVarp, checkState, initCnt),
-                        new AstAssign{
-                            flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
-                            new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
-                                       new AstConst{flp, 1}}}};
+                        new AstAssign{flp, new AstVarRef{flp, cntVarp, VAccess::WRITE},
+                                      new AstSub{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                                                 new AstConst{flp, 1}}}};
                     fsmChainp = chainState(flp, fsmChainp, stateVarp, waitState, waitBodyp);
                 } else {
                     checkState = nextState++;
                 }
 
                 const int afterMatchState = nextState;
-                AstNode* const matchActionp = makeOnMatchAction(
-                    flp, stateVarp, cntVarp, isTail, afterMatchState, nextStep.delay);
+                AstNode* const matchActionp = makeOnMatchAction(flp, stateVarp, cntVarp, isTail,
+                                                                afterMatchState, nextStep.delay);
 
                 // Capture info for ##[*] IDLE immediate-match path
                 if (i == 0 && step.isUnbounded && step.rangeMin == 0) {
@@ -801,9 +798,9 @@ class RangeDelayExpander final : public VNVisitor {
                 }
 
                 // CHECK state: shared between bounded and unbounded
-                AstNode* const checkBodyp = makeRangeCheckBody(
-                    flp, stateVarp, cntVarp, failVarp, nextStep.exprp, matchActionp,
-                    step.isUnbounded);
+                AstNode* const checkBodyp
+                    = makeRangeCheckBody(flp, stateVarp, cntVarp, failVarp, nextStep.exprp,
+                                         matchActionp, step.isUnbounded);
                 fsmChainp = chainState(flp, fsmChainp, stateVarp, checkState, checkBodyp);
 
                 ++i;  // Skip next step (consumed as the range check target)
@@ -868,11 +865,9 @@ class RangeDelayExpander final : public VNVisitor {
             // On immediate match: use same action as CHECK_UNBOUNDED.
             // On no immediate match: transition to CHECK_UNBOUNDED.
             const SeqStep& nextStep = steps[1];
-            AstNodeExpr* const immCheckp
-                = new AstSampled{flp, nextStep.exprp->cloneTree(false)};
+            AstNodeExpr* const immCheckp = new AstSampled{flp, nextStep.exprp->cloneTree(false)};
             immCheckp->dtypeSetBit();
-            AstNode* const toCheckStatep
-                = makeStateTransition(flp, stateVarp, cntVarp, 1, 0);
+            AstNode* const toCheckStatep = makeStateTransition(flp, stateVarp, cntVarp, 1, 0);
             AstNode* const immMatchp = makeOnMatchAction(flp, stateVarp, cntVarp, immIsTail,
                                                          immAfterMatchState, immNextDelay);
             AstIf* const immIfp = new AstIf{flp, immCheckp, immMatchp, toCheckStatep};
