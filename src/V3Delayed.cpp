@@ -1115,7 +1115,11 @@ class DelayedVisitor final : public VNVisitor {
             VL_RESTORER(m_procp);
             VL_RESTORER(m_ignoreBlkAndNBlk);
             VL_RESTORER(m_inNonCombLogic);
-            m_inSuspendableOrFork = nodep->isSuspendable();
+            // Reactive processes (concurrent assertions) use FlagUnique NBA scheme
+            // because their NBAs commit in Re-NBA via the shared nba_func(), which
+            // bundles init+commit. The ShadowVar scheme's init step would clobber
+            // values written during Reactive. FlagUnique has no init step.
+            m_inSuspendableOrFork = nodep->isSuspendable() || VN_IS(nodep, AlwaysReactive);
             m_procp = nodep;
             if (m_inSuspendableOrFork) {
                 m_ignoreBlkAndNBlk = false;

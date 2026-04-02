@@ -506,9 +506,18 @@ private:
 
         {
             AstLoop* const loopp = new AstLoop{flp};
-            loopp->addStmtsp(new AstLoopTest{
-                flp, loopp,
-                new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ}, new AstConst{flp, 0}}});
+            // When throughout is present, also check throughoutOk so the loop
+            // exits as soon as the condition fails.  This makes the else-clause
+            // NBA fire at the failing tick rather than at the sequence endpoint,
+            // matching the behavior of other simulators for overlapping attempts.
+            AstNodeExpr* loopCondp
+                = new AstGt{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
+                            new AstConst{flp, 0}};
+            if (throughoutOkp) {
+                loopCondp = new AstLogAnd{flp, loopCondp,
+                                          new AstVarRef{flp, throughoutOkp, VAccess::READ}};
+            }
+            loopp->addStmtsp(new AstLoopTest{flp, loopp, loopCondp});
             loopp->addStmtsp(controlp);
             // Throughout: check condition at each tick during delay (IEEE 1800-2023 16.9.9)
             if (throughoutp) {

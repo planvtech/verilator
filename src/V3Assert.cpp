@@ -473,7 +473,8 @@ class AssertVisitor final : public VNVisitor {
                 = new AstIf{nodep->fileline(), new AstLogNot{nodep->fileline(), disablep}, bodysp};
         }
         if (sentreep) {
-            bodysp = new AstAlways{nodep->fileline(), VAlwaysKwd::ALWAYS, sentreep, bodysp};
+            // Concurrent assertions execute in the Reactive region (IEEE 1800-2023 16.14.1)
+            bodysp = new AstAlwaysReactive{nodep->fileline(), sentreep, bodysp};
         }
 
         if (passsp && !passsp->backp()) VL_DO_DANGLING(pushDeletep(passsp), passsp);

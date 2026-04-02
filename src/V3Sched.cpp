@@ -643,6 +643,10 @@ void createEval(AstNetlist* netlistp,  //
     AstCCall* const timingReadyp = timingKit.createReady(netlistp);
     AstCCall* const timingResumep = timingKit.createResume(netlistp);
 
+    // Reactive timing (for assertion coroutines in Reactive region)
+    AstCCall* const timingReadyReactp = timingKit.createReadyReact(netlistp);
+    AstCCall* const timingResumeReactp = timingKit.createResumeReact(netlistp);
+
     // Create the active eval loop
     EvalLoop topLoop = createEvalLoop(  //
         netlistp, "act", "Active", /* slow: */ false, trigKit,
@@ -810,11 +814,25 @@ void createEval(AstNetlist* netlistp,  //
             // Inner loop statements
             topLoop.stmtsp,
             // Prep statements
-            nullptr,
+            [&]() -> AstNodeStmt* {
+                AstNodeStmt* stmtsp = nullptr;
+                // Mark as ready for reactive triggered awaits
+                if (timingReadyReactp) {
+                    stmtsp = AstNode::addNext(stmtsp, timingReadyReactp->makeStmt());
+                }
+                return stmtsp;
+            }(),
             // Work statements
             [&]() {
+                AstNodeStmt* workp = nullptr;
+                // Resume reactive timing schedulers
+                if (timingResumeReactp) {
+                    workp = AstNode::addNext(workp, timingResumeReactp->makeStmt());
+                }
                 // Invoke the 'react' function
-                AstNodeStmt* workp = util::callVoidFunc(reactKit.m_funcp);
+                workp = AstNode::addNext(workp, util::callVoidFunc(reactKit.m_funcp));
+                // Commit NBAs from reactive action blocks (Re-NBA per IEEE 1800-2023 4.4.2)
+                workp = AstNode::addNext(workp, util::callVoidFunc(nbaKit.m_funcp));
                 // Clear the 'react' triggers
                 workp = AstNode::addNext(workp, trigKit.newClearCall(reactKit.m_vscp));
                 return workp;
@@ -993,7 +1011,8 @@ void schedule(AstNetlist* netlistp) {
                                                &logicRegions.m_nba,  //
                                                &logicRegions.m_obs,  //
                                                &logicRegions.m_react,  //
-                                               &timingKit.m_lbs});
+                                               &timingKit.m_lbs,  //
+                                               &timingKit.m_lbsReact});
     const TriggerKit trigKit
         = TriggerKit::create(netlistp, staticp, senExprBuilder, preTreeps, senTreeps, "act",
                              extraTriggers, false, v3Global.usesTiming());
@@ -1020,6 +1039,7 @@ void schedule(AstNetlist* netlistp) {
     remapSensitivities(logicRegions.m_act, trigKit.mapVec());
     remapSensitivities(logicReplicas.m_act, trigKit.mapVec());
     remapSensitivities(timingKit.m_lbs, trigKit.mapVec());
+    remapSensitivities(timingKit.m_lbsReact, trigKit.mapVec());
     const std::map<const AstVarScope*, std::vector<AstSenTree*>> actTimingDomains
         = timingKit.remapDomains(trigKit.mapVec());
 
@@ -1117,6 +1137,24 @@ void schedule(AstNetlist* netlistp) {
     const EvalKit reactKit
         = orderIfNonEmpty("react", {&logicRegions.m_react, &logicReplicas.m_react});
 
+    // Reactive timing ready must check __VreactTriggered (not __VactTriggered,
+    // which is cleared by the Active phase before Reactive runs).
+    // Clone sentrees before substitution — sentrees are deduplicated so active
+    // and reactive actives may share the same object.
+    if (reactKit.m_vscp) {
+        for (auto& pair : timingKit.m_lbsReact) {
+            AstSenTree* const origSenTreep = pair.second->sentreep();
+            AstSenTree* const newSenTreep = origSenTreep->cloneTree(false);
+            pair.second->sentreep(newSenTreep);
+            newSenTreep->foreach([&](AstVarRef* refp) {
+                if (refp->varScopep() == trigKit.vscp()) {
+                    refp->varScopep(reactKit.m_vscp);
+                    refp->varp(reactKit.m_vscp->varp());
+                }
+            });
+        }
+    }
+
     // Step 13: Create the 'postponed' region evaluation function
     auto* const postponedFuncp = createPostponed(netlistp, logicClasses);
 
@@ -1125,8 +1163,11 @@ void schedule(AstNetlist* netlistp) {
                timingKit);
 
     // Step 15: Add neccessary evaluation before awaits
-    if (AstCCall* const readyp = timingKit.createReady(netlistp)) {
-        staticp->addStmtsp(readyp->makeStmt());
+    AstCCall* const readyp = timingKit.createReady(netlistp);
+    AstCCall* const readyReactp = timingKit.createReadyReact(netlistp);
+    if (readyp || readyReactp) {
+        if (readyp) staticp->addStmtsp(readyp->makeStmt());
+        if (readyReactp) staticp->addStmtsp(readyReactp->makeStmt());
         beforeTrigVisitor(netlistp, senExprBuilder, trigKit);
     } else {
         // beforeTrigVisitor clears Sentree pointers in AstCAwaits (as these sentrees will get

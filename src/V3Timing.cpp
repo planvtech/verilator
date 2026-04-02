@@ -478,6 +478,7 @@ class TimingControlVisitor final : public VNVisitor {
     int m_forkCnt = 0;  // Number of forks inside a module
     bool m_underJumpBlock = false;  // True if we are inside of a jump-block
     bool m_underProcedure = false;  // True if we are under an always or initial
+    bool m_inReactiveAlways = false;  // True if inside AstAlwaysReactive (assertions)
     bool m_hasStaticZeroDelay = false;  // True if we have a static #0 delay
     std::vector<FileLine*> m_unknownDelayFlps;  // Locations of AstDelay with non-constant value
 
@@ -490,6 +491,7 @@ class TimingControlVisitor final : public VNVisitor {
     V3UniqueNames m_intraIndexNames{"__Vintraidx"};  // Intra assign delay index var names
     V3UniqueNames m_intraLsbNames{"__Vintralsb"};  // Intra assign delay LSB var names
     V3UniqueNames m_trigSchedNames{"__VtrigSched"};  // Trigger scheduler name generator
+    V3UniqueNames m_reactTrigSchedNames{"__VtrigSchedReact"};  // Reactive trigger scheduler names
     V3UniqueNames m_dynTrigNames{"__VdynTrigger"};  // Dynamic trigger name generator
 
     // DTypes
@@ -648,6 +650,22 @@ class TimingControlVisitor final : public VNVisitor {
             sentreep->user1p(trigSchedp);
         }
         return VN_AS(sentreep->user1p(), VarScope);
+    }
+    // Creates a reactive trigger scheduler variable (separate instance for Reactive region)
+    std::map<const AstSenTree*, AstVarScope*> m_reactTrigScheds;
+    AstVarScope* getCreateReactiveTriggerSchedulerp(AstSenTree* const sentreep) {
+        auto it = m_reactTrigScheds.find(sentreep);
+        if (it != m_reactTrigScheds.end()) return it->second;
+        if (!m_trigSchedDtp) {
+            m_trigSchedDtp
+                = new AstBasicDType{m_scopeTopp->fileline(), VBasicDTypeKwd::TRIGGER_SCHEDULER,
+                                    VSigning::UNSIGNED};
+            m_netlistp->typeTablep()->addTypesp(m_trigSchedDtp);
+        }
+        AstVarScope* const trigSchedp
+            = m_scopeTopp->createTemp(m_reactTrigSchedNames.get(sentreep), m_trigSchedDtp);
+        m_reactTrigScheds[sentreep] = trigSchedp;
+        return trigSchedp;
     }
     // Creates a string describing the sentree
     AstCExpr* createEventDescription(AstSenTree* const sentreep) const {
@@ -862,8 +880,10 @@ class TimingControlVisitor final : public VNVisitor {
     void visit(AstNodeProcedure* nodep) override {
         VL_RESTORER(m_procp);
         VL_RESTORER(m_hasProcess);
+        VL_RESTORER(m_inReactiveAlways);
         m_procp = nodep;
         m_hasProcess = hasFlags(nodep, T_HAS_PROC);
+        if (VN_IS(nodep, AlwaysReactive)) m_inReactiveAlways = true;
         VL_RESTORER(m_underProcedure);
         m_underProcedure = true;
         iterateChildren(nodep);
@@ -1125,10 +1145,13 @@ class TimingControlVisitor final : public VNVisitor {
         } else {
             auto* const sentreep = m_finder.getSenTree(nodep->sentreep());
             nodep->sentreep()->unlinkFrBack()->deleteTree();
-            // Get this sentree's trigger scheduler
+            // Get this sentree's trigger scheduler (reactive region uses a separate instance)
             // Replace self with a 'co_await trigSched.trigger()'
+            AstVarScope* const trigSchedp = m_inReactiveAlways
+                                                ? getCreateReactiveTriggerSchedulerp(sentreep)
+                                                : getCreateTriggerSchedulerp(sentreep);
             auto* const triggerMethodp = new AstCMethodHard{
-                flp, new AstVarRef{flp, getCreateTriggerSchedulerp(sentreep), VAccess::WRITE},
+                flp, new AstVarRef{flp, trigSchedp, VAccess::WRITE},
                 VCMethod::SCHED_TRIGGER};
             triggerMethodp->dtypeSetVoid();
             // If it should be committed immediately, pass true, otherwise false

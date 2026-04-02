@@ -538,6 +538,9 @@ class ForkVisitor final : public VNVisitor {
     AstTask* m_tasksp = nullptr;  // Tasks exrtracted under current module
     size_t m_nForkTasks = 0;  // Sequence numbers for task names
 
+    // STATE - for current procedure context
+    bool m_inReactiveAlways = false;  // Inside AstAlwaysReactive (assertion scheduling)
+
     // STATE - for current AstFork item
     bool m_inFork = false;  // Traversal in an async fork
     bool m_inInitStmt = false;  // Traversal in InitialStaticStmt/InitialAutomaticStmt
@@ -632,6 +635,11 @@ class ForkVisitor final : public VNVisitor {
     }
 
     // VISITORS
+    void visit(AstAlwaysReactive* nodep) override {
+        VL_RESTORER(m_inReactiveAlways);
+        m_inReactiveAlways = true;
+        iterateChildren(nodep);
+    }
     void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
         VL_RESTORER(m_nForkTasks);
@@ -656,18 +664,27 @@ class ForkVisitor final : public VNVisitor {
         // is used.
         if (nodep->joinType().joinNone()) {
             UINFO(9, "Visiting fork..join_none " << nodep);
-            FileLine* fl = nodep->fileline();
-            // We use a sentinel value of UINT64_MAX to mark this delay so that it goes to the
-            // ACTIVE region with a delay value of 0.
-            for (AstBegin *itemp = nodep->forksp(), *nextp; itemp; itemp = nextp) {
-                nextp = VN_AS(itemp->nextp(), Begin);
-                if (!itemp->stmtsp()) continue;
-                AstDelay* const delayp = new AstDelay{
-                    fl,
-                    new AstConst{fl, AstConst::Unsized64{}, std::numeric_limits<uint64_t>::max()},
-                    false};
-                itemp->stmtsp()->addHereThisAsNext(delayp);
-                moveForkSentinelAfterDisableQueuePushes(itemp);
+            // Reactive-region forks (concurrent assertions) run inline --
+            // they start synchronously in the Reactive region and suspend
+            // only at co_await trigger(). The IEEE 9.3.2 "parent blocks"
+            // requirement is satisfied because the assertion body IS the
+            // parent process — spawned coroutines evaluate the sequence
+            // and yield at the next clock edge. No sentinel delay needed.
+            if (!m_inReactiveAlways) {
+                FileLine* const fl = nodep->fileline();
+                // We use a sentinel value of UINT64_MAX to mark this delay so that it goes to
+                // the ACTIVE region with a delay value of 0.
+                for (AstBegin *itemp = nodep->forksp(), *nextp; itemp; itemp = nextp) {
+                    nextp = VN_AS(itemp->nextp(), Begin);
+                    if (!itemp->stmtsp()) continue;
+                    AstDelay* const delayp = new AstDelay{
+                        fl,
+                        new AstConst{fl, AstConst::Unsized64{},
+                                     std::numeric_limits<uint64_t>::max()},
+                        false};
+                    itemp->stmtsp()->addHereThisAsNext(delayp);
+                    moveForkSentinelAfterDisableQueuePushes(itemp);
+                }
             }
         }
 

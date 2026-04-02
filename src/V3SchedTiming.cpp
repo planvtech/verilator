@@ -175,6 +175,93 @@ AstCCall* TimingKit::createReady(AstNetlist* const netlistp) {
 }
 
 //============================================================================
+// Creates a reactive timing resume call (if needed, else returns null)
+
+AstCCall* TimingKit::createResumeReact(AstNetlist* const netlistp) {
+    if (!m_resumeReactFuncp) {
+        if (m_lbsReact.empty()) return nullptr;
+        AstScope* const scopeTopp = netlistp->topScopep()->scopep();
+        m_resumeReactFuncp
+            = new AstCFunc{netlistp->fileline(), "_timing_resume_react", scopeTopp, ""};
+        m_resumeReactFuncp->dontCombine(true);
+        m_resumeReactFuncp->isLoose(true);
+        m_resumeReactFuncp->isConst(false);
+        m_resumeReactFuncp->declPrivate(true);
+        scopeTopp->addBlocksp(m_resumeReactFuncp);
+
+        for (const auto& p : m_lbsReact) {
+            AstActive* const activep = p.second;
+            activep->foreach([this](AstCMethodHard* const exprp) {
+                if (exprp->method() != VCMethod::SCHED_RESUME) return;
+                AstNodeExpr* const fromp = exprp->fromp();
+                if (VN_AS(fromp->dtypep(), BasicDType)->keyword()
+                    != VBasicDTypeKwd::TRIGGER_SCHEDULER) {
+                    return;
+                }
+                AstCMethodHard* const moveToResumep = new AstCMethodHard{
+                    fromp->fileline(), fromp->cloneTree(false),
+                    VCMethod::SCHED_MOVE_TO_RESUME_QUEUE,
+                    exprp->pinsp() ? exprp->pinsp()->cloneTree(true) : nullptr};
+                moveToResumep->dtypeSetVoid();
+                m_resumeReactFuncp->addStmtsp(moveToResumep->makeStmt());
+            });
+        }
+
+        // Put all the reactive timing actives in the resume function
+        for (auto& p : m_lbsReact) {
+            AstActive* const activep = p.second;
+            AstNode* const actionp = activep->stmtsp()->unlinkFrBackWithNext();
+            m_resumeReactFuncp->addStmtsp(actionp);
+        }
+
+        m_lbsReact.deleteActives();
+    }
+    AstCCall* const callp = new AstCCall{m_resumeReactFuncp->fileline(), m_resumeReactFuncp};
+    callp->dtypeSetVoid();
+    return callp;
+}
+
+//============================================================================
+// Creates a reactive timing ready call (if needed, else returns null)
+
+AstCCall* TimingKit::createReadyReact(AstNetlist* const netlistp) {
+    if (!m_readyReactFuncp) {
+        for (auto& p : m_lbsReact) {
+            AstActive* const activep = p.second;
+            auto* const resumep = VN_AS(VN_AS(activep->stmtsp(), StmtExpr)->exprp(), CMethodHard);
+            AstVarScope* const schedulerp = VN_AS(resumep->fromp(), VarRef)->varScopep();
+            if (!schedulerp->dtypep()->basicp()->isTriggerScheduler()) continue;
+            if (!m_readyReactFuncp) {
+                AstScope* const scopeTopp = netlistp->topScopep()->scopep();
+                m_readyReactFuncp
+                    = new AstCFunc{netlistp->fileline(), "_timing_ready_react", scopeTopp, ""};
+                m_readyReactFuncp->dontCombine(true);
+                m_readyReactFuncp->isLoose(true);
+                m_readyReactFuncp->isConst(false);
+                m_readyReactFuncp->declPrivate(true);
+                scopeTopp->addBlocksp(m_readyReactFuncp);
+            }
+
+            AstSenTree* const senTreep = activep->sentreep();
+            FileLine* const flp = senTreep->fileline();
+
+            AstIf* const ifp = V3Sched::util::createIfFromSenTree(senTreep);
+            m_readyReactFuncp->addStmtsp(ifp);
+
+            AstVarRef* const refp = new AstVarRef{flp, schedulerp, VAccess::READWRITE};
+            AstCMethodHard* const callp = new AstCMethodHard{flp, refp, VCMethod::SCHED_READY};
+            callp->dtypeSetVoid();
+            if (resumep->pinsp()) callp->addPinsp(resumep->pinsp()->cloneTree(false));
+            ifp->addThensp(callp->makeStmt());
+        }
+        if (!m_readyReactFuncp) return nullptr;
+    }
+    AstCCall* const callp = new AstCCall{m_readyReactFuncp->fileline(), m_readyReactFuncp};
+    callp->dtypeSetVoid();
+    return callp;
+}
+
+//============================================================================
 // Creates the timing kit and marks variables written by suspendables
 
 class AwaitVisitor final : public VNVisitor {
@@ -184,9 +271,11 @@ class AwaitVisitor final : public VNVisitor {
 
     // STATE
     bool m_inProcess = false;  // Are we in a process?
+    bool m_inReactive = false;  // Are we in a reactive process (assertion)?
     bool m_gatherVars = false;  // Should we gather vars in m_writtenBySuspendable?
     AstScope* const m_scopeTopp;  // Scope at the top
-    LogicByScope& m_lbs;  // Timing resume actives
+    LogicByScope& m_lbs;  // Timing resume actives (Active region)
+    LogicByScope& m_lbsReact;  // Timing resume actives (Reactive region)
     AstNodeStmt*& m_postUpdatesr;  // Post updates for the trigger eval function
     // Additional var sensitivities
     std::map<const AstVarScope*, std::set<AstSenTree*>>& m_externalDomains;
@@ -231,10 +320,14 @@ class AwaitVisitor final : public VNVisitor {
             postp->method(VCMethod::SCHED_DO_POST_UPDATES);
             m_postUpdatesr = AstNode::addNext(m_postUpdatesr, postp->makeStmt());
         }
-        // Put it in an active
+        // Put it in an active (route to reactive or active region)
         AstActive* const activep = new AstActive{flp, "_timing", sentreep};
         activep->addStmtsp(resumep->makeStmt());
-        m_lbs.emplace_back(m_scopeTopp, activep);
+        if (m_inReactive) {
+            m_lbsReact.emplace_back(m_scopeTopp, activep);
+        } else {
+            m_lbs.emplace_back(m_scopeTopp, activep);
+        }
     }
 
     // VISITORS
@@ -243,6 +336,7 @@ class AwaitVisitor final : public VNVisitor {
                         && m_writtenBySuspendable.empty(),
                     nodep, "Process in process?");
         m_inProcess = true;
+        m_inReactive = VN_IS(nodep, AlwaysReactive);
         m_gatherVars = nodep->isSuspendable();  // Only gather vars in a suspendable
         const VNUser2InUse user2InUse;  // AstVarScope -> bool: Set true if var has been added
                                         // to m_writtenBySuspendable
@@ -254,6 +348,7 @@ class AwaitVisitor final : public VNVisitor {
         m_processDomains.clear();
         m_writtenBySuspendable.clear();
         m_inProcess = false;
+        m_inReactive = false;
         m_gatherVars = false;
     }
     void visit(AstFork* nodep) override {
@@ -264,7 +359,11 @@ class AwaitVisitor final : public VNVisitor {
     }
     void visit(AstCAwait* nodep) override {
         if (AstSenTree* const sentreep = nodep->sentreep()) {
-            if (!sentreep->user1SetOnce()) createResumeActive(nodep);
+            // Deduplicate by scheduler variable (not sentree) because reactive
+            // and active schedulers may share the same sentree
+            auto* const methodp = VN_AS(nodep->exprp(), CMethodHard);
+            AstVarScope* const schedulerp = VN_AS(methodp->fromp(), VarRef)->varScopep();
+            if (!schedulerp->user1SetOnce()) createResumeActive(nodep);
             if (m_inProcess) m_processDomains.insert(sentreep);
         }
     }
@@ -281,10 +380,12 @@ class AwaitVisitor final : public VNVisitor {
 
 public:
     // CONSTRUCTORS
-    explicit AwaitVisitor(AstNetlist* nodep, LogicByScope& lbs, AstNodeStmt*& postUpdatesr,
+    explicit AwaitVisitor(AstNetlist* nodep, LogicByScope& lbs, LogicByScope& lbsReact,
+                          AstNodeStmt*& postUpdatesr,
                           std::map<const AstVarScope*, std::set<AstSenTree*>>& externalDomains)
         : m_scopeTopp{nodep->topScopep()->scopep()}
         , m_lbs{lbs}
+        , m_lbsReact{lbsReact}
         , m_postUpdatesr{postUpdatesr}
         , m_externalDomains{externalDomains} {
         iterate(nodep);
@@ -295,10 +396,11 @@ public:
 TimingKit prepareTiming(AstNetlist* const netlistp) {
     if (!v3Global.usesTiming()) return {};
     LogicByScope lbs;
+    LogicByScope lbsReact;
     AstNodeStmt* postUpdates = nullptr;
     std::map<const AstVarScope*, std::set<AstSenTree*>> externalDomains;
-    { AwaitVisitor{netlistp, lbs, postUpdates, externalDomains}; }
-    return {std::move(lbs), postUpdates, std::move(externalDomains)};
+    { AwaitVisitor{netlistp, lbs, lbsReact, postUpdates, externalDomains}; }
+    return {std::move(lbs), std::move(lbsReact), postUpdates, std::move(externalDomains)};
 }
 
 //============================================================================

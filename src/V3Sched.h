@@ -318,12 +318,15 @@ public:
 class TimingKit final {
     AstCFunc* m_resumeFuncp = nullptr;  // Global timing resume function
     AstCFunc* m_readyFuncp = nullptr;  // Global timing ready function
+    AstCFunc* m_resumeReactFuncp = nullptr;  // Reactive timing resume function
+    AstCFunc* m_readyReactFuncp = nullptr;  // Reactive timing ready function
 
     // Additional var sensitivities for V3Order
     std::map<const AstVarScope*, std::set<AstSenTree*>> m_externalDomains;
 
 public:
-    LogicByScope m_lbs;  // Actives that resume timing schedulers
+    LogicByScope m_lbs;  // Actives that resume timing schedulers (Active region)
+    LogicByScope m_lbsReact;  // Actives that resume timing schedulers (Reactive region)
     AstNodeStmt* m_postUpdates = nullptr;  // Post updates for the trigger eval function
 
     // Remaps external domains using the specified trigger map
@@ -335,12 +338,17 @@ public:
     AstCCall* createResume(AstNetlist* const netlistp) VL_MT_DISABLED;
     // Creates a timing ready call (if needed, else returns null)
     AstCCall* createReady(AstNetlist* const netlistp) VL_MT_DISABLED;
+    // Creates a reactive timing resume call (if needed, else returns null)
+    AstCCall* createResumeReact(AstNetlist* const netlistp) VL_MT_DISABLED;
+    // Creates a reactive timing ready call (if needed, else returns null)
+    AstCCall* createReadyReact(AstNetlist* const netlistp) VL_MT_DISABLED;
 
     TimingKit() = default;
-    TimingKit(LogicByScope&& lbs, AstNodeStmt* postUpdates,
+    TimingKit(LogicByScope&& lbs, LogicByScope&& lbsReact, AstNodeStmt* postUpdates,
               std::map<const AstVarScope*, std::set<AstSenTree*>>&& externalDomains)
         : m_externalDomains{externalDomains}
         , m_lbs{lbs}
+        , m_lbsReact{lbsReact}
         , m_postUpdates{postUpdates} {}
     VL_UNCOPYABLE(TimingKit);
     TimingKit(TimingKit&&) = default;
