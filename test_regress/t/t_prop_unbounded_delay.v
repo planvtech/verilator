@@ -94,4 +94,22 @@ module t (
   assert property (@(posedge clk) disable iff (cyc < 2)
       a |-> ##[5:$] 1'b1);
 
+  // --- Non-trivial consequents: exercise CHECK_UNBOUNDED "stay" path ---
+
+  // ##[+] with CRC signal: wait 1+ cycles for b (exercises match-or-stay)
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      a |-> ##[+] b);
+
+  // ##[*] with CRC signal: immediate or deferred match of c
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      a |-> ##[*] c);
+
+  // ##[2:$] with CRC signal: min wait then check b (WAIT_MIN + CHECK_UNBOUNDED)
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      b |-> ##[2:$] a);
+
+  // Binary form with CRC signal: a ##[+] b (no implication)
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      a ##[+] b);
+
 endmodule
