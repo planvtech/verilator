@@ -68,7 +68,22 @@ class AssertPropConsRepVisitor final : public VNVisitor {
     }
     void visit(AstConsRep* nodep) override {
         // Standalone ConsRep (not in SExpr) -- lower in place
-        if (VN_IS(nodep->backp(), SExpr)) return;  // Handled by visit(AstSExpr)
+        if (AstSExpr* const sexprp = VN_CAST(nodep->backp(), SExpr)) {
+            // ConsRep in SExpr preExprp() is handled by visit(AstSExpr) above.
+            // ConsRep in SExpr exprp() (trailing position, e.g. "b ##1 a[+]"):
+            //   - Exact [*N]: falls through to V3AssertPre backward-looking counter (OK)
+            //   - Range/unbounded: not yet supported
+            if (nodep == sexprp->exprp()
+                && (nodep->unbounded() || nodep->maxCountp())) {
+                nodep->v3warn(E_UNSUPPORTED,
+                              "Unsupported: trailing consecutive repetition range"
+                              " in sequence expression (e.g. a ##1 b[+])");
+                AstNodeExpr* const exprp = nodep->exprp()->unlinkFrBack();
+                nodep->replaceWith(exprp);
+                VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            }
+            return;
+        }
         lowerStandalone(nodep);
     }
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
@@ -128,8 +143,20 @@ class AssertPropConsRepVisitor final : public VNVisitor {
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
 
+    // Check whether a delay is a simple ##1 cycle delay
+    static bool isSimpleCycleDelay1(const AstNode* delayNodep) {
+        const AstDelay* const dlyp = VN_CAST(delayNodep, Delay);
+        if (!dlyp || !dlyp->isCycleDelay()) return false;
+        if (dlyp->isRangeDelay()) return false;  // ##[m:n] range delay
+        const AstConst* const constp = VN_CAST(dlyp->lhsp(), Const);
+        return constp && constp->toUInt() == 1;
+    }
+
     // ---- SExpr lowering (has ## delay) ----
     // Forward-looking PExpr loop for all forms: [*N], [*N:M], [+], [*]
+    // NOTE: The loop uses the SExpr delay for every iteration. Consecutive repetition
+    // requires ##1 between iterations (IEEE 1800-2023 16.9.2), so non-##1 delays combined
+    // with multi-cycle repetition are unsupported for now.
     void lowerInSExpr(AstSExpr* sexprp, AstConsRep* repp) {
         const RepCounts c = getCounts(repp);
         FileLine* const flp = sexprp->fileline();
@@ -142,6 +169,20 @@ class AssertPropConsRepVisitor final : public VNVisitor {
             repp->replaceWith(repExprp);
             VL_DO_DANGLING(repp->deleteTree(), repp);
             // Re-attach delay and next -- restore SExpr for DFA
+            sexprp->delayp(delayp);
+            sexprp->exprp(nextExprp);
+            return;
+        }
+
+        // Consecutive repetition with non-##1 delay is not yet supported.
+        // The loop below uses the SExpr delay for every iteration, but IEEE 16.9.2
+        // requires ##1 between consecutive matches. Non-##1 delays would produce
+        // incorrect inter-repetition timing.
+        if (!isSimpleCycleDelay1(delayp)) {
+            sexprp->v3warn(E_UNSUPPORTED,
+                           "Unsupported: consecutive repetition with non-##1 cycle delay");
+            repp->replaceWith(repExprp);
+            VL_DO_DANGLING(repp->deleteTree(), repp);
             sexprp->delayp(delayp);
             sexprp->exprp(nextExprp);
             return;
