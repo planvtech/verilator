@@ -1024,7 +1024,9 @@ class RangeDelayExpander final : public VNVisitor {
         }
     }
 
-    // Check whether a subtree contains any SExpr with a range delay
+    // Check whether a subtree contains any SExpr with a range delay.
+    // Uses forall(): the predicate returns false (= "not satisfied") when a range delay
+    // is found, so !forall(...) means "there exists at least one range delay".
     static bool subtreeHasRangeDelay(const AstNode* nodep) {
         return !nodep->forall([](const AstSExpr* sexprp) {
             if (const AstDelay* const dlyp = VN_CAST(sexprp->delayp(), Delay)) {
