@@ -982,7 +982,7 @@ public:
 };
 class AstConsRep final : public AstNodeExpr {
     // Consecutive repetition [*N] (IEEE 1800-2023 16.9.2)
-    // Lowered by V3AssertPre to: expr && $past(expr,1) && ... && $past(expr,N-1)
+    // Lowered by V3AssertPre to a saturating counter that tracks consecutive true cycles
     // @astgen op1 := exprp : AstNodeExpr
     // @astgen op2 := countp : AstNodeExpr
 public:

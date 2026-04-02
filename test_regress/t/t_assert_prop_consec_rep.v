@@ -28,6 +28,7 @@ module t (
   int count_fail3 = 0;
   int count_fail4 = 0;
   int count_fail5 = 0;
+  int count_cover1 = 0;
 
   // Test 1: a[*3] |-> b (3 consecutive, overlapping implication)
   assert property (@(posedge clk) a[*3] |-> b)
@@ -48,6 +49,10 @@ module t (
   // Test 5: [*10000] large count -- verifies counter-based lowering compiles
   assert property (@(posedge clk) a[*10000] |-> b)
     else count_fail5 <= count_fail5 + 1;
+
+  // Test 6: cover property with [*N] -- verifies lowering works in coverage context
+  cover property (@(posedge clk) a[*3])
+    count_cover1 <= count_cover1 + 1;
 
   always @(posedge clk) begin
 `ifdef TEST_VERBOSE

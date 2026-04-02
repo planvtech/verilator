@@ -13,16 +13,18 @@ module t (
     input clk
 );
   integer cyc = 0;
-  logic a, b, c, d, e, f, g;
+  logic a, b, c, d, e, f, g, h, i, j, k;
 
   int seq_pass = 0;
   int bool_pass = 0;
   int diff_pass = 0;
   int difflen_pass = 0;
+  int consrep_isect_pass = 0;
 
   always_ff @(posedge clk) begin
     cyc <= cyc + 1;
     a <= 1'b0; b <= 1'b0; c <= 1'b0; d <= 1'b0; e <= 1'b0; f <= 1'b0; g <= 1'b0;
+    h <= 1'b0; i <= 1'b0; j <= 1'b0; k <= 1'b0;
 
     // Scenario 1 (cyc 3-5): both sides match with ##2
     if (cyc == 3) begin a <= 1'b1; c <= 1'b1; end
@@ -42,11 +44,18 @@ module t (
     if (cyc == 18) begin f <= 1'b1; end  // LHS done at cyc 18 (##1)
     if (cyc == 20) begin g <= 1'b1; end  // RHS done at cyc 20 (##3)
 
-    if (cyc == 25) begin
+    // Scenario 5 (cyc 27-30): [*N] inside intersect operand
+    // h[*2] requires h true at cyc 27 AND 28; intersect both sides length 2
+    if (cyc == 27) begin h <= 1'b1; end
+    if (cyc == 28) begin h <= 1'b1; j <= 1'b1; end  // h[*2] matches, j starts RHS
+    if (cyc == 30) begin i <= 1'b1; k <= 1'b1; end  // both sides end
+
+    if (cyc == 35) begin
       `checkd(seq_pass, 1);
       `checkd(bool_pass, 1);
       `checkd(diff_pass, 1);
       `checkd(difflen_pass, 0);
+      `checkd(consrep_isect_pass, 1);
       $write("*-* All Finished *-*\n");
       $finish;
     end
@@ -71,5 +80,10 @@ module t (
   assert property (@(posedge clk)
     (f ##1 f) intersect (g ##3 g)
   ) difflen_pass++;
+
+  // Test 5: [*N] boolean inside intersect operand -- verifies consrep+intersect combo
+  assert property (@(posedge clk)
+    (h[*2] ##2 i) intersect (j ##2 k)
+  ) consrep_isect_pass++;
 
 endmodule
