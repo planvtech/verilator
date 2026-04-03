@@ -782,8 +782,7 @@ class RangeDelayExpander final : public VNVisitor {
                     const int waitState = nextState++;
                     checkState = nextState++;
                     // Counter unused for unbounded CHECK (no timeout); 0 for consistency
-                    const int initCnt
-                        = step.isUnbounded ? 0 : (step.rangeMax - step.rangeMin);
+                    const int initCnt = step.isUnbounded ? 0 : (step.rangeMax - step.rangeMin);
                     AstNode* const waitBodyp = new AstIf{
                         flp,
                         new AstEq{flp, new AstVarRef{flp, cntVarp, VAccess::READ},
@@ -875,8 +874,7 @@ class RangeDelayExpander final : public VNVisitor {
             // ##[0:$] / ##[*]: immediate check for ##0 case in IDLE state.
             // On immediate match: use same action as CHECK_UNBOUNDED.
             // On no immediate match: transition to CHECK_UNBOUNDED.
-            UASSERT(immAfterMatchState >= 0,
-                    "##[*] IDLE path requires captured afterMatchState");
+            UASSERT(immAfterMatchState >= 0, "##[*] IDLE path requires captured afterMatchState");
             const SeqStep& nextStep = steps[1];
             AstNodeExpr* const immCheckp = new AstSampled{flp, nextStep.exprp->cloneTree(false)};
             immCheckp->dtypeSetBit();
@@ -1023,8 +1021,7 @@ class RangeDelayExpander final : public VNVisitor {
         failVarp->noSample(true);
 
         // Build FSM body
-        AstNode* const fsmBodyp
-            = buildFsmBody(flp, stateVarp, cntVarp, failVarp, steps, antExprp);
+        AstNode* const fsmBodyp = buildFsmBody(flp, stateVarp, cntVarp, failVarp, steps, antExprp);
 
         // Create Always block for the FSM (same scheduling as assertion always blocks)
         AstAlways* const alwaysp = new AstAlways{
