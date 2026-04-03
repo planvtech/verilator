@@ -126,10 +126,10 @@ class AssertVisitor final : public VNVisitor {
     // NODE STATE/TYPES
     // Cleared on netlist
     //  AstNode::user1()         -> bool.  True if processed
-    //  AstAlways::user2p()      -> std::vector<AstVar*>. Delayed variables via 'm_delayed'
+    //  AstNodeProcedure::user2p() -> std::vector<AstVar*>. Delayed variables via 'm_delayed'
     const VNUser1InUse m_user1InUse;
     const VNUser2InUse m_user2InUse;
-    AstUser2Allocator<AstAlways, std::vector<AstVar*>> m_delayed;
+    AstUser2Allocator<AstNodeProcedure, std::vector<AstVar*>> m_delayed;
 
     // STATE
     AstNodeModule* m_modp = nullptr;  // Last module
@@ -150,8 +150,9 @@ class AssertVisitor final : public VNVisitor {
     AstNode* m_passsp = nullptr;  // Current pass statement
     AstNode* m_failsp = nullptr;  // Current fail statement
     bool m_underAssert = false;  // Visited from assert
-    // Map from (expression, senTree) to AstAlways that computes delayed values of the expression
-    std::unordered_map<VNRef<AstNodeExpr>, std::unordered_map<VNRef<AstSenTree>, AstAlways*>>
+    // Map from (expression, senTree) to process that computes delayed values of the expression
+    std::unordered_map<VNRef<AstNodeExpr>,
+                       std::unordered_map<VNRef<AstSenTree>, AstNodeProcedure*>>
         m_modExpr2Sen2DelayedAlwaysp;
 
     // METHODS
@@ -331,7 +332,8 @@ class AssertVisitor final : public VNVisitor {
         return bodysp;
     }
 
-    AstVar* createDelayedVar(const std::string& name, AstAlways* alwaysp, AstNodeExpr* exprp) {
+    AstVar* createDelayedVar(const std::string& name, AstNodeProcedure* alwaysp,
+                             AstNodeExpr* exprp) {
         FileLine* const flp = exprp->fileline();
         AstVar* const varp = new AstVar{flp, VVarType::MODULETEMP, name, exprp->dtypep()};
         // TODO: this lifetime seems nonsene (can't have NBAs to automatics), but is as before
@@ -349,12 +351,19 @@ class AssertVisitor final : public VNVisitor {
         return varp;
     }
 
-    AstAlways* getDelayedAlways(AstNodeExpr* exprp, AstSenTree* senTreep) {
-        AstAlways*& alwayspr = m_modExpr2Sen2DelayedAlwaysp[*exprp][*senTreep];
+    AstNodeProcedure* getDelayedAlways(AstNodeExpr* exprp, AstSenTree* senTreep) {
+        AstNodeProcedure*& alwayspr = m_modExpr2Sen2DelayedAlwaysp[*exprp][*senTreep];
         if (!alwayspr) {
             FileLine* const flp = exprp->fileline();
-            // Create the always block that computes the delayed values
-            alwayspr = new AstAlways{flp, VAlwaysKwd::ALWAYS, senTreep, nullptr};
+            // Create the always block that computes the delayed values.
+            // Edge-triggered (clock) assertions run in Reactive, so the $past
+            // update must also be in Reactive to maintain correct read-before-write
+            // ordering with the assertion forks.
+            if (senTreep->hasEdge()) {
+                alwayspr = new AstAlwaysReactive{flp, senTreep, nullptr};
+            } else {
+                alwayspr = new AstAlways{flp, VAlwaysKwd::ALWAYS, senTreep, nullptr};
+            }
             m_modp->addStmtsp(alwayspr);
             // Create the once-delayed variable
             const std::string name = "_Vpast_" + cvtToStr(m_modPastNum++) + "_1";
@@ -371,7 +380,7 @@ class AssertVisitor final : public VNVisitor {
 
     AstNodeExpr* getPastValue(AstNodeExpr* exprp, AstSenTree* senTreep, uint32_t ticks) {
         UASSERT_OBJ(ticks > 0, exprp, "Delay must be > 0");
-        AstAlways* const alwaysp = getDelayedAlways(exprp, senTreep);
+        AstNodeProcedure* const alwaysp = getDelayedAlways(exprp, senTreep);
         std::vector<AstVar*>& delayedr = m_delayed(alwaysp);
         // Ensure the required delay exists
         while (delayedr.size() < ticks) {
