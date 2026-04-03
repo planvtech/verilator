@@ -659,13 +659,6 @@ private:
     void visit(AstConsRep* nodep) override {
         // IEEE 1800-2023 16.9.2 -- Lower consecutive repetition [*N]
         // Saturating counter tracks consecutive true cycles; avoids O(N) $past tree.
-        // Guard: compound sequence repetition (e.g. (a ##1 b)[*3]) requires unrolling
-        // the entire sequence, which the counter approach cannot handle correctly.
-        if (!nodep->exprp()->forall([](const AstSExpr*) { return false; })) {
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: consecutive repetition of compound sequence");
-            return;
-        }
         iterateChildren(nodep);
         const AstConst* const constp = VN_CAST(nodep->countp(), Const);
         if (VL_UNLIKELY(!constp || constp->toSInt() < 1)) {
