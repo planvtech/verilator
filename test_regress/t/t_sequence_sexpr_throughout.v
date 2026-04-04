@@ -57,8 +57,8 @@ module t (
     end
     else if (cyc == 99) begin
       `checkh(crc, 64'hc77bb9b3784ea091);
-      `checkd(count_fail1, 32);
-      `checkd(count_fail2, 37);
+      `checkd(count_fail1, 41);
+      `checkd(count_fail2, 42);
       `checkd(count_fail3, 35);
       $write("*-* All Finished *-*\n");
       $finish;
