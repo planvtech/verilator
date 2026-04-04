@@ -668,7 +668,7 @@ class ForkVisitor final : public VNVisitor {
             // they start synchronously in the Reactive region and suspend
             // only at co_await trigger(). The IEEE 9.3.2 "parent blocks"
             // requirement is satisfied because the assertion body IS the
-            // parent process — spawned coroutines evaluate the sequence
+            // parent process -- spawned coroutines evaluate the sequence
             // and yield at the next clock edge. No sentinel delay needed.
             if (!m_inReactiveAlways) {
                 FileLine* const fl = nodep->fileline();

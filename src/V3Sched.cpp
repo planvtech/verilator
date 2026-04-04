@@ -831,8 +831,6 @@ void createEval(AstNetlist* netlistp,  //
                 }
                 // Invoke the 'react' function
                 workp = AstNode::addNext(workp, util::callVoidFunc(reactKit.m_funcp));
-                // Commit NBAs from reactive action blocks (Re-NBA per IEEE 1800-2023 4.4.2)
-                workp = AstNode::addNext(workp, util::callVoidFunc(nbaKit.m_funcp));
                 // Clear the 'react' triggers
                 workp = AstNode::addNext(workp, trigKit.newClearCall(reactKit.m_vscp));
                 return workp;
@@ -1139,7 +1137,7 @@ void schedule(AstNetlist* netlistp) {
 
     // Reactive timing ready must check __VreactTriggered (not __VactTriggered,
     // which is cleared by the Active phase before Reactive runs).
-    // Clone sentrees before substitution — sentrees are deduplicated so active
+    // Clone sentrees before substitution -- sentrees are deduplicated so active
     // and reactive actives may share the same object.
     if (reactKit.m_vscp) {
         for (auto& pair : timingKit.m_lbsReact) {
