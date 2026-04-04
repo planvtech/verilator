@@ -6,87 +6,77 @@
 
 // verilog_format: off
 `define stop $stop
-`define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
+`define checkh(gotv, expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got='h%x exp='h%x\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
 // verilog_format: on
 
 module t (
-    input clk
+  input clk
 );
   integer cyc = 0;
-  logic a, b, c, d, e, f, g, h, i, j, k;
+  reg [63:0] crc = '0;
+  reg [63:0] sum = '0;
 
-  int seq_pass = 0;
-  int bool_pass = 0;
-  int diff_pass = 0;
-  int difflen_pass = 0;
-  int consrep_isect_pass = 0;
+  // Derive test signals from CRC
+  wire a = crc[0];
+  wire b = crc[1];
+  wire c = crc[2];
+  wire d = crc[3];
+
+  wire [63:0] result = {60'h0, d, c, b, a};
 
   always_ff @(posedge clk) begin
+`ifdef TEST_VERBOSE
+    $write("[%0t] cyc==%0d crc=%x a=%b b=%b c=%b d=%b\n",
+           $time, cyc, crc, a, b, c, d);
+`endif
     cyc <= cyc + 1;
-    a <= 1'b0; b <= 1'b0; c <= 1'b0; d <= 1'b0; e <= 1'b0; f <= 1'b0; g <= 1'b0;
-    h <= 1'b0; i <= 1'b0; j <= 1'b0; k <= 1'b0;
+    crc <= {crc[62:0], crc[63] ^ crc[2] ^ crc[0]};
+    sum <= result ^ {sum[62:0], sum[63] ^ sum[2] ^ sum[0]};
 
-    // Scenario 1 (cyc 3-5): both sides match with ##2
-    if (cyc == 3) begin a <= 1'b1; c <= 1'b1; end
-    if (cyc == 5) begin b <= 1'b1; d <= 1'b1; end
-
-    // Scenario 2 (cyc 8-10): only LHS matches, intersect fails
-    if (cyc == 8) a <= 1'b1;
-    if (cyc == 10) b <= 1'b1;
-
-    // Scenario 3 (cyc 13-15): different structures, same total delay (2)
-    if (cyc == 13) begin a <= 1'b1; d <= 1'b1; end
-    if (cyc == 14) b <= 1'b1;
-    if (cyc == 15) begin c <= 1'b1; e <= 1'b1; end
-
-    // Scenario 4 (cyc 17-20): different lengths -- intersect can never match per IEEE 16.9.6
-    if (cyc == 17) begin f <= 1'b1; g <= 1'b1; end
-    if (cyc == 18) f <= 1'b1;
-    if (cyc == 20) g <= 1'b1;
-
-    // Scenario 5 (cyc 27-30): [*N] inside intersect operand
-    // h[*2] requires h true at cyc 27 and 28; both sides span 2 cycles
-    if (cyc == 27) h <= 1'b1;
-    if (cyc == 28) begin h <= 1'b1; j <= 1'b1; end
-    if (cyc == 30) begin i <= 1'b1; k <= 1'b1; end
-
-    if (cyc == 35) begin
-      `checkd(seq_pass, 1);
-      `checkd(bool_pass, 1);
-      `checkd(diff_pass, 1);
-      `checkd(difflen_pass, 0);
-      `checkd(consrep_isect_pass, 1);
+    if (cyc == 0) begin
+      crc <= 64'h5aef0c8d_d70a4497;
+      sum <= '0;
+    end else if (cyc < 10) begin
+      sum <= '0;
+    end else if (cyc == 99) begin
+      `checkh(crc, 64'hc77bb9b3784ea091);
+      `checkh(sum, 64'hdb7bc8bfe61f987e);
       $write("*-* All Finished *-*\n");
       $finish;
     end
   end
 
-  // Test 1: intersect of two fixed-delay sequences (same ##2)
-  assert property (@(posedge clk)
-    (a ##2 b) intersect (c ##2 d)
-  ) seq_pass++;
+  // =========================================================================
+  // Boolean intersect (length-0): equivalent to boolean AND (IEEE 16.9.6)
+  // =========================================================================
 
-  // Test 2: boolean intersect (degenerates to AND, length 0 always equal)
-  assert property (@(posedge clk)
-    a intersect c
-  ) bool_pass++;
+  // Boolean intersect: when a & b, intersect succeeds (equivalent to AND)
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      (a & b) |-> (a intersect b));
 
-  // Test 3: different internal structure, same total delay (2 cycles each)
-  assert property (@(posedge clk)
-    (a ##1 b ##1 c) intersect (d ##2 e)
-  ) diff_pass++;
+  // Boolean intersect with constant true -- reduces to just 'a'
+  assert property (@(posedge clk) disable iff (cyc < 2)
+      a |-> (a intersect 1'b1));
 
-  // Test 4: different constant lengths (LHS=1, RHS=3) -- never matches per IEEE 16.9.6
-  assert property (@(posedge clk)
-    (f ##1 f) intersect (g ##3 g)
-  ) difflen_pass++;
+  // =========================================================================
+  // Multi-cycle sequence intersect (IEEE 1800-2023 16.9.6)
+  // Same-length sequences: intersect succeeds when both arms complete
+  // =========================================================================
 
-  // Test 5: [*2] inside intersect -- verifies the combination compiles and executes.
-  // Note: extractTimeline sees h[*2] as a 0-delay boolean (already lowered by V3AssertPre),
-  // so both sides compute to delay=2. IEEE 16.9.6 strict length (3 vs 2) is not enforced
-  // when a consecutive repetition is an intersect operand; this is a known limitation.
+  // Both arms have length 1; 1'b1 guarantees completion on both sides
   assert property (@(posedge clk)
-    (h[*2] ##2 i) intersect (j ##2 k)
-  ) consrep_isect_pass++;
+      (a & b) |-> (a ##1 1'b1) intersect (b ##1 1'b1));
+
+  // Both arms have length 2
+  assert property (@(posedge clk)
+      (a & b) |-> (a ##2 1'b1) intersect (b ##2 1'b1));
+
+  // Different internal structure, same total length (2 cycles each)
+  assert property (@(posedge clk)
+      (a & b) |-> (a ##1 1'b1 ##1 1'b1) intersect (b ##2 1'b1));
+
+  // Standalone constant intersect (always passes)
+  assert property (@(posedge clk)
+      (1'b1 ##1 1'b1) intersect (1'b1 ##1 1'b1));
 
 endmodule

@@ -9,7 +9,6 @@ module t (input clk);
 
   // Range delay in intersect operand is unsupported
   assert property (@(posedge clk)
-    (a ##[1:5] b) intersect (c ##2 d)
-  );
+      (a ##[1:5] b) intersect (c ##2 d));
 
 endmodule
