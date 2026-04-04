@@ -136,8 +136,9 @@ static std::vector<SeqStep> extractTimeline(AstNodeExpr* nodep) {
             if (AstConst* const constp = VN_CAST(dlyp->lhsp(), Const)) {
                 cycles = constp->toSInt();
             } else {
-                dlyp->lhsp()->v3warn(E_UNSUPPORTED,
-                                     "Unsupported: non-constant cycle delay in sequence and/or");
+                dlyp->lhsp()->v3warn(
+                    E_UNSUPPORTED,
+                    "Unsupported: non-constant cycle delay in sequence and/or/intersect");
             }
         }
         // The expression after the delay
@@ -396,12 +397,49 @@ class AssertPropLowerVisitor final : public VNVisitor {
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
 
+    // Lower a multi-cycle sequence 'intersect' (IEEE 1800-2023 16.9.6).
+    // intersect = and + equal-length constraint: both operands must match with the same duration.
+    // When total delays are equal constants, this is identical to 'and'; otherwise constant-false.
+    void lowerSeqIntersect(AstNodeBiop* nodep) {
+        const std::vector<SeqStep> lhsTimeline = extractTimeline(nodep->lhsp());
+        const std::vector<SeqStep> rhsTimeline = extractTimeline(nodep->rhsp());
+        int lhsTotal = 0;
+        for (const auto& step : lhsTimeline) lhsTotal += step.delayCycles;
+        int rhsTotal = 0;
+        for (const auto& step : rhsTimeline) rhsTotal += step.delayCycles;
+        if (lhsTotal != rhsTotal) {
+            // Lengths differ: per IEEE 16.9.6, the match set is empty -- constant-false.
+            FileLine* const flp = nodep->fileline();
+            AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
+            bodyp->addStmtsp(new AstPExprClause{flp, false});
+            AstPExpr* const pexprp = new AstPExpr{flp, bodyp, nodep->dtypep()};
+            nodep->replaceWith(pexprp);
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+            return;
+        }
+        // Same length: length restriction is trivially satisfied, lower as 'and'.
+        lowerSeqAnd(nodep);
+    }
+
     void visit(AstSAnd* nodep) override {
         iterateChildren(nodep);
         if (containsSExpr(nodep->lhsp()) || containsSExpr(nodep->rhsp())) {
             lowerSeqAnd(nodep);
         } else {
             // Pure boolean operands: lower to LogAnd
+            AstLogAnd* const newp = new AstLogAnd{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
+                                                  nodep->rhsp()->unlinkFrBack()};
+            newp->dtypeFrom(nodep);
+            nodep->replaceWith(newp);
+            VL_DO_DANGLING(nodep->deleteTree(), nodep);
+        }
+    }
+    void visit(AstSIntersect* nodep) override {
+        iterateChildren(nodep);
+        if (containsSExpr(nodep->lhsp()) || containsSExpr(nodep->rhsp())) {
+            lowerSeqIntersect(nodep);
+        } else {
+            // Pure boolean operands: length is always 0, lower to LogAnd
             AstLogAnd* const newp = new AstLogAnd{nodep->fileline(), nodep->lhsp()->unlinkFrBack(),
                                                   nodep->rhsp()->unlinkFrBack()};
             newp->dtypeFrom(nodep);
@@ -980,6 +1018,27 @@ class RangeDelayExpander final : public VNVisitor {
             nodep->replaceWith(checkp);
             VL_DO_DANGLING(nodep->deleteTree(), nodep);
         }
+    }
+
+    // True if any AstSExpr in the subtree has a range delay (##[m:n]).
+    // Uses forall(): predicate returns false when a range delay is found,
+    // so !forall(...) means "at least one range delay exists".
+    static bool subtreeHasRangeDelay(const AstNode* nodep) {
+        return !nodep->forall([](const AstSExpr* sexprp) {
+            if (const AstDelay* const dlyp = VN_CAST(sexprp->delayp(), Delay)) {
+                if (dlyp->isRangeDelay()) return false;
+            }
+            return true;
+        });
+    }
+
+    void visit(AstSIntersect* nodep) override {
+        // intersect with a range-delay operand cannot be lowered: the length-pairing
+        // logic requires knowing each operand's concrete length, which is dynamic.
+        if (subtreeHasRangeDelay(nodep->lhsp()) || subtreeHasRangeDelay(nodep->rhsp())) {
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: intersect with range cycle delay operand");
+        }
+        iterateChildren(nodep);
     }
 
     void visit(AstNode* nodep) override { iterateChildren(nodep); }

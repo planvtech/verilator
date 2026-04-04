@@ -126,6 +126,7 @@ class V3DfgCse final {
         case VDfgType::StreamL:
         case VDfgType::StreamR:
         case VDfgType::SAnd:
+        case VDfgType::SIntersect:
         case VDfgType::SOr:
         case VDfgType::Sub:
         case VDfgType::Xor: return V3Hash{};
@@ -250,6 +251,7 @@ class V3DfgCse final {
         case VDfgType::ShiftRS:
         case VDfgType::StreamL:
         case VDfgType::SAnd:
+        case VDfgType::SIntersect:
         case VDfgType::SOr:
         case VDfgType::StreamR:
         case VDfgType::Sub:
