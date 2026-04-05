@@ -159,6 +159,18 @@ static std::vector<SeqStep> extractTimeline(AstNodeExpr* nodep) {
     return timeline;
 }
 
+// True if any AstSExpr in the subtree has a range delay (##[m:n]).
+// Uses forall(): predicate returns false when a range delay is found,
+// so !forall(...) means "at least one range delay exists".
+static bool subtreeHasRangeDelay(const AstNode* nodep) {
+    return !nodep->forall([](const AstSExpr* sexprp) {
+        if (const AstDelay* const dlyp = VN_CAST(sexprp->delayp(), Delay)) {
+            if (dlyp->isRangeDelay()) return false;
+        }
+        return true;
+    });
+}
+
 // Lower sequence and/or to AST
 class AssertPropLowerVisitor final : public VNVisitor {
     // STATE
@@ -409,6 +421,23 @@ class AssertPropLowerVisitor final : public VNVisitor {
         for (const auto& step : rhsTimeline) rhsTotal += step.delayCycles;
         if (lhsTotal != rhsTotal) {
             // Lengths differ: per IEEE 16.9.6, the match set is empty -- constant-false.
+            // Warn the user; mismatched lengths are almost always a mistake.
+            // Skip when either operand had a range delay: RangeDelayExpander already
+            // replaced it with an FSM expression (containsSExpr returns false) and
+            // issued UNSUPPORTED, so no second diagnostic is needed.
+            if (containsSExpr(nodep->lhsp()) && containsSExpr(nodep->rhsp())) {
+                if (lhsTotal > rhsTotal) {
+                    nodep->v3warn(WIDTHEXPAND, "Intersect sequence length mismatch"
+                                               " (left "
+                                                   << lhsTotal << " cycles, right " << rhsTotal
+                                                   << " cycles) -- intersection is always empty");
+                } else {
+                    nodep->v3warn(WIDTHTRUNC, "Intersect sequence length mismatch"
+                                              " (left "
+                                                  << lhsTotal << " cycles, right " << rhsTotal
+                                                  << " cycles) -- intersection is always empty");
+                }
+            }
             FileLine* const flp = nodep->fileline();
             AstBegin* const bodyp = new AstBegin{flp, "", nullptr, true};
             bodyp->addStmtsp(new AstPExprClause{flp, false});
@@ -1020,23 +1049,11 @@ class RangeDelayExpander final : public VNVisitor {
         }
     }
 
-    // True if any AstSExpr in the subtree has a range delay (##[m:n]).
-    // Uses forall(): predicate returns false when a range delay is found,
-    // so !forall(...) means "at least one range delay exists".
-    static bool subtreeHasRangeDelay(const AstNode* nodep) {
-        return !nodep->forall([](const AstSExpr* sexprp) {
-            if (const AstDelay* const dlyp = VN_CAST(sexprp->delayp(), Delay)) {
-                if (dlyp->isRangeDelay()) return false;
-            }
-            return true;
-        });
-    }
-
     void visit(AstSIntersect* nodep) override {
         // intersect with a range-delay operand cannot be lowered: the length-pairing
         // logic requires knowing each operand's concrete length, which is dynamic.
         if (subtreeHasRangeDelay(nodep->lhsp()) || subtreeHasRangeDelay(nodep->rhsp())) {
-            nodep->v3warn(E_UNSUPPORTED, "Unsupported: intersect with range cycle delay operand");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: intersect with ranged cycle-delay operand");
         }
         iterateChildren(nodep);
     }
