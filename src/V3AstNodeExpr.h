@@ -3679,6 +3679,7 @@ public:
         dtypeSetBit();
     }
     ASTGEN_MEMBERS_AstSIntersect;
+    // LCOV_EXCL_START  // Lowered before these are ever called
     void numberOperate(V3Number& out, const V3Number& lhs, const V3Number& rhs) override {
         out.opLogAnd(lhs, rhs);
     }
@@ -3691,6 +3692,7 @@ public:
     bool sizeMattersLhs() const override { return false; }
     bool sizeMattersRhs() const override { return false; }
     int instrCount() const override { return widthInstrs() + INSTR_COUNT_BRANCH; }
+    // LCOV_EXCL_STOP
 };
 class AstSOr final : public AstNodeBiop {
     // Sequence 'or' (IEEE 1800-2023 16.9.7): at least one operand sequence must match.
