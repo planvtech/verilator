@@ -783,8 +783,11 @@ void DfgVertex::typeCheck(const DfgGraph& dfg) const {
     case VDfgType::SAnd:
     case VDfgType::SIntersect:
     case VDfgType::SOr:
-        UASSERT_OBJ(false, this, "SAnd/SIntersect/SOr should be removed before DFG");
-        return;
+    case VDfgType::SThroughout: {
+        UASSERT_OBJ(false, this,
+                    "SAnd/SIntersect/SOr/SThroughout should be removed before DFG");  // LCOV_EXCL_LINE
+        return;  // LCOV_EXCL_LINE
+    }
 
     case VDfgType::LogAnd:
     case VDfgType::LogEq:
