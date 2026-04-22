@@ -1656,6 +1656,10 @@ class WidthVisitor final : public VNVisitor {
             nodep->dtypeSetBit();
         }
     }
+    void visit(AstAcceptOn* nodep) override { visitAbortProp(nodep); }
+    void visit(AstRejectOn* nodep) override { visitAbortProp(nodep); }
+    void visit(AstSyncAcceptOn* nodep) override { visitAbortProp(nodep); }
+    void visit(AstSyncRejectOn* nodep) override { visitAbortProp(nodep); }
 
     void visit(AstRand* nodep) override {
         assertAtExpr(nodep);
@@ -7620,6 +7624,18 @@ class WidthVisitor final : public VNVisitor {
         if (m_vup->prelim()) {
             iterateCheckBool(nodep, "LHS", nodep->lhsp(), BOTH);
             iterateCheckBool(nodep, "RHS", nodep->rhsp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
+    template <typename T_Node>
+    void visitAbortProp(T_Node* nodep) {
+        // CALLER: AcceptOn, RejectOn, SyncAcceptOn, SyncRejectOn
+        // IEEE 1800-2023 16.16: abort condition is a 1-bit self-determined
+        // Boolean; property subexpression carries its own type checking.
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "cond", nodep->condp(), BOTH);
+            iterateCheckBool(nodep, "prop", nodep->propp(), BOTH);
             nodep->dtypeSetBit();
         }
     }
