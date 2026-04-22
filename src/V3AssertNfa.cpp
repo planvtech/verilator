@@ -1364,7 +1364,126 @@ class AssertNfaVisitor final : public VNVisitor {
     SvaNfaLowering* m_loweringp = nullptr;  // NFA-to-hardware lowering engine
     V3UniqueNames m_propVarNames{"__Vpropvar"};  // Property-local variable names
     V3UniqueNames m_disableCntNames{"__VnfaDis"};  // Disable-iff counter names
+    V3UniqueNames m_abortCntNames{"__VnfaAbort"};  // Async abort counter names
     std::set<const AstProperty*> m_inliningProps;  // Recursion guard for inlineNamedProperty
+
+    // Property abort operator descriptor; IEEE 1800-2023 16.16.
+    struct AbortSpec final {
+        enum Kind : uint8_t { ACCEPT, REJECT };
+        Kind kind;
+        bool sync;  // sync_* variant = sampled at matured clocking edge
+        AstNodeExpr* condp;  // OWNED; unlinked from AST during peeling
+    };
+    // Per-async-abort counter mechanism; sync aborts leave cntp/snapp null.
+    struct AbortCtx final {
+        AbortSpec::Kind kind;
+        bool sync;
+        AstNodeExpr* condp;  // OWNED; deleted after assembly
+        AstVar* cntp = nullptr;
+        AstVar* snapp = nullptr;
+    };
+
+    // Peel accept_on/reject_on/sync_accept_on/sync_reject_on wrappers from the
+    // top of a property body and return them in outer-first order. The wrappers
+    // are unlinked and deleted; the body is bubbled up in place.
+    void peelAborts(AstPropSpec* propSpecp, std::vector<AbortSpec>& outSpecs) {
+        while (true) {
+            AstNode* const bodyp = propSpecp->propp();
+            AstNodeExpr* condp = nullptr;
+            AstNodeExpr* innerp = nullptr;
+            AbortSpec::Kind kind = AbortSpec::ACCEPT;
+            bool sync = false;
+            if (AstAcceptOn* const ap = VN_CAST(bodyp, AcceptOn)) {
+                condp = ap->condp()->unlinkFrBack();
+                innerp = ap->propp()->unlinkFrBack();
+                kind = AbortSpec::ACCEPT;
+                sync = false;
+            } else if (AstRejectOn* const ap = VN_CAST(bodyp, RejectOn)) {
+                condp = ap->condp()->unlinkFrBack();
+                innerp = ap->propp()->unlinkFrBack();
+                kind = AbortSpec::REJECT;
+                sync = false;
+            } else if (AstSyncAcceptOn* const ap = VN_CAST(bodyp, SyncAcceptOn)) {
+                condp = ap->condp()->unlinkFrBack();
+                innerp = ap->propp()->unlinkFrBack();
+                kind = AbortSpec::ACCEPT;
+                sync = true;
+            } else if (AstSyncRejectOn* const ap = VN_CAST(bodyp, SyncRejectOn)) {
+                condp = ap->condp()->unlinkFrBack();
+                innerp = ap->propp()->unlinkFrBack();
+                kind = AbortSpec::REJECT;
+                sync = true;
+            } else {
+                break;
+            }
+            outSpecs.push_back({kind, sync, condp});
+            // Replace the abort wrapper (still attached to PropSpec) with its body.
+            bodyp->replaceWith(innerp);
+            VL_DO_DANGLING(pushDeletep(bodyp), bodyp);
+        }
+    }
+
+    // Create a posedge-cnt + NBA-snapshot pair for each async abort spec.
+    // Sync specs get no counter -- their condition is sampled at the clock edge.
+    // The returned AbortCtx list owns condp; callers must delete after use.
+    std::vector<AbortCtx> createAbortMechanism(FileLine* flp, std::vector<AbortSpec>&& specs,
+                                               AstSenTree* senTreep) {
+        std::vector<AbortCtx> result;
+        result.reserve(specs.size());
+        for (AbortSpec& spec : specs) {
+            AbortCtx ctx{spec.kind, spec.sync, spec.condp, nullptr, nullptr};
+            if (!spec.sync) {
+                const CntSnapPair pair
+                    = createCntSnapPair(flp, spec.condp, m_abortCntNames.get(""));
+                // Snapshot cnt at senTreep (matured clock edge): snap <= cnt.
+                // At the next clock, (snap != cnt) means cond fired in between.
+                m_modp->addStmtsp(new AstAlways{
+                    flp, VAlwaysKwd::ALWAYS, senTreep->cloneTree(false),
+                    new AstAssignDly{flp, new AstVarRef{flp, pair.snapp, VAccess::WRITE},
+                                     new AstVarRef{flp, pair.cntp, VAccess::READ}}});
+                ctx.cntp = pair.cntp;
+                ctx.snapp = pair.snapp;
+            }
+            spec.condp = nullptr;  // ownership moved to ctx
+            result.push_back(ctx);
+        }
+        return result;
+    }
+
+    // For each abort ctx, build the "fired this cycle" boolean expression:
+    //   async: snapp != cntp (at least one posedge of cond since last clock)
+    //   sync:  $sampled(cond)
+    // OR the accept-firings into outAcceptp and the reject-firings into outRejectp.
+    // Gate every firing by !disabled if disable iff is present (IEEE 1800-2023
+    // 16.12). The sync path clones c.condp (original still owned by caller and
+    // freed after assembly); skips reject entirely when wantReject is false.
+    void buildAbortFiredExprs(FileLine* flp, const std::vector<AbortCtx>& ctxs,
+                              AstNodeExpr* disableExprp, bool wantReject, AstNodeExpr*& outAcceptp,
+                              AstNodeExpr*& outRejectp) {
+        outAcceptp = nullptr;
+        outRejectp = nullptr;
+        for (const AbortCtx& c : ctxs) {
+            if (c.kind == AbortSpec::REJECT && !wantReject) continue;
+            AstNodeExpr* firedp = nullptr;
+            if (c.sync) {
+                AstSampled* const sp = new AstSampled{flp, c.condp->cloneTreePure(false)};
+                sp->dtypeFrom(c.condp);
+                firedp = sp;
+            } else {
+                firedp = new AstNeq{flp, new AstVarRef{flp, c.snapp, VAccess::READ},
+                                    new AstVarRef{flp, c.cntp, VAccess::READ}};
+            }
+            if (disableExprp) {
+                AstNodeExpr* const notDisp = new AstNot{flp, disableExprp->cloneTreePure(false)};
+                firedp = new AstAnd{flp, firedp, notDisp};
+            }
+            if (c.kind == AbortSpec::ACCEPT) {
+                outAcceptp = outAcceptp ? new AstOr{flp, outAcceptp, firedp} : firedp;
+            } else {
+                outRejectp = outRejectp ? new AstOr{flp, outRejectp, firedp} : firedp;
+            }
+        }
+    }
 
     // Wire match vertex and mid-window sources for a successful NFA build.
     static void wireMatchAndMidSources(SvaGraph& graph, const BuildResult& result, FileLine* flp) {
@@ -1551,6 +1670,37 @@ class AssertNfaVisitor final : public VNVisitor {
         return parts;
     }
 
+    // Allocate (counter, snapshot) var pair and emit the "always @(posedge
+    // edgeExprp) cnt <= cnt + 1;" increment always. The snapshot NBA (snap <=
+    // cnt at the matured clocking edge) is left to the caller so disable-iff
+    // can merge it into the Phase-2 NBA block while abort-on emits a dedicated
+    // always. `edgeExprp` is cloned; the caller retains ownership.
+    struct CntSnapPair final {
+        AstVar* cntp = nullptr;
+        AstVar* snapp = nullptr;
+    };
+    CntSnapPair createCntSnapPair(FileLine* flp, AstNodeExpr* edgeExprp,
+                                  const std::string& baseName) {
+        AstNodeDType* const u32DTypep = m_modp->findBasicDType(VBasicDTypeKwd::UINT32);
+        AstVar* const cntp = new AstVar{flp, VVarType::MODULETEMP, baseName, u32DTypep};
+        cntp->lifetime(VLifetime::STATIC_EXPLICIT);
+        m_modp->addStmtsp(cntp);
+        AstNodeExpr* const incrExprp
+            = new AstAdd{flp, new AstVarRef{flp, cntp, VAccess::READ},
+                         new AstConst{flp, AstConst::WidthedValue{}, 32, 1u}};
+        incrExprp->dtypeFrom(cntp);
+        m_modp->addStmtsp(new AstAlways{
+            flp, VAlwaysKwd::ALWAYS,
+            new AstSenTree{
+                flp, new AstSenItem{flp, VEdgeType::ET_POSEDGE, edgeExprp->cloneTreePure(false)}},
+            new AstAssign{flp, new AstVarRef{flp, cntp, VAccess::WRITE}, incrExprp}});
+        AstVar* const snapp
+            = new AstVar{flp, VVarType::MODULETEMP, baseName + "__snap", u32DTypep};
+        snapp->lifetime(VLifetime::STATIC_EXPLICIT);
+        m_modp->addStmtsp(snapp);
+        return {cntp, snapp};
+    }
+
     // Allocate disable-iff counter + snapshot vars and unlink the original
     // disable expression from the PropSpec. Returns {cntp, snapp} or
     // {nullptr, nullptr} if no counter is needed.
@@ -1562,29 +1712,9 @@ class AssertNfaVisitor final : public VNVisitor {
                                               bool hasImplication, AstPropSpec* propSpecp) {
         if (!disableExprp || hasImplication || VN_IS(disableExprp, Const)) return {};
         if (disableExprp->exists([](const AstSampled*) { return true; })) return {};
-
-        AstNodeDType* const u32DTypep = m_modp->findBasicDType(VBasicDTypeKwd::UINT32);
-        const std::string cntName = m_disableCntNames.get("");
-        AstVar* const cntp = new AstVar{flp, VVarType::MODULETEMP, cntName, u32DTypep};
-        cntp->lifetime(VLifetime::STATIC_EXPLICIT);
-        m_modp->addStmtsp(cntp);
-
-        AstNodeExpr* const incrExprp
-            = new AstAdd{flp, new AstVarRef{flp, cntp, VAccess::READ},
-                         new AstConst{flp, AstConst::WidthedValue{}, 32, 1u}};
-        incrExprp->dtypeFrom(cntp);
-        m_modp->addStmtsp(new AstAlways{
-            flp, VAlwaysKwd::ALWAYS,
-            new AstSenTree{flp, new AstSenItem{flp, VEdgeType::ET_POSEDGE,
-                                               disableExprp->cloneTreePure(false)}},
-            new AstAssign{flp, new AstVarRef{flp, cntp, VAccess::WRITE}, incrExprp}});
-
-        AstVar* const snapp = new AstVar{flp, VVarType::MODULETEMP, cntName + "__snap", u32DTypep};
-        snapp->lifetime(VLifetime::STATIC_EXPLICIT);
-        m_modp->addStmtsp(snapp);
-
+        const CntSnapPair pair = createCntSnapPair(flp, disableExprp, m_disableCntNames.get(""));
         if (propSpecp && propSpecp->disablep()) propSpecp->disablep()->unlinkFrBack();
-        return {cntp, snapp};
+        return {pair.cntp, pair.snapp};
     }
 
     // On a PropSpec-wrapped assertion whose NFA build failed with a semantic
@@ -1694,17 +1824,6 @@ class AssertNfaVisitor final : public VNVisitor {
         AstNode* const propp = assertp->propp();
         if (!hasMultiCycleExpr(propp)) return;
 
-        const PropertyParts parts = decomposeProperty(propp);
-        UASSERT_OBJ(parts.seqExprp, propp, "Property body must be an expression");
-
-        // Unwrap `not` (IEEE 1800-2023 16.12.1); odd count -> negated semantics.
-        AstNodeExpr* seqBodyp = parts.seqExprp;
-        bool negated = false;
-        while (AstLogNot* const notp = VN_CAST(seqBodyp, LogNot)) {
-            negated = !negated;
-            seqBodyp = notp->lhsp();
-        }
-
         AstSenTree* senTreep = assertp->sentreep();
         bool senTreeOwned = false;  // True if we created senTreep locally
         AstPropSpec* const propSpecp = VN_CAST(assertp->propp(), PropSpec);
@@ -1720,6 +1839,63 @@ class AssertNfaVisitor final : public VNVisitor {
         FileLine* const flp = assertp->fileline();
         const bool isCover = VN_IS(assertp, Cover);
 
+        // Peel leading `not` wrappers off the property body before peeling
+        // aborts; each `not` flips `outerNegated`. IEEE 1800-2023 16.12.1. This
+        // keeps `not accept_on(c) P` reachable through the abort path (the
+        // wrapped `LogNot` would otherwise block the abort from being seen
+        // at the "top" of the property body).
+        bool outerNegated = false;
+        while (AstLogNot* const notp = VN_CAST(propSpecp->propp(), LogNot)) {
+            outerNegated = !outerNegated;
+            AstNodeExpr* const innerp = notp->lhsp()->unlinkFrBack();
+            notp->replaceWith(innerp);
+            VL_DO_DANGLING(pushDeletep(notp), notp);
+        }
+
+        // IEEE 1800-2023 16.16: peel accept_on / reject_on / sync_accept_on /
+        // sync_reject_on wrappers off the top of the property body. Outer-first
+        // order; bodies bubble up in place.
+        std::vector<AbortSpec> abortSpecs;
+        peelAborts(propSpecp, abortSpecs);
+
+        // Abort operators nested inside non-top positions (e.g. inside
+        // |-> RHS, inside a sub-sequence) are currently unsupported -- the
+        // NFA builder would otherwise treat them as opaque leaves and emit
+        // them to V3EmitV, which has no format string for them.
+        bool nestedAbort = false;
+        propSpecp->foreach([&](const AstNode* np) {
+            if (VN_IS(np, AcceptOn) || VN_IS(np, RejectOn) || VN_IS(np, SyncAcceptOn)
+                || VN_IS(np, SyncRejectOn))
+                nestedAbort = true;
+        });
+        if (nestedAbort) {
+            assertp->v3warn(E_UNSUPPORTED,
+                            "Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on"
+                            " only supported at the top of a property expression"
+                            " (IEEE 1800-2023 16.16)");
+            for (AbortSpec& s : abortSpecs) {
+                if (s.condp) VL_DO_DANGLING(pushDeletep(s.condp), s.condp);
+            }
+            return;
+        }
+
+        // After peeling, the core body may be non-multi-cycle (e.g. plain
+        // `sync_accept_on(c) a`). NFA still handles plain implication and
+        // single boolean leaves, so we continue unconditionally whenever any
+        // abort was peeled. Otherwise, hasMultiCycleExpr above already proved
+        // we need NFA lowering.
+        const PropertyParts parts = decomposeProperty(propSpecp);
+        UASSERT_OBJ(parts.seqExprp, propSpecp, "Property body must be an expression");
+
+        // Unwrap `not` (IEEE 1800-2023 16.12.1); odd count -> negated semantics.
+        // `outerNegated` captured top-level `not`s stripped before abort peel.
+        AstNodeExpr* seqBodyp = parts.seqExprp;
+        bool negated = outerNegated;
+        while (AstLogNot* const notp = VN_CAST(seqBodyp, LogNot)) {
+            negated = !negated;
+            seqBodyp = notp->lhsp();
+        }
+
         SvaGraph graph;
         SvaNfaBuilder builder{graph};
 
@@ -1730,6 +1906,9 @@ class AssertNfaVisitor final : public VNVisitor {
             // replace the body on real semantic errors.
             replaceBodyOnBuildError(flp, propSpecp, result.errorEmitted);
             if (senTreeOwned) VL_DO_DANGLING(pushDeletep(senTreep), senTreep);
+            for (AbortSpec& s : abortSpecs) {
+                if (s.condp) VL_DO_DANGLING(pushDeletep(s.condp), s.condp);
+            }
             return;
         }
 
@@ -1752,11 +1931,47 @@ class AssertNfaVisitor final : public VNVisitor {
         std::vector<AstNodeExpr*> requiredStepSrcs;
 
         AstNodeExpr* const alwaysTriggerp = new AstConst{flp, AstConst::BitTrue{}};
-        AstNodeExpr* const outputExprp
+        AstNodeExpr* outputExprp
             = m_loweringp->lower(flp, graph, alwaysTriggerp, senTreep, result.finalCondp, isCover,
                                  disableExprp ? disableExprp->cloneTreePure(false) : nullptr,
                                  negated, needMatch ? &matchExprp : nullptr, disableCntVarp,
                                  snapshotVarp, needPerSrcFail ? &requiredStepSrcs : nullptr);
+
+        // Fold property abort operators into the lowered output (IEEE 1800-2023
+        // 16.16). Priority: disable iff > accept > reject > underlying verdict.
+        // Under `not` (IEEE 16.12.1) the property semantic flips, so accept and
+        // reject swap roles.
+        std::vector<AbortCtx> abortCtxs;
+        if (!abortSpecs.empty()) {
+            abortCtxs = createAbortMechanism(flp, std::move(abortSpecs), senTreep);
+            AstNodeExpr* acceptFiredp = nullptr;
+            AstNodeExpr* rejectFiredp = nullptr;
+            buildAbortFiredExprs(flp, abortCtxs, disableExprp, /*wantReject=*/!isCover,
+                                 acceptFiredp, rejectFiredp);
+            if (negated) std::swap(acceptFiredp, rejectFiredp);
+            if (isCover) {
+                // Cover: abort-accept is a cover hit; abort-reject is a no-op.
+                // buildAbortFiredExprs skipped reject entirely for cover.
+                if (acceptFiredp) outputExprp = new AstOr{flp, acceptFiredp, outputExprp};
+            } else {
+                // Assert/assume: outputExprp is !reject. Wrap as
+                //   (acceptFired) || (!rejectFired && outputExprp)
+                // so accept dominates reject, and both dominate the underlying
+                // verdict.
+                if (rejectFiredp) {
+                    outputExprp = new AstAnd{flp, new AstNot{flp, rejectFiredp}, outputExprp};
+                }
+                if (acceptFiredp) {
+                    // acceptFiredp is consumed twice (outputExprp and matchExprp)
+                    // only when needMatch; otherwise once.
+                    const bool needMatchAccept = needMatch && matchExprp;
+                    AstNodeExpr* const acceptForOutp
+                        = needMatchAccept ? acceptFiredp->cloneTreePure(false) : acceptFiredp;
+                    outputExprp = new AstOr{flp, acceptForOutp, outputExprp};
+                    if (needMatchAccept) { matchExprp = new AstOr{flp, acceptFiredp, matchExprp}; }
+                }
+            }
+        }
 
         AstSenTree* const perSrcSenTreep
             = (requiredStepSrcs.size() >= 2) ? senTreep->cloneTree(false) : nullptr;
@@ -1765,6 +1980,9 @@ class AssertNfaVisitor final : public VNVisitor {
         if (senTreeOwned) VL_DO_DANGLING(pushDeletep(senTreep), senTreep);
         if (disableExprUnlinked) VL_DO_DANGLING(pushDeletep(disableExprp), disableExprp);
         if (result.finalCondp && !result.finalCondp->backp()) pushDeletep(result.finalCondp);
+        for (AbortCtx& c : abortCtxs) {
+            if (c.condp) VL_DO_DANGLING(pushDeletep(c.condp), c.condp);
+        }
 
         attachMatchHandlers(flp, assertAssertp, assertWithFailp, needMatch ? matchExprp : nullptr,
                             perSrcSenTreep, requiredStepSrcs);

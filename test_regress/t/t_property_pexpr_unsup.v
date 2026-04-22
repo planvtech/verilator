@@ -83,22 +83,6 @@ module t (
     nexttime s_eventually [2:$] always a;
   endproperty
 
-  property p_accepton;
-    accept_on (a) b;
-  endproperty
-
-  property p_syncaccepton;
-    sync_accept_on (a) b;
-  endproperty
-
-  property p_rejecton;
-    reject_on (a) b;
-  endproperty
-
-  property p_syncrejecton;
-    sync_reject_on (a) b;
-  endproperty
-
   property p_arg_propery(property inprop);
     inprop;
   endproperty

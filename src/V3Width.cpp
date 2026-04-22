@@ -1647,6 +1647,40 @@ class WidthVisitor final : public VNVisitor {
             nodep->dtypeSetBit();
         }
     }
+    // IEEE 1800-2023 16.16 property abort operators. Condition is a 1-bit
+    // expression_or_dist; body is a property_expr.
+    void visit(AstAcceptOn* nodep) override {
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "accept_on condition", nodep->condp(), BOTH);
+            iterateCheckBool(nodep, "accept_on body", nodep->propp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
+    void visit(AstRejectOn* nodep) override {
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "reject_on condition", nodep->condp(), BOTH);
+            iterateCheckBool(nodep, "reject_on body", nodep->propp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
+    void visit(AstSyncAcceptOn* nodep) override {
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "sync_accept_on condition", nodep->condp(), BOTH);
+            iterateCheckBool(nodep, "sync_accept_on body", nodep->propp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
+    void visit(AstSyncRejectOn* nodep) override {
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "sync_reject_on condition", nodep->condp(), BOTH);
+            iterateCheckBool(nodep, "sync_reject_on body", nodep->propp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
 
     void visit(AstUntil* nodep) override {
         assertAtExpr(nodep);

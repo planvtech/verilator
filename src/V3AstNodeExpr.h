@@ -556,6 +556,27 @@ public:
 };
 
 // === AstNodeExpr ===
+class AstAcceptOn final : public AstNodeExpr {
+    // SVA abort operator `accept_on (cond) prop` (IEEE 1800-2023 16.16).
+    // Async: abort condition sampled at every Observed tick.
+    // @astgen op1 := condp : AstNodeExpr
+    // @astgen op2 := propp : AstNodeExpr
+
+public:
+    AstAcceptOn(FileLine* fl, AstNodeExpr* condp, AstNodeExpr* propp)
+        : ASTGEN_SUPER_AcceptOn(fl) {
+        this->condp(condp);
+        this->propp(propp);
+    }
+    ASTGEN_MEMBERS_AstAcceptOn;
+    string emitVerilog() override { return "accept_on (%l) %r"; }
+    string emitC() override { V3ERROR_NA_RETURN(""); }
+    string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
+    bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
+    int instrCount() const override { return widthInstrs(); }
+    bool sameNode(const AstNode* /*samep*/) const override { return true; }
+    bool isMultiCycleSva() const override { return true; }
+};
 class AstAddrOfCFunc final : public AstNodeExpr {
     // Get address of CFunc
     // @astgen ptr := m_funcp : AstCFunc  // Pointer to function itself
@@ -2091,6 +2112,27 @@ public:
     int instrCount() const override { return INSTR_COUNT_PLI; }
     bool sameNode(const AstNode* /*samep*/) const override { return true; }
 };
+class AstRejectOn final : public AstNodeExpr {
+    // SVA abort operator `reject_on (cond) prop` (IEEE 1800-2023 16.16).
+    // Async: abort condition sampled at every Observed tick.
+    // @astgen op1 := condp : AstNodeExpr
+    // @astgen op2 := propp : AstNodeExpr
+
+public:
+    AstRejectOn(FileLine* fl, AstNodeExpr* condp, AstNodeExpr* propp)
+        : ASTGEN_SUPER_RejectOn(fl) {
+        this->condp(condp);
+        this->propp(propp);
+    }
+    ASTGEN_MEMBERS_AstRejectOn;
+    string emitVerilog() override { return "reject_on (%l) %r"; }
+    string emitC() override { V3ERROR_NA_RETURN(""); }
+    string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
+    bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
+    int instrCount() const override { return widthInstrs(); }
+    bool sameNode(const AstNode* /*samep*/) const override { return true; }
+    bool isMultiCycleSva() const override { return true; }
+};
 class AstRising final : public AstNodeExpr {
     // Verilog $rising_gclk
     // @astgen op1 := exprp : AstNodeExpr
@@ -2555,6 +2597,48 @@ public:
         return m_name == sp->m_name;
     }
     int instrCount() const override { return widthInstrs(); }
+};
+class AstSyncAcceptOn final : public AstNodeExpr {
+    // SVA abort operator `sync_accept_on (cond) prop` (IEEE 1800-2023 16.16).
+    // Sync: abort condition sampled at matured clocking edge.
+    // @astgen op1 := condp : AstNodeExpr
+    // @astgen op2 := propp : AstNodeExpr
+
+public:
+    AstSyncAcceptOn(FileLine* fl, AstNodeExpr* condp, AstNodeExpr* propp)
+        : ASTGEN_SUPER_SyncAcceptOn(fl) {
+        this->condp(condp);
+        this->propp(propp);
+    }
+    ASTGEN_MEMBERS_AstSyncAcceptOn;
+    string emitVerilog() override { return "sync_accept_on (%l) %r"; }
+    string emitC() override { V3ERROR_NA_RETURN(""); }
+    string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
+    bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
+    int instrCount() const override { return widthInstrs(); }
+    bool sameNode(const AstNode* /*samep*/) const override { return true; }
+    bool isMultiCycleSva() const override { return true; }
+};
+class AstSyncRejectOn final : public AstNodeExpr {
+    // SVA abort operator `sync_reject_on (cond) prop` (IEEE 1800-2023 16.16).
+    // Sync: abort condition sampled at matured clocking edge.
+    // @astgen op1 := condp : AstNodeExpr
+    // @astgen op2 := propp : AstNodeExpr
+
+public:
+    AstSyncRejectOn(FileLine* fl, AstNodeExpr* condp, AstNodeExpr* propp)
+        : ASTGEN_SUPER_SyncRejectOn(fl) {
+        this->condp(condp);
+        this->propp(propp);
+    }
+    ASTGEN_MEMBERS_AstSyncRejectOn;
+    string emitVerilog() override { return "sync_reject_on (%l) %r"; }
+    string emitC() override { V3ERROR_NA_RETURN(""); }
+    string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
+    bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
+    int instrCount() const override { return widthInstrs(); }
+    bool sameNode(const AstNode* /*samep*/) const override { return true; }
+    bool isMultiCycleSva() const override { return true; }
 };
 class AstSysIgnore final : public AstNodeExpr {
     // @astgen op1 := exprsp : List[AstNodeExpr] // Expressions to output (???)

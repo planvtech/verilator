@@ -56,34 +56,22 @@
 %Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:83:5: Unsupported: nexttime (in property expression)
    83 |     nexttime s_eventually [2:$] always a;
       |     ^~~~~~~~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:87:15: Unsupported: accept_on (in property expression)
-   87 |     accept_on (a) b;
-      |               ^
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:91:20: Unsupported: sync_accept_on (in property expression)
-   91 |     sync_accept_on (a) b;
-      |                    ^
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:95:15: Unsupported: reject_on (in property expression)
-   95 |     reject_on (a) b;
-      |               ^
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:99:20: Unsupported: sync_reject_on (in property expression)
-   99 |     sync_reject_on (a) b;
-      |                    ^
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:102:26: Unsupported: property argument data type
-  102 |   property p_arg_propery(property inprop);
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:86:26: Unsupported: property argument data type
+   86 |   property p_arg_propery(property inprop);
       |                          ^~~~~~~~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:105:26: Unsupported: sequence argument data type
-  105 |   property p_arg_seqence(sequence inseq);
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:89:26: Unsupported: sequence argument data type
+   89 |   property p_arg_seqence(sequence inseq);
       |                          ^~~~~~~~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:110:5: Unsupported: property case expression
-  110 |     case (a) endcase
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:94:5: Unsupported: property case expression
+   94 |     case (a) endcase
       |     ^~~~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:113:5: Unsupported: property case expression
-  113 |     case (a) default: b; endcase
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:97:5: Unsupported: property case expression
+   97 |     case (a) default: b; endcase
       |     ^~~~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:116:5: Unsupported: property case expression
-  116 |     if (a) b
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:100:5: Unsupported: property case expression
+  100 |     if (a) b
       |     ^~
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:119:5: Unsupported: property case expression
-  119 |     if (a) b else c
+%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:103:5: Unsupported: property case expression
+  103 |     if (a) b else c
       |     ^~
 %Error: Exiting due to
