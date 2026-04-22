@@ -406,24 +406,31 @@ class AssertVisitor final : public VNVisitor {
             nodep->v3fatalSrc("Unhandled assert type");
         }
         iterateAndNextNull(nodep->passsp());
-        AstSenTree* const sentreep = nodep->sentreep();
+        AstSenTree* sentreep = nodep->sentreep();
         if (nodep->immediate()) {
             UASSERT_OBJ(!sentreep, nodep, "Immediate assertions don't have sensitivity");
         } else {
             UASSERT_OBJ(sentreep, nodep, "Concurrent assertions must have sensitivity");
-            if (m_procedurep) {
-                if (!nodep->senFromAlways()) {
-                    // To support this need queue of asserts to activate
-                    nodep->v3warn(E_UNSUPPORTED,
-                                  "Unsupported: Procedural concurrent assertion with"
-                                  " clocking event inside always (IEEE 1800-2023 16.14.6)");
-                }
-                // Change type to concurrent and relink after process
-                nodep->immediate(false);
+            // Explicit inline clock differs from the enclosing always: hoist
+            // and warn. To support this need queue of asserts to activate.
+            if (m_procedurep && !nodep->senFromAlways()) {
+                nodep->v3warn(E_UNSUPPORTED,
+                              "Unsupported: Procedural concurrent assertion with"
+                              " clocking event inside always (IEEE 1800-2023 16.14.6)");
                 static_cast<AstNode*>(m_procedurep)->addNext(nodep->unlinkFrBack());
                 return;  // Later iterate will pick up
             }
             sentreep->unlinkFrBack();
+            if (m_procedurep) {
+                // Clock inferred from enclosing always (IEEE 1800-2023
+                // 16.14.6): procedural control flow (if/case/loop) gates the
+                // assertion attempt. The sentree is redundant -- the enclosing
+                // always drives activation and V3AssertPre already wrapped
+                // sampled reads.
+                VL_DO_DANGLING(pushDeletep(sentreep), sentreep);
+            }
+            // else: !m_procedurep -- sentreep stays alive, reused below to
+            // wrap the body in an AstAlways.
         }
         //
         const string& message = nodep->name();
