@@ -32,6 +32,7 @@
 #include "V3UniqueNames.h"
 
 #include <set>
+#include <unordered_set>
 #include <vector>
 
 VL_DEFINE_DEBUG_FUNCTIONS;
@@ -186,6 +187,10 @@ struct BuildResult final {
 class SvaNfaBuilder final {
     SvaGraph& m_graph;  // NFA graph being built
     std::vector<AstNodeExpr*> m_throughoutStack;  // Active throughout guards (IEEE 16.9.9)
+    // Active outer abort conditions (IEEE 1800-2023 16.16 outer-wraps-inner).
+    // When inner abort fires while any outer abort fires, outer wins, so every
+    // inner abort edge is AND-ed with !outerCond for each outer on the stack.
+    std::vector<AstNodeExpr*> m_outerAbortStack;
     bool m_inUnboundedScope = false;  // Sticky: nodes created after inherit liveness
 
     AstNodeExpr* throughoutCond(AstNodeExpr* baseCondp, FileLine* flp) {
@@ -640,6 +645,114 @@ class SvaNfaBuilder final {
         return result;
     }
 
+    // IEEE 1800-2023 16.16: property abort operators
+    //   accept_on(c) P       -- async abort, P succeeds when c fires at any live step
+    //   reject_on(c) P       -- async abort, P fails when c fires at any live step
+    //   sync_accept_on(c) P  -- same effect, c sampled at matured clocking event
+    //   sync_reject_on(c) P  -- same effect, c sampled at matured clocking event
+    //
+    // Sync vs async encoding: identical in Verilator. Rationale: the NFA
+    // advances only at maturing clocking events in the Observed region, and
+    // AstSampled already gives the matured value of c there. Async firing
+    // "between clocks" cannot be observed in a cycle-based model, so async
+    // collapses to the same per-cycle check as sync. The AbortKind enum is
+    // preserved at the API boundary so a future sync-only refinement (e.g.
+    // different sampling layer for async) can diverge without reshaping
+    // callers.
+    enum class AbortKind : uint8_t { AcceptAsync, AcceptSync, RejectAsync, RejectSync };
+    static bool isAcceptKind(AbortKind k) {
+        return k == AbortKind::AcceptAsync || k == AbortKind::AcceptSync;
+    }
+
+    // Positive abort-fire condition (not yet sampled):
+    //   condp && !outer_1 && !outer_2 ...   (outer-wraps-inner, IEEE 16.16)
+    // Each call clones `condp` and each outer once; cost is O(depth) per
+    // invocation and the builder generates O(V) invocations per abort, so
+    // total expression growth is O(V * depth). Abort nesting depth is
+    // bounded in practice by source complexity (typically <= 2-3), so this
+    // is not a hot path.
+    AstNodeExpr* abortFireExpr(AstNodeExpr* condp, FileLine* flp) {
+        AstNodeExpr* resultp = condp->cloneTreePure(false);
+        for (AstNodeExpr* const op : m_outerAbortStack) {
+            AstNodeExpr* const notOuterp = new AstLogNot{flp, op->cloneTreePure(false)};
+            resultp = new AstAnd{flp, resultp, notOuterp};
+        }
+        return resultp;
+    }
+
+    BuildResult buildAbortOn(AstNodeExpr* condp, AstNodeExpr* bodyp, SvaStateVertex* entryVtxp,
+                             AbortKind kind, FileLine* flp) {
+        // Snapshot vertex set before body build so we can identify which
+        // vertices belong to the body's sub-NFA (abort-reachable sources).
+        // Two O(V) scans (snapshot + diff) — acceptable because V3Graph has
+        // no "subgraph rooted at entry" traversal, abort nesting is shallow,
+        // and this only runs once per abort operator.
+        std::unordered_set<const V3GraphVertex*> preExisting;
+        for (const V3GraphVertex& vtxr : m_graph.m_graph.vertices()) preExisting.insert(&vtxr);
+
+        // Recurse into body with this abort's condition on the outer stack, so
+        // inner aborts built during the recursion AND !condp into their fire
+        // conditions (IEEE 16.16 outer-wraps-inner).
+        m_outerAbortStack.push_back(condp);
+        const BuildResult bodyResult = buildExpr(bodyp, entryVtxp, /*isTopLevelStep=*/false);
+        m_outerAbortStack.pop_back();
+        if (!bodyResult.valid()) return bodyResult;
+
+        // Collect the body's new vertices that can host a live state and are
+        // valid abort-fire sources. Skip dedicated reject sinks (they carry
+        // reject fuel, not live-thread fuel; see lesson 44).
+        std::vector<SvaStateVertex*> abortSources;
+        abortSources.push_back(entryVtxp);
+        for (V3GraphVertex& vtxr : m_graph.m_graph.vertices()) {
+            if (preExisting.count(&vtxr)) continue;
+            auto* const sp = static_cast<SvaStateVertex*>(&vtxr);
+            if (sp->m_isRejectSink) continue;
+            abortSources.push_back(sp);
+        }
+
+        // Helper: build a fresh `$sampled(condp && !outer_1 && !outer_2 ...)`.
+        auto sampledAbortFire = [&]() -> AstSampled* {
+            AstNodeExpr* const expr = abortFireExpr(condp, flp);
+            AstSampled* const sampp = new AstSampled{flp, expr};
+            sampp->dtypeFrom(expr);
+            return sampp;
+        };
+
+        if (isAcceptKind(kind)) {
+            // accept_on(c): property matches whenever c fires at a live step,
+            // or the body matches normally (IEEE 1800-2023 16.16).
+            //
+            // Encoding: add a dedicated accept-sink vertex with a link from
+            // every live body vertex (including the body terminal), gated on
+            // $sampled(abort-fire). The sink is registered as a midSource,
+            // making it match-only (unbounded, no reject contribution) via
+            // wireMatchAndMidSources. Concurrent accept at the body terminal
+            // is covered because termVertexp is in abortSources -- no need
+            // to also fold abort-fire into bodyResult.finalCondp.
+            SvaStateVertex* const acceptSinkp = scopedCreateVertex();
+            for (SvaStateVertex* const srcp : abortSources) {
+                guardedLink(srcp, acceptSinkp, sampledAbortFire(), flp);
+            }
+            std::vector<SvaStateVertex*> midSources = bodyResult.midSources;
+            midSources.push_back(acceptSinkp);
+            return {bodyResult.termVertexp, bodyResult.finalCondp, std::move(midSources)};
+        }
+
+        // reject_on(c): property fails whenever c fires at a live step.
+        // rejectOnFail interprets the edge's m_condp as the *success* condition
+        // and fires a required-step reject on !condp. So the edge condition is
+        // the complement of abort-fire: `!c || outer_fires`. That way the reject
+        // is silenced when the abort is not firing OR any outer abort fires.
+        SvaStateVertex* const rejectSinkp = m_graph.createStateVertex();
+        rejectSinkp->m_isRejectSink = true;
+        for (SvaStateVertex* const srcp : abortSources) {
+            AstNodeExpr* const notFirep = new AstLogNot{flp, sampledAbortFire()};
+            SvaTransEdge* const ep = m_graph.addLink(srcp, rejectSinkp, notFirep);
+            ep->m_rejectOnFail = true;
+        }
+        return bodyResult;
+    }
+
 public:
     explicit SvaNfaBuilder(SvaGraph& graph)
         : m_graph{graph} {}
@@ -648,6 +761,7 @@ public:
     void resetScope() {
         m_inUnboundedScope = false;
         m_throughoutStack.clear();
+        m_outerAbortStack.clear();
     }
 
     BuildResult buildExpr(AstNodeExpr* nodep, SvaStateVertex* entryVtxp,
@@ -686,6 +800,22 @@ public:
                 return BuildResult::failWithError();
             }
             return buildAndCombiner(intp->lhsp(), intp->rhsp(), entryVtxp, intp->fileline());
+        }
+        if (AstAcceptOn* const ap = VN_CAST(nodep, AcceptOn)) {
+            return buildAbortOn(ap->condp(), ap->propp(), entryVtxp, AbortKind::AcceptAsync,
+                                ap->fileline());
+        }
+        if (AstRejectOn* const rp = VN_CAST(nodep, RejectOn)) {
+            return buildAbortOn(rp->condp(), rp->propp(), entryVtxp, AbortKind::RejectAsync,
+                                rp->fileline());
+        }
+        if (AstSyncAcceptOn* const ap = VN_CAST(nodep, SyncAcceptOn)) {
+            return buildAbortOn(ap->condp(), ap->propp(), entryVtxp, AbortKind::AcceptSync,
+                                ap->fileline());
+        }
+        if (AstSyncRejectOn* const rp = VN_CAST(nodep, SyncRejectOn)) {
+            return buildAbortOn(rp->condp(), rp->propp(), entryVtxp, AbortKind::RejectSync,
+                                rp->fileline());
         }
         if (VN_IS(nodep, SNonConsRep)) return BuildResult::fail();
         // Boolean leaf (including LogAnd): return as finalCond
