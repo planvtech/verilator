@@ -1361,6 +1361,7 @@ public:
 class AssertNfaVisitor final : public VNVisitor {
     // STATE
     AstNodeModule* m_modp = nullptr;  // Current module being processed
+    AstSenItem* m_defaultClockingSenip = nullptr;  // Current module's default clocking senesp
     SvaNfaLowering* m_loweringp = nullptr;  // NFA-to-hardware lowering engine
     V3UniqueNames m_propVarNames{"__Vpropvar"};  // Property-local variable names
     V3UniqueNames m_disableCntNames{"__VnfaDis"};  // Disable-iff counter names
@@ -1714,6 +1715,15 @@ class AssertNfaVisitor final : public VNVisitor {
                 = new AstSenTree{propSpecp->fileline(), propSpecp->sensesp()->cloneTree(true)};
             senTreeOwned = true;
         }
+        // IEEE 1800-2023 16.14.6: an assertion with no explicit clocking_event
+        // inherits the enclosing module's default clocking. V3AssertPre resolves
+        // this in a later pass for the assertions it still sees, but NFA runs
+        // first and must do its own lookup before bailing out on a missing clock.
+        if (!senTreep && m_defaultClockingSenip) {
+            senTreep
+                = new AstSenTree{propSpecp->fileline(), m_defaultClockingSenip->cloneTree(true)};
+            senTreeOwned = true;
+        }
         AstNodeExpr* disableExprp = propSpecp->disablep();
         if (!senTreep) return;
 
@@ -1779,8 +1789,15 @@ class AssertNfaVisitor final : public VNVisitor {
     // VISITORS
     void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
+        VL_RESTORER(m_defaultClockingSenip);
         VL_RESTORER(m_loweringp);
         m_modp = nodep;
+        m_defaultClockingSenip = nullptr;
+        nodep->foreach([&](const AstClocking* clockingp) {
+            if (clockingp->isDefault() && !m_defaultClockingSenip) {
+                m_defaultClockingSenip = clockingp->sensesp();
+            }
+        });
         SvaNfaLowering lowering{nodep};
         m_loweringp = &lowering;
         iterateChildren(nodep);
