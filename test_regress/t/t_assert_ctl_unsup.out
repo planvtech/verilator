@@ -100,24 +100,4 @@
                                                : ... note: In instance 't.unsupported_ctl_type_expr'
    64 |     $assertcontrol(ctl_type);
       |     ^~~~~~~~~~~~~~
-%Error-UNSUPPORTED: t/t_assert_ctl_unsup.v:93:7: Unsupported: assertcontrols in classes or interfaces
-                                               : ... note: In instance 't.assert_class'
-   93 |       $asserton;
-      |       ^~~~~~~~~
-%Error-UNSUPPORTED: t/t_assert_ctl_unsup.v:99:7: Unsupported: assertcontrols in classes or interfaces
-                                               : ... note: In instance 't.assert_class'
-   99 |       $assertoff;
-      |       ^~~~~~~~~~
-%Error-UNSUPPORTED: t/t_assert_ctl_unsup.v:172:5: Unsupported: assertcontrols in classes or interfaces
-                                                : ... note: In instance 't.assert_iface'
-  172 |     $assertoff;
-      |     ^~~~~~~~~~
-%Error-UNSUPPORTED: t/t_assert_ctl_unsup.v:138:5: Unsupported: assertcontrols in classes or interfaces
-                                                : ... note: In instance 't.assert_iface_class'
-  138 |     $assertoff;
-      |     ^~~~~~~~~~
-%Error-UNSUPPORTED: t/t_assert_ctl_unsup.v:145:5: Unsupported: assertcontrols in classes or interfaces
-                                                : ... note: In instance 't.assert_iface_class'
-  145 |     $asserton;
-      |     ^~~~~~~~~
 %Error: Exiting due to
