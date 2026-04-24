@@ -1885,8 +1885,7 @@ class AssertNfaVisitor final : public VNVisitor {
         nodep->foreach([&](AstClocking* const clockingp) {
             if (clockingp->isDefault()) m_defaultClockingp = clockingp;
         });
-        nodep->foreach(
-            [&](AstDefaultDisable* const disablep) { m_defaultDisablep = disablep; });
+        nodep->foreach([&](AstDefaultDisable* const disablep) { m_defaultDisablep = disablep; });
         SvaNfaLowering lowering{nodep};
         m_loweringp = &lowering;
         iterateChildren(nodep);
