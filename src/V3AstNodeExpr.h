@@ -5543,9 +5543,13 @@ public:
 };
 class AstLogNot final : public AstNodeUniop {
     // @astgen makeDfgVertex
+private:
+    const bool m_fromProperty;  // True if from property 'not' keyword (IEEE 1800-2023 16.12.2),
+                                // false for boolean '!' (IEEE 1800-2023 11.4.7)
 public:
-    AstLogNot(FileLine* fl, AstNodeExpr* lhsp)
-        : ASTGEN_SUPER_LogNot(fl, lhsp) {
+    AstLogNot(FileLine* fl, AstNodeExpr* lhsp, bool fromProperty = false)
+        : ASTGEN_SUPER_LogNot(fl, lhsp)
+        , m_fromProperty{fromProperty} {
         dtypeSetBit();
     }
     ASTGEN_MEMBERS_AstLogNot;
@@ -5557,6 +5561,7 @@ public:
     bool cleanOut() const override { return true; }
     bool cleanLhs() const override { return true; }
     bool sizeMattersLhs() const override { return false; }
+    bool fromProperty() const { return m_fromProperty; }
 };
 class AstNToI final : public AstNodeUniop {
     // String to any-size integral
