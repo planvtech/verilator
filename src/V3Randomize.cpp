@@ -79,7 +79,6 @@ static AstVar* getRandModeVarFromClass(AstNodeModule* classp) {
     return nullptr;
 }
 
-
 // ######################################################################
 // Establishes the target of a rand_mode() call
 
@@ -1393,9 +1392,8 @@ class ConstraintExprVisitor final : public VNVisitor {
                         new AstVarRef{varp->fileline(), VN_AS(m_genp->user2p(), NodeModule),
                                       m_genp, VAccess::READWRITE},
                         VCMethod::RANDOMIZER_MARK_VAR_STATIC};
-                    AstNodeExpr* const namep
-                        = new AstCExpr{varp->fileline(), AstCExpr::Pure{},
-                                       "\"" + smtName + "\"", varp->width()};
+                    AstNodeExpr* const namep = new AstCExpr{varp->fileline(), AstCExpr::Pure{},
+                                                            "\"" + smtName + "\"", varp->width()};
                     namep->dtypep(varp->dtypep());
                     markp->addPinsp(namep);
                     markp->dtypeSetVoid();
@@ -3285,8 +3283,8 @@ class RandomizeVisitor final : public VNVisitor {
         AstCMethodHard* const setp = new AstCMethodHard{
             fl, new AstVarRef{fl, VN_AS(genp->user2p(), NodeModule), genp, VAccess::WRITE},
             VCMethod::RANDOMIZER_SET_STATIC_RANDMODE,
-            new AstVarRef{fl, VN_AS(staticRandModeVarp->user2p(), NodeModule),
-                          staticRandModeVarp, VAccess::READ}};
+            new AstVarRef{fl, VN_AS(staticRandModeVarp->user2p(), NodeModule), staticRandModeVarp,
+                          VAccess::READ}};
         setp->dtypeSetVoid();
         ftaskp->addStmtsp(setp->makeStmt());
     }
@@ -3473,9 +3471,8 @@ class RandomizeVisitor final : public VNVisitor {
     }
     AstNodeStmt* wrapIfRandMode(AstClass* classp, AstVar* const varp, AstNodeStmt* stmtp) {
         const RandomizeMode rmode = {.asInt = varp->user1()};
-        AstVar* const modeVarp = varp->lifetime().isStatic()
-                                     ? getStaticRandModeVar(classp)
-                                     : getRandModeVarFromClass(classp);
+        AstVar* const modeVarp = varp->lifetime().isStatic() ? getStaticRandModeVar(classp)
+                                                             : getRandModeVarFromClass(classp);
         return VN_AS(wrapIfMode(rmode, modeVarp, stmtp), NodeStmt);
     }
     AstNode* wrapIfConstraintMode(AstClass* classp, AstConstraint* const constrp, AstNode* stmtp) {
@@ -4053,10 +4050,8 @@ class RandomizeVisitor final : public VNVisitor {
     // a follow-up statement (e.g. the static-array set-loop) as the immediate
     // next-sibling of the new statement BEFORE the swap. Avoids backp()/nextp()
     // recovery after the parent's pointer has changed.
-    void replaceWithModeAssignAndAppend(AstNodeFTaskRef* const ftaskRefp,
-                                        AstNode* const receiverp,
-                                        AstNodeExpr* const lhsp,
-                                        AstNode* const appendStmtp) {
+    void replaceWithModeAssignAndAppend(AstNodeFTaskRef* const ftaskRefp, AstNode* const receiverp,
+                                        AstNodeExpr* const lhsp, AstNode* const appendStmtp) {
         FileLine* const fl = ftaskRefp->fileline();
         if (ftaskRefp->argsp()) {
             UASSERT_OBJ(VN_IS(ftaskRefp->backp(), StmtExpr), ftaskRefp, "Should be a statement");
@@ -4722,8 +4717,7 @@ class RandomizeVisitor final : public VNVisitor {
             }
             if (AstVar* const staticRandModeVarp = getStaticRandModeVar(nodep)) {
                 // Wire the shared static rand_mode queue into the class generator.
-                AstNodeFTask* const newp
-                    = VN_AS(m_memberMap.findMember(nodep, "new"), NodeFTask);
+                AstNodeFTask* const newp = VN_AS(m_memberMap.findMember(nodep, "new"), NodeFTask);
                 UASSERT_OBJ(newp, nodep, "No new() in class");
                 addSetStaticRandMode(newp, genp, staticRandModeVarp);
             }
@@ -4848,18 +4842,16 @@ class RandomizeVisitor final : public VNVisitor {
                     FileLine* const fl = nodep->fileline();
                     AstNodeExpr* const staticLhsp
                         = makeModeAssignLhs(fl, randModeTarget.classp, nullptr, sVarp);
-                    AstNodeExpr* const argClonep
-                        = nodep->argsp()->exprp()->cloneTreePure(false);
-                    classLevelStaticLoopp
-                        = makeModeSetLoop(fl, staticLhsp, argClonep, m_ftaskp);
+                    AstNodeExpr* const argClonep = nodep->argsp()->exprp()->cloneTreePure(false);
+                    classLevelStaticLoopp = makeModeSetLoop(fl, staticLhsp, argClonep, m_ftaskp);
                 }
             }
             // Pick the correct rand mode array based on whether the receiver var is static.
             const bool receiverIsStaticRand
                 = receiverp && receiverp->rand().isRand() && receiverp->lifetime().isStatic();
-            AstVar* const randModeVarp
-                = receiverIsStaticRand ? getStaticRandModeVar(randModeTarget.classp)
-                                       : getRandModeVarFromClass(randModeTarget.classp);
+            AstVar* const randModeVarp = receiverIsStaticRand
+                                             ? getStaticRandModeVar(randModeTarget.classp)
+                                             : getRandModeVarFromClass(randModeTarget.classp);
             AstNodeExpr* const lhsp = makeModeAssignLhs(nodep->fileline(), randModeTarget.classp,
                                                         randModeTarget.fromp, randModeVarp);
             replaceWithModeAssignAndAppend(nodep,
