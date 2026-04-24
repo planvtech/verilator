@@ -216,6 +216,8 @@ class VlRandomizer VL_NOT_FINAL {
     std::vector<std::string> m_unique_arrays;
     std::map<std::string, uint32_t> m_unique_array_sizes;
     const VlQueue<CData>* m_randmodep = nullptr;  // rand_mode state;
+    const VlQueue<CData>* m_static_randmodep = nullptr;  // Static rand_mode state (shared)
+    std::set<std::string> m_staticVars;  // Names of static rand vars (use static randmode queue)
     int m_index = 0;  // Internal counter for key generation
     std::set<std::string> m_randcVarNames;  // Names of randc variables for cyclic tracking
     std::map<std::string, std::set<uint64_t>>
@@ -640,6 +642,11 @@ public:
     void solveBefore(const std::string& beforeName,
                      const std::string& afterName);  // Register solve-before ordering
     void set_randmode(const VlQueue<CData>& randmode) { m_randmodep = &randmode; }
+    // Static rand_mode queue is shared across all instances of a class. Used for
+    // variables registered as static via mark_var_static(); the solver write-back
+    // filter consults this queue instead of m_randmodep for those variables.
+    void set_static_randmode(const VlQueue<CData>& randmode) { m_static_randmodep = &randmode; }
+    void mark_var_static(const char* const name) { m_staticVars.insert(name); }
 #ifdef VL_DEBUG
     void dump() const;
 #endif
