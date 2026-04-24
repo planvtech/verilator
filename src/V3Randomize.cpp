@@ -4165,9 +4165,8 @@ class RandomizeVisitor final : public VNVisitor {
         if (!classGenp) {
             // No constraints -- null call trivially satisfies and leaves every
             // rand member untouched.
-            funcp->addStmtsp(
-                new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
-                              new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
+            funcp->addStmtsp(new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
+                                           new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
             return funcp;
         }
         AstNodeModule* const genModp = VN_AS(classGenp->user2p(), NodeModule);
@@ -4178,8 +4177,7 @@ class RandomizeVisitor final : public VNVisitor {
         solverCallp->dtypeSetBit();
         solverCallp->add(new AstVarRef{fl, genModp, classGenp, VAccess::READWRITE});
         solverCallp->add(".next_check_only(__Vm_rng)");
-        funcp->addStmtsp(
-            new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE}, solverCallp});
+        funcp->addStmtsp(new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE}, solverCallp});
         classp->needRNG(true);
         return funcp;
     }
