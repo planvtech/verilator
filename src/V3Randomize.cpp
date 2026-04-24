@@ -607,6 +607,31 @@ class RandomizeMarkVisitor final : public VNVisitor {
             return;
         }
         for (AstArg* argp = nodep->argsp(); argp; argp = VN_AS(argp->nextp(), Arg)) {
+            // randomize(null) -- no rand variable is named. Handle it before
+            // marking the class IS_RANDOMIZED_INLINE so we do not allocate
+            // __Vrandmode slots that the dedicated check-only path never uses.
+            if (const AstConst* const constp = VN_CAST(argp->exprp(), Const)) {
+                if (constp->num().isNull()) {
+                    // Reject rand container members up front. The check-only
+                    // solver call pins scalar vars via equality constraints,
+                    // but has no pinning for queue / unpacked / assoc / dynamic
+                    // arrays; without a diagnostic the solver would silently
+                    // invent values for them.
+                    classp->foreachMember([nodep](AstClass* const, AstVar* const memberVarp) {
+                        if (!memberVarp->rand().isRandomizable()) return;
+                        const AstNodeDType* const dtp = memberVarp->dtypep()->skipRefp();
+                        if (VN_IS(dtp, UnpackArrayDType) || VN_IS(dtp, DynArrayDType)
+                            || VN_IS(dtp, QueueDType) || VN_IS(dtp, AssocArrayDType)
+                            || VN_IS(dtp, WildcardArrayDType)) {
+                            nodep->v3warn(E_UNSUPPORTED,
+                                          "Unsupported: 'randomize(null)' on class with rand "
+                                          "container member "
+                                              << memberVarp->prettyNameQ());
+                        }
+                    });
+                    continue;
+                }
+            }
             classp->user1(IS_RANDOMIZED_INLINE);
             AstVar* fromVarp = nullptr;  // If nodep is a method call, this is its receiver
             if (AstMethodCall* methodCallp = VN_CAST(nodep, MethodCall)) {
@@ -4009,6 +4034,20 @@ class RandomizeVisitor final : public VNVisitor {
     // Handle inline random variable control. After this, the randomize() call has no args
     void handleRandomizeArgs(AstNodeFTaskRef* const nodep) {
         if (!nodep->argsp()) return;
+        // randomize(null) (IEEE 1800-2023 18.11): strip the null literal; the
+        // wrapper below flips the class's VlRandomizer into check-only mode so
+        // the solver validates constraints against current values instead of
+        // assigning new ones. V3Width already rejected mixed non-null args.
+        bool hasNullArg = false;
+        for (AstArg *argp = nodep->argsp(), *nextp = nullptr; argp; argp = nextp) {
+            nextp = VN_AS(argp->nextp(), Arg);
+            if (const AstConst* const constp = VN_CAST(argp->exprp(), Const)) {
+                if (constp->num().isNull()) {
+                    hasNullArg = true;
+                    VL_DO_DANGLING(argp->unlinkFrBack()->deleteTree(), argp);
+                }
+            }
+        }
         // This assumes arguments to always be a member sel from nodep->fromp(), if applicable
         // e.g. LinkDot transformed a.randomize(b, a.c) -> a.randomize(a.b, a.c)
         // Merge pins with common prefixes so that setting their rand mode doesn't interfere
@@ -4071,6 +4110,29 @@ class RandomizeVisitor final : public VNVisitor {
             }
             argp->unlinkFrBack()->deleteTree();
         }
+        // randomize(null): re-point the call at a dedicated per-class
+        // `__Vrandomize_null` method (lazily generated below) that reuses the
+        // class's constraint setup but skips the RNG-assign path and invokes
+        // the solver in check-only mode. No call-site wrapping needed -- all
+        // the state management lives inside the method body.
+        if (hasNullArg) {
+            AstClass* targetClassp = nullptr;
+            AstMethodCall* const methodCallp = VN_CAST(nodep, MethodCall);
+            if (methodCallp) {
+                const AstNodeDType* const fromDTypep = methodCallp->fromp()->dtypep();
+                const AstClassRefDType* const crdtp
+                    = VN_CAST(fromDTypep->skipRefp(), ClassRefDType);
+                UASSERT_OBJ(crdtp, nodep, "randomize(null) receiver is not a class type");
+                targetClassp = crdtp->classp();
+            } else {
+                targetClassp = VN_CAST(m_modp, Class);
+            }
+            UASSERT_OBJ(targetClassp, nodep, "randomize(null) target class unresolved");
+            AstFunc* const checkOnlyFuncp = getCreateRandomizeNullFunc(targetClassp);
+            nodep->name(checkOnlyFuncp->name());
+            nodep->taskp(checkOnlyFuncp);
+            nodep->dtypeFrom(checkOnlyFuncp->dtypep());
+        }
         if (tmpVarps) {
             UASSERT_OBJ(storeStmtsp && setStmtsp && restoreStmtsp, nodep, "Should have stmts");
             VNRelinker relinker;
@@ -4082,6 +4144,44 @@ class RandomizeVisitor final : public VNVisitor {
             stmtsp->addNext(restoreStmtsp);
             relinker.relink(new AstBegin{nodep->fileline(), "", stmtsp, true});
         }
+    }
+
+    // Create a class method `__Vrandomize_null` that implements the IEEE
+    // 1800-2023 18.11 semantic: validate all declared constraints against the
+    // current runtime values without assigning new ones. Body is either:
+    //   - classes with no constraints: `return 1;` (trivially satisfied).
+    //   - classes with constraints: clear solver constraints, re-run
+    //     `__Vsetup_constraints`, copy classGen into a local gen, then
+    //     `return <localgen>.next_check_only(__Vm_rng);`.
+    AstFunc* getCreateRandomizeNullFunc(AstClass* const classp) {
+        static const char* const name = "__Vrandomize_null";
+        if (AstFunc* const existingp = VN_AS(m_memberMap.findMember(classp, name), Func)) {
+            return existingp;
+        }
+        FileLine* const fl = classp->fileline();
+        AstFunc* const funcp = V3Randomize::newRandomizeFunc(m_memberMap, classp, name);
+        AstVar* const fvarp = VN_AS(funcp->fvarp(), Var);
+        AstVar* const classGenp = getRandomGenerator(classp);
+        if (!classGenp) {
+            // No constraints -- null call trivially satisfies and leaves every
+            // rand member untouched.
+            funcp->addStmtsp(
+                new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
+                              new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
+            return funcp;
+        }
+        AstNodeModule* const genModp = VN_AS(classGenp->user2p(), NodeModule);
+        funcp->addStmtsp(implementConstraintsClear(fl, classGenp));
+        AstTask* const setupAllTaskp = getCreateConstraintSetupFunc(classp);
+        funcp->addStmtsp((new AstTaskRef{fl, setupAllTaskp})->makeStmt());
+        AstCExpr* const solverCallp = new AstCExpr{fl};
+        solverCallp->dtypeSetBit();
+        solverCallp->add(new AstVarRef{fl, genModp, classGenp, VAccess::READWRITE});
+        solverCallp->add(".next_check_only(__Vm_rng)");
+        funcp->addStmtsp(
+            new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE}, solverCallp});
+        classp->needRNG(true);
+        return funcp;
     }
 
     // Rewrite a LogIf-of-Dist chain into nested AstConstraintIf. The outermost

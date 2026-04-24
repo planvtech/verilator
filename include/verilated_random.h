@@ -82,6 +82,9 @@ public:
     virtual void emitGetValue(std::ostream& s) const;
     virtual void emitExtract(std::ostream& s, int i) const;
     virtual void emitType(std::ostream& s) const;
+    // Emit the current runtime value as an SMT bit-vector literal (#bNNN...).
+    // Used to pin disabled rand variables for check-only solves.
+    virtual void emitConcreteValue(std::ostream& s) const;
     virtual int totalWidth() const;
     mutable std::shared_ptr<const ArrayInfoMap> m_arrVarsRefp;
     void setArrayInfo(const std::shared_ptr<const ArrayInfoMap>& arrVarsRefp) const {
@@ -223,6 +226,11 @@ class VlRandomizer VL_NOT_FINAL {
     size_t m_randcConstraintHash = 0;  // Hash of constraints when history was valid
     std::vector<std::pair<std::string, std::string>>
         m_solveBefore;  // Solve-before ordering pairs (beforeVar, afterVar)
+    // randomize(null): set transiently by next_check_only() for the duration of
+    // one solver call. Pins every scalar write_var-ed entry to its current
+    // runtime value so the solver only validates the declared constraints and
+    // never picks new values. Private: do not poke directly.
+    bool m_checkOnly = false;
 
     // PRIVATE METHODS
     void randomConstraint(std::ostream& os, VlRNG& rngr, int bits);
@@ -241,6 +249,11 @@ public:
     // METHODS
     // Finds the next solution satisfying the constraints
     bool next(VlRNG& rngr);
+    // IEEE 1800-2023 18.11 randomize(null): validate the constraints against
+    // the current runtime values of every registered rand variable without
+    // picking new ones. Returns 1 iff all constraints are satisfied. Does not
+    // touch randc exclusion history or diversity state.
+    bool next_check_only(VlRNG& rngr);
 
     // ---  Process the key for associative array  ---
 

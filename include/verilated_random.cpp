@@ -330,6 +330,29 @@ void VlRandomVar::emitExtract(std::ostream& s, int i) const {
     s << " ((_ extract " << i << ' ' << i << ") " << m_name << ')';
 }
 void VlRandomVar::emitType(std::ostream& s) const { s << "(_ BitVec " << width() << ')'; }
+void VlRandomVar::emitConcreteValue(std::ostream& s) const {
+    // Emit #bNNN...N with the current runtime value, MSB first. Binary rather
+    // than hex avoids the hex-literal width-multiple-of-4 restriction.
+    const int w = width();
+    const void* const dp = datap(0);
+    s << "#b";
+    for (int i = w - 1; i >= 0; --i) {
+        int bit = 0;
+        if (w <= VL_BYTESIZE) {
+            bit = (*static_cast<const CData*>(dp) >> i) & 1;
+        } else if (w <= VL_SHORTSIZE) {
+            bit = (*static_cast<const SData*>(dp) >> i) & 1;
+        } else if (w <= VL_IDATASIZE) {
+            bit = (*static_cast<const IData*>(dp) >> i) & 1;
+        } else if (w <= VL_QUADSIZE) {
+            bit = (*static_cast<const QData*>(dp) >> i) & 1;
+        } else {
+            const EData* const wp = static_cast<const EData*>(dp);
+            bit = (wp[VL_BITWORD_E(i)] >> VL_BITBIT_E(i)) & 1;
+        }
+        s << (bit ? '1' : '0');
+    }
+}
 int VlRandomVar::totalWidth() const { return m_width; }
 static bool parseSMTNum(int obits, WDataOutP owp, const std::string& val) {
     int i;
@@ -441,8 +464,19 @@ void VlRandomizer::recordRandcValues() {
     }
 }
 
+bool VlRandomizer::next_check_only(VlRNG& rngr) {
+    m_checkOnly = true;
+    const bool result = next(rngr);
+    m_checkOnly = false;
+    return result;
+}
+
 bool VlRandomizer::next(VlRNG& rngr) {
-    if (m_vars.empty() && m_unique_arrays.empty()) return true;
+    // In check-only mode we still want to run the solver even without any
+    // registered vars (randomize(null) on a class with no rand members is a
+    // well-defined true). Regular calls short-circuit to avoid solver overhead.
+    if (!m_checkOnly && m_vars.empty() && m_unique_arrays.empty()) return true;
+    if (m_checkOnly && m_vars.empty()) return true;
     for (const std::string& baseName : m_unique_arrays) {
         const auto it = m_vars.find(baseName);
         const uint32_t size = m_unique_array_sizes.at(baseName);
@@ -470,8 +504,10 @@ bool VlRandomizer::next(VlRNG& rngr) {
         }
     }
 
-    // If solve-before constraints are present, use phased solving
-    if (!m_solveBefore.empty()) return nextPhased(rngr);
+    // If solve-before constraints are present, use phased solving.
+    // In check-only mode every var is pinned to its current value, so phase
+    // ordering is irrelevant -- fall through to the main single-shot path.
+    if (!m_checkOnly && !m_solveBefore.empty()) return nextPhased(rngr);
 
     // Randc retry: if unsat due to randc exhaustion, clear history and retry once
     const bool hasRandc = !m_randcVarNames.empty();
@@ -494,14 +530,28 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << "(declare-fun " << var.first << " () ";
             var.second->emitType(os);
             os << ")\n";
+            // randomize(null): pin scalar rand variables to their current runtime
+            // values so the solver reports whether the existing values satisfy
+            // the constraints rather than picking new ones. Arrays/containers
+            // are intentionally left unpinned (out of MVP scope).
+            if (m_checkOnly && var.second->dimension() == 0) {
+                os << "(assert (= " << var.first << ' ';
+                var.second->emitConcreteValue(os);
+                os << "))\n";
+            }
         }
 
         for (const std::string& constraint : m_constraints) {
             os << "(assert (= #b1 " << constraint << "))\n";
         }
 
-        // Randc: exclude previously used values to enforce cyclic non-repetition
-        emitRandcExclusions(os);
+        // Randc: exclude previously used values to enforce cyclic non-repetition.
+        // Skipped in check-only mode: IEEE 1800-2023 18.11 only asks that
+        // declared constraints are validated; the randc exclusion history is
+        // solver-cycle bookkeeping that would make the pin trivially UNSAT
+        // (pinned value equals the last randc-chosen value now in the exclusion
+        // set).
+        if (!m_checkOnly) emitRandcExclusions(os);
 
         const size_t nSoft = m_softConstraints.size();
         bool sat = false;
@@ -544,6 +594,12 @@ bool VlRandomizer::next(VlRNG& rngr) {
                 m_randcUsedValues.clear();
                 continue;  // Retry without exclusions
             }
+            // In check-only mode the unsat is exactly the answer the caller
+            // wants (IEEE 1800-2023 18.11 -> 0). The unsat-core diagnostic
+            // re-declares vars WITHOUT pinning, which would otherwise let the
+            // solver respond "sat" and parseSolution write arbitrary values
+            // back over the user's current state -- so skip it.
+            if (m_checkOnly) return false;
             // Genuine unsat: report via unsat-core
             os << "(set-option :produce-unsat-cores true)\n";
             os << "(set-logic QF_ABV)\n";
@@ -569,17 +625,24 @@ bool VlRandomizer::next(VlRNG& rngr) {
             return false;
         }
 
-        for (int i = 0; i < _VL_SOLVER_HASH_LEN_TOTAL && sat; ++i) {
-            os << "(assert ";
-            randomConstraint(os, rngr, _VL_SOLVER_HASH_LEN);
-            os << ")\n";
-            os << "\n(check-sat)\n";
-            sat = parseSolution(os, false);
-            (void)sat;
+        // Skip the diversity hash-salt loop in check-only: every var is pinned
+        // so additional asserts cannot improve distribution, and every round
+        // forces an extra solver call.
+        if (!m_checkOnly) {
+            for (int i = 0; i < _VL_SOLVER_HASH_LEN_TOTAL && sat; ++i) {
+                os << "(assert ";
+                randomConstraint(os, rngr, _VL_SOLVER_HASH_LEN);
+                os << ")\n";
+                os << "\n(check-sat)\n";
+                sat = parseSolution(os, false);
+                (void)sat;
+            }
         }
 
-        // Record solved randc values for future exclusion
-        recordRandcValues();
+        // Record solved randc values for future exclusion. Skipped in
+        // check-only mode so IEEE 1800-2023 18.11 "only checks constraints"
+        // does not mutate randc cycle state.
+        if (!m_checkOnly) recordRandcValues();
 
         os << "(reset)\n";
         return true;
