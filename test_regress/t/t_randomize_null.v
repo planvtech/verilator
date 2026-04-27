@@ -59,6 +59,18 @@ class Cyc;
   constraint c_range {c >= lo;}
 endclass
 
+// IEEE 1800-2023 18.6.2 / 18.6.3: pre_randomize is always called; post_randomize
+// is called iff randomize() returned 1.
+class Cb;
+  rand int x;
+  int v;
+  int pre_count;
+  int post_count;
+  constraint c_lt {x < v;}
+  function void pre_randomize; pre_count = pre_count + 1; endfunction
+  function void post_randomize; post_count = post_count + 1; endfunction
+endclass
+
 module t;
   A a;
   Multi m;
@@ -66,6 +78,7 @@ module t;
   Derived d;
   Wide w;
   Cyc cyc;
+  Cb cb;
   int i;
   int ok0;
   int ok1;
@@ -185,6 +198,22 @@ module t;
     end
     `checkd(ok0, 1);
     `checkd(ok1, 1);
+
+    // 7. pre_randomize / post_randomize observable behavior.
+    //    IEEE 1800-2023 18.6.2: pre is always called.
+    //    IEEE 1800-2023 18.6.3: post is called iff randomize() returned 1.
+    cb = new;
+    cb.x = 1; cb.v = 2; cb.pre_count = 0; cb.post_count = 0;
+    i = cb.randomize(null);  // sat: pre + post
+    `checkd(i, 1);
+    `checkd(cb.pre_count, 1);
+    `checkd(cb.post_count, 1);
+
+    cb.x = 5; cb.v = 1;
+    i = cb.randomize(null);  // unsat: pre only, no post
+    `checkd(i, 0);
+    `checkd(cb.pre_count, 2);
+    `checkd(cb.post_count, 1);
 
     $write("*-* All Finished *-*\n");
     $finish;

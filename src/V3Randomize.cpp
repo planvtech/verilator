@@ -612,23 +612,32 @@ class RandomizeMarkVisitor final : public VNVisitor {
             // __Vrandmode slots that the dedicated check-only path never uses.
             if (const AstConst* const constp = VN_CAST(argp->exprp(), Const)) {
                 if (constp->num().isNull()) {
-                    // Reject rand container members up front. The check-only
-                    // solver call pins scalar vars via equality constraints,
-                    // but has no pinning for queue / unpacked / assoc / dynamic
-                    // arrays; without a diagnostic the solver would silently
-                    // invent values for them.
-                    classp->foreachMember([nodep](AstClass* const, AstVar* const memberVarp) {
-                        if (!memberVarp->rand().isRandomizable()) return;
-                        const AstNodeDType* const dtp = memberVarp->dtypep()->skipRefp();
-                        if (VN_IS(dtp, UnpackArrayDType) || VN_IS(dtp, DynArrayDType)
-                            || VN_IS(dtp, QueueDType) || VN_IS(dtp, AssocArrayDType)
-                            || VN_IS(dtp, WildcardArrayDType)) {
-                            nodep->v3warn(E_UNSUPPORTED,
-                                          "Unsupported: 'randomize(null)' on class with rand "
-                                          "container member "
-                                              << memberVarp->prettyNameQ());
-                        }
-                    });
+                    // Reject classes whose rand members include containers or
+                    // nested classes. The check-only solver pins scalar vars
+                    // via SMT equality; it has no pinning for arrays/queues/
+                    // assoc/dyn/wildcard arrays, and the null path does not
+                    // cascade into nested rand class members' constraints.
+                    // MVP supports scalar rand vars only (IEEE 1800-2023
+                    // 18.11; nested classes / containers deferred to a
+                    // follow-up PR). existsMember short-circuits on first hit
+                    // so one call site emits one diagnostic, not N.
+                    const bool hasUnsupportedMember = classp->existsMember(
+                        [](const AstClass*, const AstVar* memberVarp) {
+                            if (!memberVarp->rand().isRandomizable()) return false;
+                            const AstNodeDType* const dtp
+                                = memberVarp->dtypep()->skipRefp();
+                            return VN_IS(dtp, UnpackArrayDType)
+                                   || VN_IS(dtp, DynArrayDType) || VN_IS(dtp, QueueDType)
+                                   || VN_IS(dtp, AssocArrayDType)
+                                   || VN_IS(dtp, WildcardArrayDType)
+                                   || VN_IS(dtp, ClassRefDType);
+                        });
+                    if (hasUnsupportedMember) {
+                        nodep->v3warn(E_UNSUPPORTED,
+                                      "Unsupported: 'randomize(null)' on class with rand "
+                                      "container or class member (IEEE 1800-2023 18.11; "
+                                      "MVP supports scalar rand vars only)");
+                    }
                     continue;
                 }
             }
@@ -4148,11 +4157,15 @@ class RandomizeVisitor final : public VNVisitor {
 
     // Create a class method `__Vrandomize_null` that implements the IEEE
     // 1800-2023 18.11 semantic: validate all declared constraints against the
-    // current runtime values without assigning new ones. Body is either:
-    //   - classes with no constraints: `return 1;` (trivially satisfied).
-    //   - classes with constraints: clear solver constraints, re-run
-    //     `__Vsetup_constraints`, copy classGen into a local gen, then
-    //     `return <localgen>.next_check_only(__Vm_rng);`.
+    // current runtime values without assigning new ones. Body is:
+    //   1. pre_randomize() -- always (IEEE 1800-2023 18.6.2; 18.11 has no
+    //      carve-out for the null case).
+    //   2. Compute result:
+    //      - no constraints: `fvar = 1` (trivially satisfied; IEEE 18.11.1).
+    //      - has constraints: clear solver constraints, re-run
+    //        `__Vsetup_constraints`, then `fvar = gen.next_check_only(rng)`.
+    //   3. if (fvar) post_randomize() -- IEEE 1800-2023 18.6.3 says
+    //      post_randomize is not called when randomize() fails.
     AstFunc* getCreateRandomizeNullFunc(AstClass* const classp) {
         static const char* const name = "__Vrandomize_null";
         if (AstFunc* const existingp = VN_AS(m_memberMap.findMember(classp, name), Func)) {
@@ -4161,24 +4174,39 @@ class RandomizeVisitor final : public VNVisitor {
         FileLine* const fl = classp->fileline();
         AstFunc* const funcp = V3Randomize::newRandomizeFunc(m_memberMap, classp, name);
         AstVar* const fvarp = VN_AS(funcp->fvarp(), Var);
+
+        // 1. pre_randomize -- always (IEEE 1800-2023 18.6.2)
+        addPrePostCall(classp, funcp, "pre_randomize");
+
+        // 2. Compute result
         AstVar* const classGenp = getRandomGenerator(classp);
         if (!classGenp) {
             // No constraints -- null call trivially satisfies and leaves every
-            // rand member untouched.
-            funcp->addStmtsp(new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
-                                           new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
-            return funcp;
+            // rand member untouched (IEEE 1800-2023 18.11.1).
+            funcp->addStmtsp(
+                new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
+                              new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
+        } else {
+            AstNodeModule* const genModp = VN_AS(classGenp->user2p(), NodeModule);
+            funcp->addStmtsp(implementConstraintsClear(fl, classGenp));
+            AstTask* const setupAllTaskp = getCreateConstraintSetupFunc(classp);
+            funcp->addStmtsp((new AstTaskRef{fl, setupAllTaskp})->makeStmt());
+            AstCExpr* const solverCallp = new AstCExpr{fl};
+            solverCallp->dtypeSetBit();
+            solverCallp->add(new AstVarRef{fl, genModp, classGenp, VAccess::READWRITE});
+            solverCallp->add(".next_check_only(__Vm_rng)");
+            funcp->addStmtsp(
+                new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE}, solverCallp});
+            classp->needRNG(true);
         }
-        AstNodeModule* const genModp = VN_AS(classGenp->user2p(), NodeModule);
-        funcp->addStmtsp(implementConstraintsClear(fl, classGenp));
-        AstTask* const setupAllTaskp = getCreateConstraintSetupFunc(classp);
-        funcp->addStmtsp((new AstTaskRef{fl, setupAllTaskp})->makeStmt());
-        AstCExpr* const solverCallp = new AstCExpr{fl};
-        solverCallp->dtypeSetBit();
-        solverCallp->add(new AstVarRef{fl, genModp, classGenp, VAccess::READWRITE});
-        solverCallp->add(".next_check_only(__Vm_rng)");
-        funcp->addStmtsp(new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE}, solverCallp});
-        classp->needRNG(true);
+
+        // 3. post_randomize -- only if result is non-zero (IEEE 1800-2023 18.6.3)
+        if (AstTask* const userPostp = findPrePostTask(classp, "post_randomize")) {
+            AstTaskRef* const callp = new AstTaskRef{userPostp->fileline(), userPostp};
+            funcp->addStmtsp(new AstIf{fl, new AstVarRef{fl, fvarp, VAccess::READ},
+                                       callp->makeStmt()});
+        }
+
         return funcp;
     }
 
