@@ -53,6 +53,17 @@ class Wide;
   constraint c_wide {w65 >= lo65; w96 >= lo96;}
 endclass
 
+// Cover the 16-bit (SData) and 64-bit (QData) tiers of
+// VlRandomVar::emitConcreteValue's bit-extraction ladder, exercised when
+// pinned current values are serialized to the SMT solver.
+class Widths;
+  rand shortint s16;
+  rand longint  l64;
+  shortint s_lo;
+  longint  l_lo;
+  constraint c_widths {s16 >= s_lo; l64 >= l_lo;}
+endclass
+
 class Cyc;
   randc bit [1:0] c;
   bit [1:0] lo;
@@ -77,6 +88,7 @@ module t;
   Trivial triv;
   Derived d;
   Wide w;
+  Widths wd;
   Cyc cyc;
   Cb cb;
   int i;
@@ -163,6 +175,24 @@ module t;
     i = w.randomize(null);
     `checkd(i, 0);
     `checkh(w.w65, 65'h0_1234_5678_9ABC_DEF0);
+
+    // 5b. shortint (16-bit, SData) and longint (64-bit, QData) widths --
+    //     covers the middle tiers of emitConcreteValue's bit-extraction ladder.
+    wd = new;
+    wd.s16 = 16'sh1234;
+    wd.l64 = 64'sh0123_4567_89AB_CDEF;
+    wd.s_lo = 16'sh0;
+    wd.l_lo = 64'sh0;
+    i = wd.randomize(null);
+    `checkd(i, 1);
+    `checkh(wd.s16, 16'sh1234);
+    `checkh(wd.l64, 64'sh0123_4567_89AB_CDEF);
+
+    wd.s16 = 16'sh0001;
+    wd.s_lo = 16'sh7FFF;
+    i = wd.randomize(null);
+    `checkd(i, 0);
+    `checkh(wd.s16, 16'sh0001);
 
     // 6. randc: null-call must NOT be poisoned by the exclusion history nor
     //    record values itself; a subsequent real randomize() must still cycle.

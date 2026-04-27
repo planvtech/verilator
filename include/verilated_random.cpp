@@ -23,6 +23,7 @@
 
 #include "verilated_random.h"
 
+#include <cassert>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -532,9 +533,11 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << ")\n";
             // randomize(null): pin scalar rand variables to their current runtime
             // values so the solver reports whether the existing values satisfy
-            // the constraints rather than picking new ones. Arrays/containers
-            // are intentionally left unpinned (out of MVP scope).
-            if (m_checkOnly && var.second->dimension() == 0) {
+            // the constraints rather than picking new ones. V3Randomize rejects
+            // classes with array/container/class rand members for the null
+            // call, so every var seen here is scalar.
+            if (m_checkOnly) {
+                assert(var.second->dimension() == 0);
                 os << "(assert (= " << var.first << ' ';
                 var.second->emitConcreteValue(os);
                 os << "))\n";

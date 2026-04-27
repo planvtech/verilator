@@ -610,34 +610,31 @@ class RandomizeMarkVisitor final : public VNVisitor {
             // randomize(null) -- no rand variable is named. Handle it before
             // marking the class IS_RANDOMIZED_INLINE so we do not allocate
             // __Vrandmode slots that the dedicated check-only path never uses.
+            // V3Width unlinks any non-null AstConst arg (it must be a VarRef
+            // or MemberSel); by the time we get here the only AstConst
+            // possible is the literal null.
             if (const AstConst* const constp = VN_CAST(argp->exprp(), Const)) {
-                if (constp->num().isNull()) {
-                    // Reject classes whose rand members include containers or
-                    // nested classes. The check-only solver pins scalar vars
-                    // via SMT equality; it has no pinning for arrays/queues/
-                    // assoc/dyn/wildcard arrays, and the null path does not
-                    // cascade into nested rand class members' constraints.
-                    // MVP supports scalar rand vars only (IEEE 1800-2023
-                    // 18.11; nested classes / containers deferred to a
-                    // follow-up PR). existsMember short-circuits on first hit
-                    // so one call site emits one diagnostic, not N.
-                    const bool hasUnsupportedMember
-                        = classp->existsMember([](const AstClass*, const AstVar* memberVarp) {
-                              if (!memberVarp->rand().isRandomizable()) return false;
-                              const AstNodeDType* const dtp = memberVarp->dtypep()->skipRefp();
-                              return VN_IS(dtp, UnpackArrayDType) || VN_IS(dtp, DynArrayDType)
-                                     || VN_IS(dtp, QueueDType) || VN_IS(dtp, AssocArrayDType)
-                                     || VN_IS(dtp, WildcardArrayDType)
-                                     || VN_IS(dtp, ClassRefDType);
-                          });
-                    if (hasUnsupportedMember) {
-                        nodep->v3warn(E_UNSUPPORTED,
-                                      "Unsupported: 'randomize(null)' on class with rand "
-                                      "container or class member (IEEE 1800-2023 18.11; "
-                                      "MVP supports scalar rand vars only)");
-                    }
-                    continue;
+                UASSERT_OBJ(constp->num().isNull(), constp,
+                            "Non-null AstConst arg to randomize() should have been "
+                            "rejected by V3Width");
+                // Reject containers and nested rand class members: the check-only
+                // solver only pins scalar vars via SMT equality, and IEEE 1800-2023
+                // 18.11 does not cascade into nested classes' constraints.
+                const bool hasUnsupportedMember
+                    = classp->existsMember([](const AstClass*, const AstVar* memberVarp) {
+                          if (!memberVarp->rand().isRandomizable()) return false;
+                          const AstNodeDType* const dtp = memberVarp->dtypep()->skipRefp();
+                          return VN_IS(dtp, UnpackArrayDType) || VN_IS(dtp, DynArrayDType)
+                                 || VN_IS(dtp, QueueDType) || VN_IS(dtp, AssocArrayDType)
+                                 || VN_IS(dtp, WildcardArrayDType) || VN_IS(dtp, ClassRefDType);
+                      });
+                if (hasUnsupportedMember) {
+                    nodep->v3warn(E_UNSUPPORTED,
+                                  "Unsupported: 'randomize(null)' on class with rand "
+                                  "container or class member (IEEE 1800-2023 18.11; "
+                                  "MVP supports scalar rand vars only)");
                 }
+                continue;
             }
             classp->user1(IS_RANDOMIZED_INLINE);
             AstVar* fromVarp = nullptr;  // If nodep is a method call, this is its receiver
@@ -4044,15 +4041,17 @@ class RandomizeVisitor final : public VNVisitor {
         // randomize(null) (IEEE 1800-2023 18.11): strip the null literal; the
         // wrapper below flips the class's VlRandomizer into check-only mode so
         // the solver validates constraints against current values instead of
-        // assigning new ones. V3Width already rejected mixed non-null args.
+        // assigning new ones. V3Width already rejected mixed non-null args
+        // and unlinked any non-null AstConst arg.
         bool hasNullArg = false;
         for (AstArg *argp = nodep->argsp(), *nextp = nullptr; argp; argp = nextp) {
             nextp = VN_AS(argp->nextp(), Arg);
             if (const AstConst* const constp = VN_CAST(argp->exprp(), Const)) {
-                if (constp->num().isNull()) {
-                    hasNullArg = true;
-                    VL_DO_DANGLING(argp->unlinkFrBack()->deleteTree(), argp);
-                }
+                UASSERT_OBJ(constp->num().isNull(), constp,
+                            "Non-null AstConst arg to randomize() should have been "
+                            "rejected by V3Width");
+                hasNullArg = true;
+                VL_DO_DANGLING(argp->unlinkFrBack()->deleteTree(), argp);
             }
         }
         // This assumes arguments to always be a member sel from nodep->fromp(), if applicable
