@@ -3217,8 +3217,9 @@ class RandomizeVisitor final : public VNVisitor {
         return nullptr;
     }
     AstVar* getCreateStaticRandModeVar(AstClass* const classp) {
-        auto it = m_staticRandModeVars.find(classp);
-        if (it != m_staticRandModeVars.end()) return it->second;
+        if (auto it = m_staticRandModeVars.find(classp); it != m_staticRandModeVars.end()) {
+            return it->second;
+        }
         if (AstClassExtends* const extendsp = classp->extendsp()) {
             return getCreateStaticRandModeVar(extendsp->classp());
         }
@@ -3227,8 +3228,9 @@ class RandomizeVisitor final : public VNVisitor {
         return staticModeVarp;
     }
     AstVar* getStaticRandModeVar(AstClass* const classp) {
-        auto it = m_staticRandModeVars.find(classp);
-        if (it != m_staticRandModeVars.end()) return it->second;
+        if (auto it = m_staticRandModeVars.find(classp); it != m_staticRandModeVars.end()) {
+            return it->second;
+        }
         if (AstClassExtends* const extendsp = classp->extendsp()) {
             return getStaticRandModeVar(extendsp->classp());
         }
@@ -3393,13 +3395,12 @@ class RandomizeVisitor final : public VNVisitor {
             }
         });
         // Emit a single makeStaticModeInit per root with the max descendant count.
-        for (const auto& kv : rootStaticRandModeCount) {
-            AstClass* const rootp = kv.first;
-            const uint32_t count = kv.second;
-            AstVar* const staticRandModeVarp = m_staticRandModeVars[rootp];
-            UASSERT_OBJ(staticRandModeVarp, rootp, "Root must have a static rand-mode var");
-            makeStaticModeInit(staticRandModeVarp, rootp, count);
-        }
+        for (const auto& kv : rootStaticRandModeCount) emitRootStaticModeInit(kv.first, kv.second);
+    }
+    void emitRootStaticModeInit(AstClass* const rootp, uint32_t count) {
+        AstVar* const staticRandModeVarp = m_staticRandModeVars[rootp];
+        UASSERT_OBJ(staticRandModeVarp, rootp, "Root must have a static rand-mode var");
+        makeStaticModeInit(staticRandModeVarp, rootp, count);
     }
     void makeModeInit(AstVar* modeVarp, AstClass* classp, uint32_t modeCount) {
         AstNodeModule* const modeVarModp = VN_AS(modeVarp->user2p(), NodeModule);

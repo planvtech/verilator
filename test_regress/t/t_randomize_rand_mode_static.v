@@ -66,6 +66,14 @@ class DerivedTwo extends BaseTwo;
   constraint dc { der2_dy > 0; }
 endclass
 
+// Static rand + non-static rand on a class with NO constraint blocks. The
+// inline randomize-with-clause emit must still flush the static rand-mode
+// array even though no class-level constraint setup function exists.
+class StaticNoConstraint;
+  static rand bit [3:0] snc_s;
+  rand bit [3:0] snc_d;
+endclass
+
 // Base AND Derived each declare their own static rand var. Exercises the
 // per-root max-count init path: Base ctor (super.new()) must size the static
 // array large enough for Derived's own indices too.
@@ -86,6 +94,7 @@ module t;
   BaseS bs1;
   DerivedS ds1, ds2;
   DerivedTwo dt1;
+  StaticNoConstraint snc1;
   int saved_sx;
   int saved_dy;
   bit [3:0] saved_base_sx;
@@ -285,15 +294,14 @@ module t;
     end
 
     // ---- Test 11: inline randomize() with { ... } on a class containing
-    // a static rand var. Exercises the inline randomize-with-clause path
-    // emitting the static-rand-mode set call (addSetStaticRandMode) for
-    // a class whose static rand-mode array must be flushed before solve.
-    s1.sx.rand_mode(1);
-    s1.dy.rand_mode(1);
+    // a static rand var with NO class-level constraints. Hits the
+    // addSetStaticRandMode emit on the !classGenp branch.
+    snc1 = new;
+    snc1.snc_s.rand_mode(1);  // ensure __Vstaticrandmode array exists
     repeat (10) begin
-      rok = s1.randomize() with { sx > 4; sx < 10; };
+      rok = snc1.randomize() with { snc_d > 5; snc_d < 13; };
       `checkd(rok, 1);
-      `check_range(Simple::sx, 5, 9);
+      `check_range(snc1.snc_d, 6, 12);
     end
 
     $write("*-* All Finished *-*\n");
