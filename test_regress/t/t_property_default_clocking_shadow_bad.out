@@ -1,0 +1,10 @@
+%Error: t/t_property_default_clocking_shadow_bad.v:32:22: Concurrent assertion has no leading clock event and none can be inferred (IEEE 1800-2023 16.14.5)
+                                                        : ... note: In instance 't'
+   32 |   assert property (a |=> b);
+      |                      ^~~
+        ... See the manual at https://verilator.org/verilator_doc.html?v=latest for more assistance.
+%Error: t/t_property_default_clocking_shadow_bad.v:32:3: Concurrent assertion has no leading clock event and none can be inferred (IEEE 1800-2023 16.14.5)
+                                                       : ... note: In instance 't'
+   32 |   assert property (a |=> b);
+      |   ^~~~~~
+%Error: Exiting due to

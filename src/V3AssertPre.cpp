@@ -23,6 +23,7 @@
 
 #include "V3AssertPre.h"
 
+#include "V3AssertNfa.h"
 #include "V3Const.h"
 #include "V3Task.h"
 #include "V3UniqueNames.h"
@@ -89,7 +90,13 @@ private:
             fromAlways = true;
         }
         if (!senip) {
-            nodep->v3warn(E_UNSUPPORTED, "Unsupported: Unclocked assertion");
+            // IEEE 1800-2023 16.14.5: a concurrent assertion's evaluation
+            // begins at every occurrence of its leading clock event. 16.6:
+            // "It shall be an error if the clock is required, but cannot be
+            // inferred in the instantiation context."
+            nodep->v3error(
+                "Concurrent assertion has no leading clock event"
+                " and none can be inferred (IEEE 1800-2023 16.14.5)");
             newp = new AstSenTree{nodep->fileline(), nullptr};
         } else {
             if (cassertp && fromAlways) cassertp->senFromAlways(true);
@@ -1291,31 +1298,31 @@ private:
         VL_RESTORER(m_defaultClkEvtVarp);
         VL_RESTORER(m_defaultDisablep);
         VL_RESTORER(m_modp);
-        m_defaultClockingp = nullptr;
-        m_defaultClkEvtVarp = nullptr;
-        nodep->foreach([&](AstClocking* const clockingp) {
-            if (clockingp->isDefault()) {
-                if (m_defaultClockingp) {
-                    clockingp->v3error("Only one default clocking block allowed per module"
-                                       " (IEEE 1800-2023 14.12)");
-                }
-                m_defaultClockingp = clockingp;
-            }
-        });
-        m_defaultDisablep = nullptr;
-        nodep->foreach([&](AstDefaultDisable* const disablep) {
-            if (m_defaultDisablep) {
-                disablep->v3error("Only one 'default disable iff' allowed per module"
-                                  " (IEEE 1800-2023 16.15)");
-            }
-            m_defaultDisablep = disablep;
-        });
-        m_modp = nodep;
+        // Shared scan with V3AssertNfa; first-found wins.
+        const V3AssertModuleDefaults defaults = V3AssertNfa::collectModuleDefaults(nodep);
+        m_defaultClockingp = defaults.defaultClockingp;
+        m_defaultDisablep = defaults.defaultDisablep;
         // Pre-create and cache the clocking event var before iterating children.
         // visit(AstClocking) will unlink the event from the clocking node and place it
         // in the module tree, then delete the clocking. After that, ensureEventp() would
         // create an orphaned var. Caching here avoids this.
         m_defaultClkEvtVarp = m_defaultClockingp ? m_defaultClockingp->ensureEventp() : nullptr;
+        // IEEE 1800-2023 14.12 / 16.15: only one default of each kind allowed.
+        // Diagnostics live here (not in V3AssertNfa) so the error fires once
+        // even though both passes consume the helper.
+        nodep->foreach([&](AstClocking* const clockingp) {
+            if (clockingp->isDefault() && clockingp != m_defaultClockingp) {
+                clockingp->v3error("Only one default clocking block allowed per module"
+                                   " (IEEE 1800-2023 14.12)");
+            }
+        });
+        nodep->foreach([&](AstDefaultDisable* const disablep) {
+            if (disablep != m_defaultDisablep) {
+                disablep->v3error("Only one 'default disable iff' allowed per module"
+                                  " (IEEE 1800-2023 16.15)");
+            }
+        });
+        m_modp = nodep;
         iterateChildren(nodep);
     }
     void visit(AstProperty* nodep) override {

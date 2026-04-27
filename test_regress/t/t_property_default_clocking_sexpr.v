@@ -127,6 +127,17 @@ module t (
   cover property (a throughout (c ##[1:2] d));
   cover property (a |=> b throughout (c ##1 d));
 
+  // Generate-scope assertion: enclosing module's default clocking must reach
+  // assertions inside generate blocks (collectModuleDefaults' module-wide
+  // foreach is required for this).
+  generate
+    if (1) begin : g
+      int gen_fail = 0;
+      assert property (a |=> b throughout (c ##1 d))
+        else gen_fail <= gen_fail + 1;
+    end
+  endgenerate
+
   wsn          u_wsn      (.clk(clk), .a(a), .b(b), .c(c), .d(d));
   clk_override u_override (.clk_default(clk), .clk_explicit(clk_alt),
                            .a(a), .b(b), .c(c), .d(d));
@@ -150,6 +161,7 @@ module t (
       `checkd(u_dgate.default_dis_fail,    35);  // Questa: 35 -- rst (cyc<10) masks 4 firings
       `checkd(u_dgate.explicit_dis_fail,   39);  // Questa: 39 -- disable iff(1'b0) overrides default, no mask
       `checkd(u_nodef.fail,                39);  // Questa: 39 -- negative control: no default, fix must not affect
+      `checkd(g.gen_fail,                  35);  // Questa: 35 -- generate-scope, same shape as count_fail1
       $write("*-* All Finished *-*\n");
       $finish;
     end

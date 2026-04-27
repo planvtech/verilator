@@ -1877,15 +1877,13 @@ class AssertNfaVisitor final : public VNVisitor {
         m_modp = nodep;
         // IEEE 1800-2023 14.12 / 16.15: capture this module's default clocking
         // and default disable iff so assertions that omit explicit @(edge) or
-        // `disable iff (...)` still get lowered by the NFA. V3AssertPre performs
-        // the same resolution downstream, but it runs after this pass; skipping
-        // it here would leave multi-cycle SExpr nodes unprocessed.
-        m_defaultClockingp = nullptr;
-        m_defaultDisablep = nullptr;
-        nodep->foreach([&](AstClocking* const clockingp) {
-            if (clockingp->isDefault()) m_defaultClockingp = clockingp;
-        });
-        nodep->foreach([&](AstDefaultDisable* const disablep) { m_defaultDisablep = disablep; });
+        // `disable iff (...)` still get lowered by the NFA. Shared with
+        // V3AssertPre via collectModuleDefaults so both passes resolve the
+        // same first-found default and the clocking event var is allocated
+        // before V3AssertPre's visit(AstClocking) unlinks the clocking node.
+        const V3AssertModuleDefaults defaults = V3AssertNfa::collectModuleDefaults(nodep);
+        m_defaultClockingp = defaults.defaultClockingp;
+        m_defaultDisablep = defaults.defaultDisablep;
         SvaNfaLowering lowering{nodep};
         m_loweringp = &lowering;
         iterateChildren(nodep);
@@ -1911,4 +1909,18 @@ void V3AssertNfa::assertNfaAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ":" << endl);
     { AssertNfaVisitor{nodep}; }
     V3Global::dumpCheckGlobalTree("assertnfa", 0, dumpTreeEitherLevel() >= 3);
+}
+
+V3AssertModuleDefaults V3AssertNfa::collectModuleDefaults(AstNodeModule* modp) {
+    // Pure read of the AST -- no side effects. ensureEventp() must be called
+    // by V3AssertPre (which runs after V3AssertNfa) so the clocking event var
+    // is created at its established timing relative to visit(AstClocking).
+    V3AssertModuleDefaults out;
+    modp->foreach([&](AstClocking* const clockingp) {
+        if (clockingp->isDefault() && !out.defaultClockingp) out.defaultClockingp = clockingp;
+    });
+    modp->foreach([&](AstDefaultDisable* const disablep) {
+        if (!out.defaultDisablep) out.defaultDisablep = disablep;
+    });
+    return out;
 }

@@ -20,13 +20,26 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
+class AstClocking;
+class AstDefaultDisable;
 class AstNetlist;
+class AstNodeModule;
 
 //============================================================================
+// Module-level defaults shared with V3AssertPre. IEEE 1800-2023 14.12 (default
+// clocking) and 16.15 (default disable iff) are scanned via collectModuleDefaults
+// so both passes see the same first-found default. Multiple-default diagnostics
+// and clocking event-var creation live in V3AssertPre.
+
+struct V3AssertModuleDefaults {
+    AstClocking* defaultClockingp = nullptr;
+    AstDefaultDisable* defaultDisablep = nullptr;
+};
 
 class V3AssertNfa final {
 public:
     static void assertNfaAll(AstNetlist* nodep) VL_MT_DISABLED;
+    static V3AssertModuleDefaults collectModuleDefaults(AstNodeModule* modp) VL_MT_DISABLED;
 };
 
 #endif  // Guard
