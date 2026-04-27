@@ -3289,7 +3289,13 @@ class RandomizeVisitor final : public VNVisitor {
         ftaskp->addStmtsp(setp->makeStmt());
     }
     void createRandomizeClassVars(AstNetlist* const netlistp) {
-        netlistp->foreach([this](AstClass* const classp) {
+        // Per-root max static-rand-mode count. The static dyn-array lives on the
+        // inheritance root; emitting init in each derived ctor with `if (size()==0)`
+        // would undersize the array when Base ctor (via super.new()) runs before
+        // Derived's larger init can resize. Defer init to a single emission per
+        // root with the max count needed by any descendant.
+        std::map<AstClass*, uint32_t> rootStaticRandModeCount;
+        netlistp->foreach([this, &rootStaticRandModeCount](AstClass* const classp) {
             bool hasConstraints = false;
             uint32_t randModeCount = 0;
             uint32_t staticRandModeCount = 0;
@@ -3378,10 +3384,23 @@ class RandomizeVisitor final : public VNVisitor {
                 makeStaticModeInit(staticConstraintModeVarp, classp, staticConstraintModeCount);
             }
             if (staticRandModeCount > 0) {
-                AstVar* const staticRandModeVarp = getCreateStaticRandModeVar(classp);
-                makeStaticModeInit(staticRandModeVarp, classp, staticRandModeCount);
+                // Ensure the static rand-mode var exists on the root; defer the
+                // init emission so we can use the max count across descendants.
+                getCreateStaticRandModeVar(classp);
+                AstClass* rootp = classp;
+                while (AstClassExtends* const ep = rootp->extendsp()) rootp = ep->classp();
+                uint32_t& slot = rootStaticRandModeCount[rootp];
+                if (staticRandModeCount > slot) slot = staticRandModeCount;
             }
         });
+        // Emit a single makeStaticModeInit per root with the max descendant count.
+        for (const auto& kv : rootStaticRandModeCount) {
+            AstClass* const rootp = kv.first;
+            const uint32_t count = kv.second;
+            AstVar* const staticRandModeVarp = m_staticRandModeVars[rootp];
+            UASSERT_OBJ(staticRandModeVarp, rootp, "Root must have a static rand-mode var");
+            makeStaticModeInit(staticRandModeVarp, rootp, count);
+        }
     }
     void makeModeInit(AstVar* modeVarp, AstClass* classp, uint32_t modeCount) {
         AstNodeModule* const modeVarModp = VN_AS(modeVarp->user2p(), NodeModule);
@@ -3854,6 +3873,17 @@ class RandomizeVisitor final : public VNVisitor {
         UASSERT_OBJ(VN_IS(exprp, VarRef), exprp, "Should be a VarRef");
         return new AstVarRef{exprp->fileline(), VN_AS(varp->user2p(), Class), varp, access};
     }
+    // Build a reference to a rand-mode dyn-array, routing through the class
+    // package for static mode vars (V3Scope resolves the VarRef later) and
+    // through MemberSel for per-instance mode vars.
+    AstNodeExpr* makeRandModeRef(AstNodeExpr* const exprp, AstVar* const modeVarp,
+                                 const VAccess access) {
+        if (modeVarp->lifetime().isStatic()) {
+            return new AstVarRef{exprp->fileline(), VN_AS(modeVarp->user2p(), NodeModule),
+                                 modeVarp, access};
+        }
+        return makeSiblingRefp(exprp, modeVarp, access);
+    }
     // Get or create a size variable for a constrained dynamic/queue/assoc array.
     // Returns the size variable. Sets wasCreated=true if a new variable was made.
     AstVar* createOrGetSizeVar(AstClass* const classp, AstVar* const arrVarp, FileLine* const fl,
@@ -3898,14 +3928,14 @@ class RandomizeVisitor final : public VNVisitor {
         storeStmtspr = AstNode::addNext(
             storeStmtspr,
             new AstAssign{fl, new AstVarRef{fl, randModeTmpVarp, VAccess::WRITE},
-                          makeSiblingRefp(siblingExprp, randModeVarp, VAccess::READ)});
+                          makeRandModeRef(siblingExprp, randModeVarp, VAccess::READ)});
         storeStmtspr = AstNode::addNext(
             storeStmtspr,
-            makeModeSetLoop(fl, makeSiblingRefp(siblingExprp, randModeVarp, VAccess::WRITE),
+            makeModeSetLoop(fl, makeRandModeRef(siblingExprp, randModeVarp, VAccess::WRITE),
                             new AstConst{fl, 0}, m_ftaskp));
         restoreStmtspr = AstNode::addNext(
             restoreStmtspr,
-            new AstAssign{fl, makeSiblingRefp(siblingExprp, randModeVarp, VAccess::WRITE),
+            new AstAssign{fl, makeRandModeRef(siblingExprp, randModeVarp, VAccess::WRITE),
                           new AstVarRef{fl, randModeTmpVarp, VAccess::READ}});
         return randModeTmpVarp;
     }
@@ -4028,9 +4058,13 @@ class RandomizeVisitor final : public VNVisitor {
         // Generate VarRef with classp as module; V3Scope will update varScopep later
         // when the variable is moved to the class package.
         if (modeVarp->lifetime().isStatic()) {
-            // Static mode var - generate VarRef that will be resolved by V3Scope
+            // Static mode var lives in the var's owning class (=root after the
+            // per-root max-count refactor). Hint classOrPackagep with the
+            // var's owning class, not the calling class, so V3Scope can find
+            // the AstVarScope from a derived-class call site.
             if (fromp) VL_DO_DANGLING(fromp->unlinkFrBack()->deleteTree(), fromp);
-            return new AstVarRef{fl, classp, modeVarp, VAccess::WRITE};
+            return new AstVarRef{fl, VN_AS(modeVarp->user2p(), NodeModule), modeVarp,
+                                 VAccess::WRITE};
         } else if (classp == m_modp) {
             // Called on 'this' or a member of 'this'
             return new AstVarRef{fl, VN_AS(modeVarp->user2p(), NodeModule), modeVarp,
@@ -4154,7 +4188,13 @@ class RandomizeVisitor final : public VNVisitor {
                 if (commonPrefixp == exprp) break;
                 AstVar* const randVarp = getVarFromRef(exprp);
                 AstClass* const classp = VN_AS(randVarp->user2p(), Class);
-                AstVar* const randModeVarp = getRandModeVarFromClass(classp);
+                // Static rand vars index into the class-package shared
+                // __Vstaticrandmode; non-static use the per-instance __Vrandmode.
+                AstVar* const randModeVarp = randVarp->lifetime().isStatic()
+                                                 ? getStaticRandModeVar(classp)
+                                                 : getRandModeVarFromClass(classp);
+                UASSERT_OBJ(randModeVarp, randVarp,
+                            "Rand var with rand_mode must have a mode array");
                 if (savedRandModeVarps.find(randModeVarp) == savedRandModeVarps.end()) {
                     AstVar* const randModeTmpVarp
                         = makeTmpRandModeVar(exprp, randModeVarp, storeStmtsp, restoreStmtsp);
@@ -4163,7 +4203,7 @@ class RandomizeVisitor final : public VNVisitor {
                 }
                 const RandomizeMode randMode = {.asInt = randVarp->user1()};
                 AstCMethodHard* setp = new AstCMethodHard{
-                    fl, makeSiblingRefp(exprp, randModeVarp, VAccess::WRITE),
+                    fl, makeRandModeRef(exprp, randModeVarp, VAccess::WRITE),
                     VCMethod::ARRAY_AT_WRITE, new AstConst{fl, randMode.index}};
                 setp->dtypeSetUInt32();
                 setStmtsp
@@ -4852,6 +4892,19 @@ class RandomizeVisitor final : public VNVisitor {
             AstVar* const randModeVarp = receiverIsStaticRand
                                              ? getStaticRandModeVar(randModeTarget.classp)
                                              : getRandModeVarFromClass(randModeTarget.classp);
+            if (!randModeVarp) {
+                // Class-level rand_mode(N) on a class whose only rand members are
+                // static: there is no per-instance __Vrandmode to flush. Emit only
+                // the static-array set-loop.
+                UASSERT_OBJ(isClassLevel && classLevelStaticLoopp, nodep,
+                            "Per-instance rand_mode var missing without static fallback");
+                if (nodep->argsp()) {
+                    UASSERT_OBJ(VN_IS(nodep->backp(), StmtExpr), nodep, "Should be a statement");
+                }
+                m_stmtp->replaceWith(classLevelStaticLoopp);
+                pushDeletep(m_stmtp);
+                return;
+            }
             AstNodeExpr* const lhsp = makeModeAssignLhs(nodep->fileline(), randModeTarget.classp,
                                                         randModeTarget.fromp, randModeVarp);
             replaceWithModeAssignAndAppend(nodep,

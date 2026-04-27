@@ -41,12 +41,39 @@ class Derived extends Base;
   }
 endclass
 
+// Class with ONLY static rand members (no per-instance __Vrandmode array).
+// Exercises the class-level obj.rand_mode(N) path when getRandModeVarFromClass
+// returns nullptr.
+class StaticOnly;
+  static rand bit [3:0] sa;
+  static rand bit [3:0] sb;
+  constraint c { sa > 0; sb > 0; }
+endclass
+
+// Base AND Derived each declare their own static rand var. Exercises the
+// per-root max-count init path: Base ctor (super.new()) must size the static
+// array large enough for Derived's own indices too.
+class BaseS;
+  static rand bit [3:0] base_s;
+  constraint c { base_s > 0; }
+endclass
+
+class DerivedS extends BaseS;
+  static rand bit [3:0] der_s;
+  constraint c2 { der_s > 0; }
+endclass
+
 module t;
   Simple s1, s2;
   Derived d1, d2;
+  StaticOnly so1, so2;
+  BaseS bs1;
+  DerivedS ds1, ds2;
   int saved_sx;
   int saved_dy;
   bit [3:0] saved_base_sx;
+  bit [3:0] saved_base_s;
+  bit [3:0] saved_der_s;
   int rok;
 
   initial begin
@@ -150,6 +177,69 @@ module t;
       if (d1.der_dy == 0) $stop;
       if (d1.base_dy == 0) $stop;
     end
+
+    // ---- Test 7: class-level obj.rand_mode(N) on a class with ONLY static
+    // rand members. Previously crashed because getRandModeVarFromClass
+    // returned nullptr and makeModeAssignLhs dereferenced it.
+    so1 = new;
+    so2 = new;
+    `checkd(so1.sa.rand_mode(), 1);
+    `checkd(so1.sb.rand_mode(), 1);
+    so1.rand_mode(0);  // must not crash
+    `checkd(so1.sa.rand_mode(), 0);
+    `checkd(so1.sb.rand_mode(), 0);
+    `checkd(so2.sa.rand_mode(), 0);  // shared
+    `checkd(so2.sb.rand_mode(), 0);  // shared
+    so2.rand_mode(1);
+    `checkd(so1.sa.rand_mode(), 1);
+    `checkd(so1.sb.rand_mode(), 1);
+
+    // ---- Test 8: inline obj.randomize(static_var) save/restore.
+    // The inline form must route through the static rand_mode array, not
+    // the per-instance one (whose index space is different / smaller).
+    s1.sx.rand_mode(1);
+    s1.dy.rand_mode(1);
+    repeat (10) begin
+      rok = s1.randomize(sx);  // only sx is randomized, dy frozen
+      `checkd(rok, 1);
+      `check_range(Simple::sx, 1, 11);
+    end
+    // After the inline call, s1.sx.rand_mode() must be back to 1
+    // (the save/restore restores the static array).
+    `checkd(s1.sx.rand_mode(), 1);
+    `checkd(s2.sx.rand_mode(), 1);  // shared - also 1
+
+    // ---- Test 9: Base AND Derived each declare own static rand var.
+    // Derived's static array must be sized to fit BOTH base_s and der_s
+    // even though super.new() runs Base's init first.
+    ds1 = new;
+    ds2 = new;
+    `checkd(ds1.base_s.rand_mode(), 1);
+    `checkd(ds1.der_s.rand_mode(), 1);
+    rok = ds1.randomize();
+    `checkd(rok, 1);
+    if (BaseS::base_s == 0) $stop;
+    if (DerivedS::der_s == 0) $stop;
+
+    // Disable both via per-member call
+    ds1.base_s.rand_mode(0);
+    ds1.der_s.rand_mode(0);
+    `checkd(ds2.base_s.rand_mode(), 0);  // shared
+    `checkd(ds2.der_s.rand_mode(), 0);  // shared
+    saved_base_s = BaseS::base_s;
+    saved_der_s  = DerivedS::der_s;
+    repeat (10) begin
+      rok = ds1.randomize();
+      `checkd(rok, 1);
+      `checkd(BaseS::base_s, saved_base_s);
+      `checkd(DerivedS::der_s, saved_der_s);
+    end
+
+    // Construct a standalone BaseS AFTER DerivedS already initialized the
+    // static array; BaseS init must see size != 0 and skip without
+    // overwriting Derived's prior rand_mode(0) state.
+    bs1 = new;
+    `checkd(bs1.base_s.rand_mode(), 0);  // still disabled
 
     $write("*-* All Finished *-*\n");
     $finish;
