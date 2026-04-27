@@ -752,16 +752,15 @@ class ConstraintExprVisitor final : public VNVisitor {
     // vars in nested global-constrained sub-objects route correctly even when the
     // outer class has no static rand vars of its own.
     AstVar* findStaticRandModeVarMember(AstClass* classp) const {
-        while (classp) {
+        while (true) {
             if (AstVar* const varp
                 = VN_CAST(m_memberMap.findMember(classp, "__Vstaticrandmode"), Var)) {
                 return varp;
             }
             AstClassExtends* const extendsp = classp->extendsp();
-            if (!extendsp) break;
+            if (!extendsp) return nullptr;
             classp = extendsp->classp();
         }
-        return nullptr;
     }
 
     // Build full path for a MemberSel chain (e.g., "obj.l2.l3.l4")
@@ -4893,14 +4892,9 @@ class RandomizeVisitor final : public VNVisitor {
                                              ? getStaticRandModeVar(randModeTarget.classp)
                                              : getRandModeVarFromClass(randModeTarget.classp);
             if (!randModeVarp) {
-                // Class-level rand_mode(N) on a class whose only rand members are
-                // static: there is no per-instance __Vrandmode to flush. Emit only
-                // the static-array set-loop.
                 UASSERT_OBJ(isClassLevel && classLevelStaticLoopp, nodep,
                             "Per-instance rand_mode var missing without static fallback");
-                if (nodep->argsp()) {
-                    UASSERT_OBJ(VN_IS(nodep->backp(), StmtExpr), nodep, "Should be a statement");
-                }
+                UASSERT_OBJ(VN_IS(nodep->backp(), StmtExpr), nodep, "Should be a statement");
                 m_stmtp->replaceWith(classLevelStaticLoopp);
                 pushDeletep(m_stmtp);
                 return;

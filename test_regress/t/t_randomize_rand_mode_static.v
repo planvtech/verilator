@@ -50,6 +50,22 @@ class StaticOnly;
   constraint c { sa > 0; sb > 0; }
 endclass
 
+// Base with TWO static rand vars; the second var's index is non-zero in the
+// shared static rand-mode array. Visiting Derived re-iterates inherited
+// members, exercising the "index already set, accumulate counter" branch in
+// V3Randomize::createRandomizeClassVars (Var-side else-branch).
+class BaseTwo;
+  static rand bit [3:0] base2_a;
+  static rand bit [3:0] base2_b;
+  rand bit [3:0] base2_dy;
+  constraint c { base2_a > 0; base2_b > 0; base2_dy > 0; }
+endclass
+
+class DerivedTwo extends BaseTwo;
+  rand bit [3:0] der2_dy;
+  constraint dc { der2_dy > 0; }
+endclass
+
 // Base AND Derived each declare their own static rand var. Exercises the
 // per-root max-count init path: Base ctor (super.new()) must size the static
 // array large enough for Derived's own indices too.
@@ -69,11 +85,14 @@ module t;
   StaticOnly so1, so2;
   BaseS bs1;
   DerivedS ds1, ds2;
+  DerivedTwo dt1;
   int saved_sx;
   int saved_dy;
   bit [3:0] saved_base_sx;
   bit [3:0] saved_base_s;
   bit [3:0] saved_der_s;
+  bit [3:0] saved_base2_a;
+  bit [3:0] saved_base2_b;
   int rok;
 
   initial begin
@@ -240,6 +259,42 @@ module t;
     // overwriting Derived's prior rand_mode(0) state.
     bs1 = new;
     `checkd(bs1.base_s.rand_mode(), 0);  // still disabled
+
+    // ---- Test 10: Base with TWO static rand vars + Derived re-iteration.
+    // BaseTwo's second static rand (base2_b) is assigned a non-zero index
+    // during Base's pass. When DerivedTwo re-iterates inherited members,
+    // the "index already set" else-branch must accumulate the counter so
+    // the static array is sized to fit base2_b.
+    dt1 = new;
+    `checkd(dt1.base2_a.rand_mode(), 1);
+    `checkd(dt1.base2_b.rand_mode(), 1);
+    rok = dt1.randomize();
+    `checkd(rok, 1);
+    if (BaseTwo::base2_a == 0) $stop;
+    if (BaseTwo::base2_b == 0) $stop;
+    // Disable second static var to prove its index is reachable in the array.
+    dt1.base2_b.rand_mode(0);
+    `checkd(dt1.base2_b.rand_mode(), 0);
+    `checkd(dt1.base2_a.rand_mode(), 1);  // first still enabled
+    saved_base2_b = BaseTwo::base2_b;
+    repeat (10) begin
+      rok = dt1.randomize();
+      `checkd(rok, 1);
+      `checkd(BaseTwo::base2_b, saved_base2_b);  // disabled - unchanged
+      if (BaseTwo::base2_a == 0) $stop;          // still randomizing
+    end
+
+    // ---- Test 11: inline randomize() with { ... } on a class containing
+    // a static rand var. Exercises the inline randomize-with-clause path
+    // emitting the static-rand-mode set call (addSetStaticRandMode) for
+    // a class whose static rand-mode array must be flushed before solve.
+    s1.sx.rand_mode(1);
+    s1.dy.rand_mode(1);
+    repeat (10) begin
+      rok = s1.randomize() with { sx > 4; sx < 10; };
+      `checkd(rok, 1);
+      `check_range(Simple::sx, 5, 9);
+    end
 
     $write("*-* All Finished *-*\n");
     $finish;
