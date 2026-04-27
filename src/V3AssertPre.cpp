@@ -94,9 +94,8 @@ private:
             // begins at every occurrence of its leading clock event. 16.6:
             // "It shall be an error if the clock is required, but cannot be
             // inferred in the instantiation context."
-            nodep->v3error(
-                "Concurrent assertion has no leading clock event"
-                " and none can be inferred (IEEE 1800-2023 16.14.5)");
+            nodep->v3error("Concurrent assertion has no leading clock event"
+                           " and none can be inferred (IEEE 1800-2023 16.14.5)");
             newp = new AstSenTree{nodep->fileline(), nullptr};
         } else {
             if (cassertp && fromAlways) cassertp->senFromAlways(true);
