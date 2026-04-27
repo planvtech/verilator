@@ -4111,6 +4111,8 @@ class RandomizeVisitor final : public VNVisitor {
             pushDeletep(m_stmtp);
         } else {
             UASSERT_OBJ(receiverp, ftaskRefp, "Should have receiver");
+            // No-arg getter; no append path here. Caller passing appendStmtp is a bug.
+            UASSERT_OBJ(!appendStmtp, ftaskRefp, "Append path requires arg-form rand_mode");
             const RandomizeMode rmode = {.asInt = receiverp->user1()};
             UASSERT_OBJ(rmode.usesMode, ftaskRefp, "Failed to set usesMode");
             AstCMethodHard* const setp = new AstCMethodHard{fl, lhsp, VCMethod::ARRAY_AT_WRITE,
@@ -4118,8 +4120,6 @@ class RandomizeVisitor final : public VNVisitor {
             setp->dtypeSetUInt32();
             ftaskRefp->replaceWith(setp);
             VL_DO_DANGLING(pushDeletep(ftaskRefp), ftaskRefp);
-            // No-arg getter; no append path here. If a caller passed appendStmtp it is a bug.
-            UASSERT_OBJ(!appendStmtp, ftaskRefp, "Append path requires arg-form rand_mode");
         }
     };
 
