@@ -1440,8 +1440,8 @@ public:
 class AssertNfaVisitor final : public VNVisitor {
     // STATE
     AstNodeModule* m_modp = nullptr;  // Current module being processed
-    AstClocking* m_defaultClockingp = nullptr;  // Default clocking (IEEE 14.12)
-    AstDefaultDisable* m_defaultDisablep = nullptr;  // Default disable iff (IEEE 16.15)
+    AstClocking* m_defaultClockingp = nullptr;  // Default clocking
+    AstDefaultDisable* m_defaultDisablep = nullptr;  // Default disable iff
     SvaNfaLowering* m_loweringp = nullptr;  // NFA-to-hardware lowering engine
     V3UniqueNames m_propVarNames{"__Vpropvar"};  // Property-local variable names
     V3UniqueNames m_disableCntNames{"__VnfaDis"};  // Disable-iff counter names
@@ -1790,12 +1790,8 @@ class AssertNfaVisitor final : public VNVisitor {
         bool senTreeOwned = false;  // True if we created senTreep locally
         AstPropSpec* const propSpecp = VN_CAST(assertp->propp(), PropSpec);
         UASSERT_OBJ(propSpecp, assertp, "Concurrent assertion must have PropSpec");
-        // Apply enclosing module's default clocking / disable iff so assertions
-        // written without an explicit clock (IEEE 14.12) or with default disable
-        // (IEEE 16.15) can still be lowered here.
+        // Inherit module defaults (IEEE 14.12, 16.15) when assertion has none.
         if (!propSpecp->sensesp() && m_defaultClockingp) {
-            // cloneTree(true) includes the next-chain so multi-edge sensitivity
-            // lists like `@(posedge clk1 or posedge clk2)` are preserved.
             propSpecp->sensesp(m_defaultClockingp->sensesp()->cloneTree(true));
         }
         if (!propSpecp->disablep() && m_defaultDisablep) {
@@ -1875,12 +1871,6 @@ class AssertNfaVisitor final : public VNVisitor {
         VL_RESTORER(m_defaultClockingp);
         VL_RESTORER(m_defaultDisablep);
         m_modp = nodep;
-        // IEEE 1800-2023 14.12 / 16.15: capture this module's default clocking
-        // and default disable iff so assertions that omit explicit @(edge) or
-        // `disable iff (...)` still get lowered by the NFA. Shared with
-        // V3AssertPre via collectModuleDefaults so both passes resolve the
-        // same first-found default and the clocking event var is allocated
-        // before V3AssertPre's visit(AstClocking) unlinks the clocking node.
         const V3AssertModuleDefaults defaults = V3AssertNfa::collectModuleDefaults(nodep);
         m_defaultClockingp = defaults.defaultClockingp;
         m_defaultDisablep = defaults.defaultDisablep;
@@ -1912,9 +1902,7 @@ void V3AssertNfa::assertNfaAll(AstNetlist* nodep) {
 }
 
 V3AssertModuleDefaults V3AssertNfa::collectModuleDefaults(AstNodeModule* modp) {
-    // Pure read of the AST -- no side effects. ensureEventp() must be called
-    // by V3AssertPre (which runs after V3AssertNfa) so the clocking event var
-    // is created at its established timing relative to visit(AstClocking).
+    // Pure read; first-found wins. ensureEventp() is V3AssertPre's job.
     V3AssertModuleDefaults out;
     modp->foreach([&](AstClocking* const clockingp) {
         if (clockingp->isDefault() && !out.defaultClockingp) out.defaultClockingp = clockingp;

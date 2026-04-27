@@ -90,12 +90,7 @@ private:
             fromAlways = true;
         }
         if (!senip) {
-            // IEEE 1800-2023 16.14.5: a concurrent assertion's evaluation
-            // begins at every occurrence of its leading clock event. 16.6:
-            // "It shall be an error if the clock is required, but cannot be
-            // inferred in the instantiation context."
-            nodep->v3error("Concurrent assertion has no leading clock event"
-                           " and none can be inferred (IEEE 1800-2023 16.14.5)");
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: Unclocked assertion");
             newp = new AstSenTree{nodep->fileline(), nullptr};
         } else {
             if (cassertp && fromAlways) cassertp->senFromAlways(true);
@@ -1297,18 +1292,11 @@ private:
         VL_RESTORER(m_defaultClkEvtVarp);
         VL_RESTORER(m_defaultDisablep);
         VL_RESTORER(m_modp);
-        // Shared scan with V3AssertNfa; first-found wins.
         const V3AssertModuleDefaults defaults = V3AssertNfa::collectModuleDefaults(nodep);
         m_defaultClockingp = defaults.defaultClockingp;
         m_defaultDisablep = defaults.defaultDisablep;
-        // Pre-create and cache the clocking event var before iterating children.
-        // visit(AstClocking) will unlink the event from the clocking node and place it
-        // in the module tree, then delete the clocking. After that, ensureEventp() would
-        // create an orphaned var. Caching here avoids this.
+        // Cache event var before iterateChildren -- visit(AstClocking) unlinks it.
         m_defaultClkEvtVarp = m_defaultClockingp ? m_defaultClockingp->ensureEventp() : nullptr;
-        // IEEE 1800-2023 14.12 / 16.15: only one default of each kind allowed.
-        // Diagnostics live here (not in V3AssertNfa) so the error fires once
-        // even though both passes consume the helper.
         nodep->foreach([&](AstClocking* const clockingp) {
             if (clockingp->isDefault() && clockingp != m_defaultClockingp) {
                 clockingp->v3error("Only one default clocking block allowed per module"
