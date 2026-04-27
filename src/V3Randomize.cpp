@@ -3217,9 +3217,7 @@ class RandomizeVisitor final : public VNVisitor {
         return nullptr;
     }
     AstVar* getCreateStaticRandModeVar(AstClass* const classp) {
-        if (auto it = m_staticRandModeVars.find(classp); it != m_staticRandModeVars.end()) {
-            return it->second;
-        }
+        if (m_staticRandModeVars.count(classp)) return m_staticRandModeVars[classp];
         if (AstClassExtends* const extendsp = classp->extendsp()) {
             return getCreateStaticRandModeVar(extendsp->classp());
         }
@@ -3228,9 +3226,7 @@ class RandomizeVisitor final : public VNVisitor {
         return staticModeVarp;
     }
     AstVar* getStaticRandModeVar(AstClass* const classp) {
-        if (auto it = m_staticRandModeVars.find(classp); it != m_staticRandModeVars.end()) {
-            return it->second;
-        }
+        if (m_staticRandModeVars.count(classp)) return m_staticRandModeVars[classp];
         if (AstClassExtends* const extendsp = classp->extendsp()) {
             return getStaticRandModeVar(extendsp->classp());
         }
