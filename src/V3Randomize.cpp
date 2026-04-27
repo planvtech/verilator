@@ -621,17 +621,15 @@ class RandomizeMarkVisitor final : public VNVisitor {
                     // 18.11; nested classes / containers deferred to a
                     // follow-up PR). existsMember short-circuits on first hit
                     // so one call site emits one diagnostic, not N.
-                    const bool hasUnsupportedMember = classp->existsMember(
-                        [](const AstClass*, const AstVar* memberVarp) {
-                            if (!memberVarp->rand().isRandomizable()) return false;
-                            const AstNodeDType* const dtp
-                                = memberVarp->dtypep()->skipRefp();
-                            return VN_IS(dtp, UnpackArrayDType)
-                                   || VN_IS(dtp, DynArrayDType) || VN_IS(dtp, QueueDType)
-                                   || VN_IS(dtp, AssocArrayDType)
-                                   || VN_IS(dtp, WildcardArrayDType)
-                                   || VN_IS(dtp, ClassRefDType);
-                        });
+                    const bool hasUnsupportedMember
+                        = classp->existsMember([](const AstClass*, const AstVar* memberVarp) {
+                              if (!memberVarp->rand().isRandomizable()) return false;
+                              const AstNodeDType* const dtp = memberVarp->dtypep()->skipRefp();
+                              return VN_IS(dtp, UnpackArrayDType) || VN_IS(dtp, DynArrayDType)
+                                     || VN_IS(dtp, QueueDType) || VN_IS(dtp, AssocArrayDType)
+                                     || VN_IS(dtp, WildcardArrayDType)
+                                     || VN_IS(dtp, ClassRefDType);
+                          });
                     if (hasUnsupportedMember) {
                         nodep->v3warn(E_UNSUPPORTED,
                                       "Unsupported: 'randomize(null)' on class with rand "
@@ -4183,9 +4181,8 @@ class RandomizeVisitor final : public VNVisitor {
         if (!classGenp) {
             // No constraints -- null call trivially satisfies and leaves every
             // rand member untouched (IEEE 1800-2023 18.11.1).
-            funcp->addStmtsp(
-                new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
-                              new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
+            funcp->addStmtsp(new AstAssign{fl, new AstVarRef{fl, fvarp, VAccess::WRITE},
+                                           new AstConst{fl, AstConst::WidthedValue{}, 32, 1}});
         } else {
             AstNodeModule* const genModp = VN_AS(classGenp->user2p(), NodeModule);
             funcp->addStmtsp(implementConstraintsClear(fl, classGenp));
@@ -4203,8 +4200,8 @@ class RandomizeVisitor final : public VNVisitor {
         // 3. post_randomize -- only if result is non-zero (IEEE 1800-2023 18.6.3)
         if (AstTask* const userPostp = findPrePostTask(classp, "post_randomize")) {
             AstTaskRef* const callp = new AstTaskRef{userPostp->fileline(), userPostp};
-            funcp->addStmtsp(new AstIf{fl, new AstVarRef{fl, fvarp, VAccess::READ},
-                                       callp->makeStmt()});
+            funcp->addStmtsp(
+                new AstIf{fl, new AstVarRef{fl, fvarp, VAccess::READ}, callp->makeStmt()});
         }
 
         return funcp;
