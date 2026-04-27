@@ -1,6 +1,0 @@
-%Error-UNSUPPORTED: t/t_property_default_clocking_shadow_bad.v:16:3: Unsupported: Unclocked assertion
-                                                                   : ... note: In instance 't'
-   16 |   assert property (a);
-      |   ^~~~~~
-                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error: Exiting due to
