@@ -4860,10 +4860,9 @@ class RandomizeVisitor final : public VNVisitor {
             }
             AstNodeExpr* const lhsp = makeModeAssignLhs(nodep->fileline(), randModeTarget.classp,
                                                         randModeTarget.fromp, randModeVarp);
-            replaceWithModeAssignAndAppend(nodep,
-                                           receiverp && receiverp->rand().isRand() ? receiverp
-                                                                                   : nullptr,
-                                           lhsp, classLevelStaticLoopp);
+            replaceWithModeAssignAndAppend(
+                nodep, receiverp && receiverp->rand().isRand() ? receiverp : nullptr, lhsp,
+                classLevelStaticLoopp);
             return;
         }
 

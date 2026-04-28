@@ -642,7 +642,8 @@ public:
     void solveBefore(const std::string& beforeName,
                      const std::string& afterName);  // Register solve-before ordering
     void set_randmode(const VlQueue<CData>& randmode) { m_randmodep = &randmode; }
-    // Shared across all instances; consulted instead of m_randmodep for vars marked via mark_var_static().
+    // Shared across all instances; consulted instead of m_randmodep for vars marked via
+    // mark_var_static().
     void set_static_randmode(const VlQueue<CData>& randmode) { m_static_randmodep = &randmode; }
     void mark_var_static(const char* const name) { m_staticVars.insert(name); }
 #ifdef VL_DEBUG
