@@ -41,19 +41,15 @@ class Derived extends Base;
   }
 endclass
 
-// Class with ONLY static rand members (no per-instance __Vrandmode array).
-// Exercises the class-level obj.rand_mode(N) path when getRandModeVarFromClass
-// returns nullptr.
+// Class with ONLY static rand members; exercises class-level rand_mode() with
+// no per-instance mode array.
 class StaticOnly;
   static rand bit [3:0] sa;
   static rand bit [3:0] sb;
   constraint c { sa > 0; sb > 0; }
 endclass
 
-// Base with TWO static rand vars; the second var's index is non-zero in the
-// shared static rand-mode array. Visiting Derived re-iterates inherited
-// members, exercising the "index already set, accumulate counter" branch in
-// V3Randomize::createRandomizeClassVars (Var-side else-branch).
+// Base with two static rand vars exercises non-zero index in the shared static array.
 class BaseTwo;
   static rand bit [3:0] base2_a;
   static rand bit [3:0] base2_b;
@@ -66,17 +62,13 @@ class DerivedTwo extends BaseTwo;
   constraint dc { der2_dy > 0; }
 endclass
 
-// Static rand + non-static rand on a class with NO constraint blocks. The
-// inline randomize-with-clause emit must still flush the static rand-mode
-// array even though no class-level constraint setup function exists.
+// No constraint blocks: inline randomize-with must still flush static rand_mode.
 class StaticNoConstraint;
   static rand bit [3:0] snc_s;
   rand bit [3:0] snc_d;
 endclass
 
-// Base AND Derived each declare their own static rand var. Exercises the
-// per-root max-count init path: Base ctor (super.new()) must size the static
-// array large enough for Derived's own indices too.
+// Base + Derived each declare a static rand var; per-root max-count init must size for both.
 class BaseS;
   static rand bit [3:0] base_s;
   constraint c { base_s > 0; }
@@ -206,9 +198,7 @@ module t;
       if (d1.base_dy == 0) $stop;
     end
 
-    // ---- Test 7: class-level obj.rand_mode(N) on a class with ONLY static
-    // rand members. Previously crashed because getRandModeVarFromClass
-    // returned nullptr and makeModeAssignLhs dereferenced it.
+    // ---- Test 7: class-level rand_mode(N) on a class with ONLY static rand members.
     so1 = new;
     so2 = new;
     `checkd(so1.sa.rand_mode(), 1);
@@ -269,11 +259,7 @@ module t;
     bs1 = new;
     `checkd(bs1.base_s.rand_mode(), 0);  // still disabled
 
-    // ---- Test 10: Base with TWO static rand vars + Derived re-iteration.
-    // BaseTwo's second static rand (base2_b) is assigned a non-zero index
-    // during Base's pass. When DerivedTwo re-iterates inherited members,
-    // the "index already set" else-branch must accumulate the counter so
-    // the static array is sized to fit base2_b.
+    // ---- Test 10: two static rand vars in Base; Derived must accumulate inherited indices.
     dt1 = new;
     `checkd(dt1.base2_a.rand_mode(), 1);
     `checkd(dt1.base2_b.rand_mode(), 1);
@@ -293,11 +279,9 @@ module t;
       if (BaseTwo::base2_a == 0) $stop;          // still randomizing
     end
 
-    // ---- Test 11: inline randomize() with { ... } on a class containing
-    // a static rand var with NO class-level constraints. Hits the
-    // addSetStaticRandMode emit on the !classGenp branch.
+    // ---- Test 11: inline randomize-with on class with static rand and no class-level constraints.
     snc1 = new;
-    snc1.snc_s.rand_mode(1);  // ensure __Vstaticrandmode array exists
+    snc1.snc_s.rand_mode(1);  // ensure static rand-mode array exists
     repeat (10) begin
       rok = snc1.randomize() with { snc_d > 5; snc_d < 13; };
       `checkd(rok, 1);
