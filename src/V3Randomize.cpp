@@ -3854,7 +3854,8 @@ class RandomizeVisitor final : public VNVisitor {
             return newMemberSelp;
         }
         UASSERT_OBJ(VN_IS(exprp, VarRef), exprp, "Should be a VarRef");
-        return new AstVarRef{exprp->fileline(), VN_AS(modeVarp->user2p(), Class), modeVarp, access};
+        return new AstVarRef{exprp->fileline(), VN_AS(modeVarp->user2p(), Class), modeVarp,
+                             access};
     }
     // Get or create a size variable for a constrained dynamic/queue/assoc array.
     // Returns the size variable. Sets wasCreated=true if a new variable was made.
