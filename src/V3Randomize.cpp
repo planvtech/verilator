@@ -3375,7 +3375,7 @@ class RandomizeVisitor final : public VNVisitor {
         });
         for (const auto& kv : rootStaticRandModeCount) emitRootStaticModeInit(kv.first, kv.second);
     }
-    void emitRootStaticModeInit(AstClass* const rootp, uint32_t count) {
+    void emitRootStaticModeInit(AstClass* const rootp, const uint32_t count) {
         AstVar* const staticRandModeVarp = m_staticRandModeVars[rootp];
         UASSERT_OBJ(staticRandModeVarp, rootp, "Root must have a static rand-mode var");
         makeStaticModeInit(staticRandModeVarp, rootp, count);
