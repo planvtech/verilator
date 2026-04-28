@@ -3839,26 +3839,22 @@ class RandomizeVisitor final : public VNVisitor {
         exprp->v3fatalSrc("Not a MemberSel nor VarRef");
         return nullptr;  // LCOV_EXCL_LINE
     }
-    AstNodeExpr* makeSiblingRefp(AstNodeExpr* const exprp, AstVar* const varp,
-                                 const VAccess access) {
-        if (AstMemberSel* const memberSelp = VN_CAST(exprp, MemberSel)) {
-            AstMemberSel* const newMemberSelp
-                = new AstMemberSel{exprp->fileline(), memberSelp->fromp()->cloneTree(false), varp};
-            // Set access on all VarRef nodes in the cloned subtree
-            newMemberSelp->foreach([access](AstVarRef* varrefp) { varrefp->access(access); });
-            return newMemberSelp;
-        }
-        UASSERT_OBJ(VN_IS(exprp, VarRef), exprp, "Should be a VarRef");
-        return new AstVarRef{exprp->fileline(), VN_AS(varp->user2p(), Class), varp, access};
-    }
-    // V3Scope resolves the static-mode VarRef later (var moves to class package).
-    AstNodeExpr* makeRandModeRef(AstNodeExpr* const exprp, AstVar* const modeVarp,
-                                 const VAccess access) {
+    // Build a reference to a rand_mode/constraint_mode dyn-array.
+    // Static-mode vars live on the class package; V3Scope resolves the VarRef later.
+    AstNodeExpr* makeModeVarRef(AstNodeExpr* const exprp, AstVar* const modeVarp,
+                                const VAccess access) {
         if (modeVarp->lifetime().isStatic()) {
             return new AstVarRef{exprp->fileline(), VN_AS(modeVarp->user2p(), NodeModule),
                                  modeVarp, access};
         }
-        return makeSiblingRefp(exprp, modeVarp, access);
+        if (AstMemberSel* const memberSelp = VN_CAST(exprp, MemberSel)) {
+            AstMemberSel* const newMemberSelp = new AstMemberSel{
+                exprp->fileline(), memberSelp->fromp()->cloneTree(false), modeVarp};
+            newMemberSelp->foreach([access](AstVarRef* varrefp) { varrefp->access(access); });
+            return newMemberSelp;
+        }
+        UASSERT_OBJ(VN_IS(exprp, VarRef), exprp, "Should be a VarRef");
+        return new AstVarRef{exprp->fileline(), VN_AS(modeVarp->user2p(), Class), modeVarp, access};
     }
     // Get or create a size variable for a constrained dynamic/queue/assoc array.
     // Returns the size variable. Sets wasCreated=true if a new variable was made.
@@ -3904,14 +3900,14 @@ class RandomizeVisitor final : public VNVisitor {
         storeStmtspr = AstNode::addNext(
             storeStmtspr,
             new AstAssign{fl, new AstVarRef{fl, randModeTmpVarp, VAccess::WRITE},
-                          makeRandModeRef(siblingExprp, randModeVarp, VAccess::READ)});
+                          makeModeVarRef(siblingExprp, randModeVarp, VAccess::READ)});
         storeStmtspr = AstNode::addNext(
             storeStmtspr,
-            makeModeSetLoop(fl, makeRandModeRef(siblingExprp, randModeVarp, VAccess::WRITE),
+            makeModeSetLoop(fl, makeModeVarRef(siblingExprp, randModeVarp, VAccess::WRITE),
                             new AstConst{fl, 0}, m_ftaskp));
         restoreStmtspr = AstNode::addNext(
             restoreStmtspr,
-            new AstAssign{fl, makeRandModeRef(siblingExprp, randModeVarp, VAccess::WRITE),
+            new AstAssign{fl, makeModeVarRef(siblingExprp, randModeVarp, VAccess::WRITE),
                           new AstVarRef{fl, randModeTmpVarp, VAccess::READ}});
         return randModeTmpVarp;
     }
@@ -4170,7 +4166,7 @@ class RandomizeVisitor final : public VNVisitor {
                 }
                 const RandomizeMode randMode = {.asInt = randVarp->user1()};
                 AstCMethodHard* setp = new AstCMethodHard{
-                    fl, makeRandModeRef(exprp, randModeVarp, VAccess::WRITE),
+                    fl, makeModeVarRef(exprp, randModeVarp, VAccess::WRITE),
                     VCMethod::ARRAY_AT_WRITE, new AstConst{fl, randMode.index}};
                 setp->dtypeSetUInt32();
                 setStmtsp

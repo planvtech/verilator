@@ -87,14 +87,8 @@ module t;
   DerivedS ds1, ds2;
   DerivedTwo dt1;
   StaticNoConstraint snc1;
-  int saved_sx;
-  int saved_dy;
-  bit [3:0] saved_base_sx;
-  bit [3:0] saved_base_s;
-  bit [3:0] saved_der_s;
-  bit [3:0] saved_base2_a;
-  bit [3:0] saved_base2_b;
-  int rok;
+  int saved_sx, saved_dy, rok;
+  bit [3:0] saved_base_sx, saved_base_s, saved_der_s, saved_base2_b;
 
   initial begin
     s1 = new;
@@ -245,7 +239,7 @@ module t;
     `checkd(ds2.base_s.rand_mode(), 0);  // shared
     `checkd(ds2.der_s.rand_mode(), 0);  // shared
     saved_base_s = BaseS::base_s;
-    saved_der_s  = DerivedS::der_s;
+    saved_der_s = DerivedS::der_s;
     repeat (10) begin
       rok = ds1.randomize();
       `checkd(rok, 1);
