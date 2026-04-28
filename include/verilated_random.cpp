@@ -331,9 +331,10 @@ void VlRandomVar::emitExtract(std::ostream& s, int i) const {
     s << " ((_ extract " << i << ' ' << i << ") " << m_name << ')';
 }
 void VlRandomVar::emitType(std::ostream& s) const { s << "(_ BitVec " << width() << ')'; }
+// Serialize the current runtime value as an SMT-LIB binary literal. Used by
+// randomize(null) to pin a var via `(assert (= var #b...))`. Binary (#b)
+// rather than hex (#x) sidesteps SMT-LIB's hex-width-multiple-of-4 rule.
 void VlRandomVar::emitConcreteValue(std::ostream& s) const {
-    // Emit #bNNN...N with the current runtime value, MSB first. Binary rather
-    // than hex avoids the hex-literal width-multiple-of-4 restriction.
     const int w = width();
     const void* const dp = datap(0);
     s << "#b";
@@ -473,11 +474,8 @@ bool VlRandomizer::next_check_only(VlRNG& rngr) {
 }
 
 bool VlRandomizer::next(VlRNG& rngr) {
-    // In check-only mode we still want to run the solver even without any
-    // registered vars (randomize(null) on a class with no rand members is a
-    // well-defined true). Regular calls short-circuit to avoid solver overhead.
     if (!m_checkOnly && m_vars.empty() && m_unique_arrays.empty()) return true;
-    if (m_checkOnly && m_vars.empty()) return true;
+    if (m_checkOnly && m_vars.empty()) return true;  // No rand members: trivially SAT
     for (const std::string& baseName : m_unique_arrays) {
         const auto it = m_vars.find(baseName);
         const uint32_t size = m_unique_array_sizes.at(baseName);
@@ -505,9 +503,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
         }
     }
 
-    // If solve-before constraints are present, use phased solving.
-    // In check-only mode every var is pinned to its current value, so phase
-    // ordering is irrelevant -- fall through to the main single-shot path.
+    // Pinned vars make phase ordering moot; skip phased path in check-only.
     if (!m_checkOnly && !m_solveBefore.empty()) return nextPhased(rngr);
 
     // Randc retry: if unsat due to randc exhaustion, clear history and retry once
@@ -531,11 +527,9 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << "(declare-fun " << var.first << " () ";
             var.second->emitType(os);
             os << ")\n";
-            // randomize(null): pin scalar rand variables to their current runtime
-            // values so the solver reports whether the existing values satisfy
-            // the constraints rather than picking new ones. V3Randomize rejects
-            // classes with array/container/class rand members for the null
-            // call, so every var seen here is scalar.
+            // Pin each var to its current value: SAT iff current values satisfy
+            // the constraints (IEEE 1800-2023 18.11). V3Randomize rejects
+            // arrays/containers/nested classes upstream, hence the assert.
             if (m_checkOnly) {
                 assert(var.second->dimension() == 0);
                 os << "(assert (= " << var.first << ' ';
@@ -548,12 +542,9 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << "(assert (= #b1 " << constraint << "))\n";
         }
 
-        // Randc: exclude previously used values to enforce cyclic non-repetition.
-        // Skipped in check-only mode: IEEE 1800-2023 18.11 only asks that
-        // declared constraints are validated; the randc exclusion history is
-        // solver-cycle bookkeeping that would make the pin trivially UNSAT
-        // (pinned value equals the last randc-chosen value now in the exclusion
-        // set).
+        // randc exclusions vs. a pinned current value would make every check
+        // trivially UNSAT after the first cycle. IEEE 1800-2023 18.11 asks
+        // only that declared constraints hold, not randc history.
         if (!m_checkOnly) emitRandcExclusions(os);
 
         const size_t nSoft = m_softConstraints.size();
@@ -597,11 +588,10 @@ bool VlRandomizer::next(VlRNG& rngr) {
                 m_randcUsedValues.clear();
                 continue;  // Retry without exclusions
             }
-            // In check-only mode the unsat is exactly the answer the caller
-            // wants (IEEE 1800-2023 18.11 -> 0). The unsat-core diagnostic
-            // re-declares vars WITHOUT pinning, which would otherwise let the
-            // solver respond "sat" and parseSolution write arbitrary values
-            // back over the user's current state -- so skip it.
+            // Skip the unsat-core path in check-only: it re-declares vars
+            // without pinning, so parseSolution would clobber user state with
+            // the solver's free assignment. Plain false is the correct answer
+            // (IEEE 1800-2023 18.11).
             if (m_checkOnly) return false;
             // Genuine unsat: report via unsat-core
             os << "(set-option :produce-unsat-cores true)\n";
@@ -628,9 +618,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             return false;
         }
 
-        // Skip the diversity hash-salt loop in check-only: every var is pinned
-        // so additional asserts cannot improve distribution, and every round
-        // forces an extra solver call.
+        // Pinned vars: salting cannot diversify, only burn solver calls.
         if (!m_checkOnly) {
             for (int i = 0; i < _VL_SOLVER_HASH_LEN_TOTAL && sat; ++i) {
                 os << "(assert ";
@@ -642,9 +630,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             }
         }
 
-        // Record solved randc values for future exclusion. Skipped in
-        // check-only mode so IEEE 1800-2023 18.11 "only checks constraints"
-        // does not mutate randc cycle state.
+        // IEEE 1800-2023 18.11: check-only must not advance randc cycle state.
         if (!m_checkOnly) recordRandcValues();
 
         os << "(reset)\n";

@@ -6,45 +6,47 @@
 
 class FooQ;
   rand int q[$];
-  int x;
-  constraint c {x >= 0;}
 endclass
 
 class FooU;
   rand int u[3];
-  int x;
-  constraint c {x >= 0;}
 endclass
 
 class FooD;
   rand int d[];
-  int x;
-  constraint c {x >= 0;}
 endclass
 
 class FooA;
   rand int a[string];
-  int x;
-  constraint c {x >= 0;}
 endclass
 
 class FooW;
   rand int w[*];
-  int x;
-  constraint c {x >= 0;}
+endclass
+
+class Inner;
+  rand int x;
+  constraint c_in {x > 0;}
+endclass
+
+class Outer;
+  rand Inner inner;
 endclass
 
 module t;
   initial begin
-    automatic FooQ fq = new;
-    automatic FooU fu = new;
-    automatic FooD fd = new;
-    automatic FooA fa = new;
-    automatic FooW fw = new;
+    automatic FooQ  fq = new;
+    automatic FooU  fu = new;
+    automatic FooD  fd = new;
+    automatic FooA  fa = new;
+    automatic FooW  fw = new;
+    automatic Outer o  = new;
+    o.inner = new;
     void'(fq.randomize(null));
     void'(fu.randomize(null));
     void'(fd.randomize(null));
     void'(fa.randomize(null));
     void'(fw.randomize(null));
+    void'(o.randomize(null));
   end
 endmodule
