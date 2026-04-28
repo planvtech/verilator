@@ -527,9 +527,9 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << "(declare-fun " << var.first << " () ";
             var.second->emitType(os);
             os << ")\n";
-            // Pin each var to its current value: SAT iff current values satisfy
-            // the constraints (IEEE 1800-2023 18.11). V3Randomize rejects
-            // arrays/containers/nested classes upstream, hence the assert.
+            // Pin each var to its current value: SAT iff the current values
+            // satisfy the constraints. V3Randomize rejects non-scalar rand
+            // members upstream, hence the assert.
             if (m_checkOnly) {
                 assert(var.second->dimension() == 0);
                 os << "(assert (= " << var.first << ' ';
@@ -543,8 +543,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
         }
 
         // randc exclusions vs. a pinned current value would make every check
-        // trivially UNSAT after the first cycle. IEEE 1800-2023 18.11 asks
-        // only that declared constraints hold, not randc history.
+        // trivially UNSAT after the first cycle.
         if (!m_checkOnly) emitRandcExclusions(os);
 
         const size_t nSoft = m_softConstraints.size();
@@ -590,8 +589,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             }
             // Skip the unsat-core path in check-only: it re-declares vars
             // without pinning, so parseSolution would clobber user state with
-            // the solver's free assignment. Plain false is the correct answer
-            // (IEEE 1800-2023 18.11).
+            // the solver's free assignment.
             if (m_checkOnly) return false;
             // Genuine unsat: report via unsat-core
             os << "(set-option :produce-unsat-cores true)\n";
@@ -630,7 +628,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             }
         }
 
-        // IEEE 1800-2023 18.11: check-only must not advance randc cycle state.
+        // Check-only must not advance randc cycle state.
         if (!m_checkOnly) recordRandcValues();
 
         os << "(reset)\n";

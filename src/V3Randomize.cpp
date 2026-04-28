@@ -613,8 +613,7 @@ class RandomizeMarkVisitor final : public VNVisitor {
                 UASSERT_OBJ(constp->num().isNull(), constp,
                             "Non-null AstConst arg to randomize() should have been "
                             "rejected by V3Width");
-                // SMT pin only handles scalars; IEEE 1800-2023 18.11 does not
-                // cascade into nested classes' constraints.
+                // SMT pin only handles scalars; nested-class constraints don't cascade.
                 const bool hasUnsupportedMember
                     = classp->existsMember([](const AstClass*, const AstVar* memberVarp) {
                           if (!memberVarp->rand().isRandomizable()) return false;
@@ -626,7 +625,7 @@ class RandomizeMarkVisitor final : public VNVisitor {
                 if (hasUnsupportedMember) {
                     nodep->v3warn(E_UNSUPPORTED,
                                   "Unsupported: 'randomize(null)' on class with rand "
-                                  "container or class member (IEEE 1800-2023 18.11)");
+                                  "container or class member");
                 }
                 continue;
             }
@@ -4032,8 +4031,8 @@ class RandomizeVisitor final : public VNVisitor {
     // Handle inline random variable control. After this, the randomize() call has no args
     void handleRandomizeArgs(AstNodeFTaskRef* const nodep) {
         if (!nodep->argsp()) return;
-        // Strip the null literal arg (IEEE 1800-2023 18.11). V3Width already
-        // rejected mixed/non-null AstConst args.
+        // Strip the null literal arg. V3Width already rejected mixed/non-null
+        // AstConst args.
         bool hasNullArg = false;
         for (AstArg *argp = nodep->argsp(), *nextp = nullptr; argp; argp = nextp) {
             nextp = VN_AS(argp->nextp(), Arg);
@@ -4108,7 +4107,6 @@ class RandomizeVisitor final : public VNVisitor {
             argp->unlinkFrBack()->deleteTree();
         }
         if (hasNullArg) {  // Re-point to the per-class __Vrandomize_null wrapper
-
             AstClass* targetClassp = nullptr;
             AstMethodCall* const methodCallp = VN_CAST(nodep, MethodCall);
             if (methodCallp) {
@@ -4159,7 +4157,7 @@ class RandomizeVisitor final : public VNVisitor {
         AstFunc* const funcp = V3Randomize::newRandomizeFunc(m_memberMap, classp, name);
         AstVar* const fvarp = VN_AS(funcp->fvarp(), Var);
 
-        // 1. pre_randomize -- always (IEEE 1800-2023 18.6.2)
+        // 1. pre_randomize -- always
         addPrePostCall(classp, funcp, "pre_randomize");
 
         // 2. Compute result
@@ -4181,7 +4179,7 @@ class RandomizeVisitor final : public VNVisitor {
             classp->needRNG(true);
         }
 
-        // 3. post_randomize -- only if result is non-zero (IEEE 1800-2023 18.6.3)
+        // 3. post_randomize -- only if result is non-zero
         if (AstTask* const userPostp = findPrePostTask(classp, "post_randomize")) {
             AstTaskRef* const callp = new AstTaskRef{userPostp->fileline(), userPostp};
             funcp->addStmtsp(
