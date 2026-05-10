@@ -10,12 +10,8 @@
 `define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
 // verilog_format: on
 
-// IEEE 1800-2023 16.14.6: procedural concurrent assertion with clock inferred
-// from the enclosing always. Procedural control flow (if/case/loop) gates the
-// assertion attempt -- it starts a new evaluation only when procedural flow
-// reaches the statement. This test exercises an if-gated procedural concurrent
-// assertion against a module-scope reference assertion to confirm the gate is
-// preserved.
+// IEEE 1800-2023 16.14.6: if-gated procedural concurrent assertion vs
+// module-scope reference; counts must diverge to prove the gate is preserved.
 
 module t (
     input clk
@@ -47,8 +43,8 @@ module t (
 
   always @(posedge clk) begin
 `ifdef TEST_VERBOSE
-    $write("[%0t] cyc==%0d crc=%x rst_l=%b req=%b gnt=%b gated=%0d ref=%0d\n",
-           $time, cyc, crc, rst_l, req, gnt, count_gated, count_ref);
+    $write("[%0t] cyc==%0d crc=%x rst_l=%b req=%b gnt=%b gated=%0d ref=%0d\n", $time, cyc, crc,
+           rst_l, req, gnt, count_gated, count_ref);
 `endif
     cyc <= cyc + 1;
     crc <= {crc[62:0], crc[63] ^ crc[2] ^ crc[0]};
