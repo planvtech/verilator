@@ -1715,10 +1715,11 @@ class AssertNfaVisitor final : public VNVisitor {
                 = new AstSenTree{propSpecp->fileline(), propSpecp->sensesp()->cloneTree(true)};
             senTreeOwned = true;
         }
-        // IEEE 1800-2023 16.14.6: an assertion with no explicit clocking_event
-        // inherits the enclosing module's default clocking. V3AssertPre resolves
-        // this in a later pass for the assertions it still sees, but NFA runs
-        // first and must do its own lookup before bailing out on a missing clock.
+        // IEEE 1800-2023 14.12 (Default clocking) + 16.14.7 (Inferred clocking):
+        // an assertion with no explicit clocking_event inherits the enclosing
+        // module's default clocking. V3AssertPre resolves this in a later pass
+        // for the assertions it still sees, but NFA runs first and must do its
+        // own lookup before bailing out on a missing clock.
         if (!senTreep && m_defaultClockingSenip) {
             senTreep
                 = new AstSenTree{propSpecp->fileline(), m_defaultClockingSenip->cloneTree(true)};
