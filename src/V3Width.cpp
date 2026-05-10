@@ -1647,7 +1647,7 @@ class WidthVisitor final : public VNVisitor {
             nodep->dtypeSetBit();
         }
     }
-    // IEEE 1800-2023 16.16 property abort operators. Condition is a 1-bit
+    // IEEE 1800-2023 16.12.14 property abort operators. Condition is a 1-bit
     // expression_or_dist; body is a property_expr.
     void visit(AstAcceptOn* nodep) override {
         assertAtExpr(nodep);

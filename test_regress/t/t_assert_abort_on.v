@@ -47,13 +47,13 @@ module t (
   else fail4++;
 
   // Test 5: nested accept_on(acond) reject_on(rcond) (a |-> b).
-  // Priority: accept dominates reject (IEEE 1800-2023 16.16 Example 16-23).
+  // Priority: accept dominates reject (IEEE 1800-2023 16.12.14 closing example).
   assert property (@(posedge clk) accept_on(acond) reject_on(rcond) (a |-> b))
     pass5++;
   else fail5++;
 
   // Test 6: negated abort. `not accept_on(c) P` swaps roles (IEEE 1800-2023
-  // 16.12.1): accept-firing becomes a FAIL, reject-firing becomes a PASS,
+  // 16.12.3): accept-firing becomes a FAIL, reject-firing becomes a PASS,
   // and the underlying verdict is the negation of P.
   assert property (@(posedge clk) not accept_on(acond) b) pass6++;
   else fail6++;

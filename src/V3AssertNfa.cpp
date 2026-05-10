@@ -1367,7 +1367,7 @@ class AssertNfaVisitor final : public VNVisitor {
     V3UniqueNames m_abortCntNames{"__VnfaAbort"};  // Async abort counter names
     std::set<const AstProperty*> m_inliningProps;  // Recursion guard for inlineNamedProperty
 
-    // Property abort operator descriptor; IEEE 1800-2023 16.16.
+    // Property abort operator descriptor; IEEE 1800-2023 16.12.14.
     struct AbortSpec final {
         enum Kind : uint8_t { ACCEPT, REJECT };
         Kind kind;
@@ -1840,7 +1840,7 @@ class AssertNfaVisitor final : public VNVisitor {
         const bool isCover = VN_IS(assertp, Cover);
 
         // Peel leading `not` wrappers off the property body before peeling
-        // aborts; each `not` flips `outerNegated`. IEEE 1800-2023 16.12.1. This
+        // aborts; each `not` flips `outerNegated`. IEEE 1800-2023 16.12.3. This
         // keeps `not accept_on(c) P` reachable through the abort path (the
         // wrapped `LogNot` would otherwise block the abort from being seen
         // at the "top" of the property body).
@@ -1852,7 +1852,7 @@ class AssertNfaVisitor final : public VNVisitor {
             VL_DO_DANGLING(pushDeletep(notp), notp);
         }
 
-        // IEEE 1800-2023 16.16: peel accept_on / reject_on / sync_accept_on /
+        // IEEE 1800-2023 16.12.14: peel accept_on / reject_on / sync_accept_on /
         // sync_reject_on wrappers off the top of the property body. Outer-first
         // order; bodies bubble up in place.
         std::vector<AbortSpec> abortSpecs;
@@ -1871,8 +1871,9 @@ class AssertNfaVisitor final : public VNVisitor {
         if (nestedAbort) {
             assertp->v3warn(E_UNSUPPORTED,
                             "Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on"
-                            " only supported at the top of a property expression"
-                            " (IEEE 1800-2023 16.16)");
+                            " nested inside |-> implication RHS or sub-sequence body"
+                            " is not yet implemented in the NFA path"
+                            " (IEEE 1800-2023 16.12.14 permits this nesting)");
             for (AbortSpec& s : abortSpecs) {
                 if (s.condp) VL_DO_DANGLING(pushDeletep(s.condp), s.condp);
             }
@@ -1887,7 +1888,7 @@ class AssertNfaVisitor final : public VNVisitor {
         const PropertyParts parts = decomposeProperty(propSpecp);
         UASSERT_OBJ(parts.seqExprp, propSpecp, "Property body must be an expression");
 
-        // Unwrap `not` (IEEE 1800-2023 16.12.1); odd count -> negated semantics.
+        // Unwrap `not` (IEEE 1800-2023 16.12.3); odd count -> negated semantics.
         // `outerNegated` captured top-level `not`s stripped before abort peel.
         AstNodeExpr* seqBodyp = parts.seqExprp;
         bool negated = outerNegated;
@@ -1938,8 +1939,8 @@ class AssertNfaVisitor final : public VNVisitor {
                                  snapshotVarp, needPerSrcFail ? &requiredStepSrcs : nullptr);
 
         // Fold property abort operators into the lowered output (IEEE 1800-2023
-        // 16.16). Priority: disable iff > accept > reject > underlying verdict.
-        // Under `not` (IEEE 16.12.1) the property semantic flips, so accept and
+        // 16.12.14). Priority: disable iff > accept > reject > underlying verdict.
+        // Under `not` (IEEE 16.12.3) the property semantic flips, so accept and
         // reject swap roles.
         std::vector<AbortCtx> abortCtxs;
         if (!abortSpecs.empty()) {

@@ -557,7 +557,7 @@ public:
 
 // === AstNodeExpr ===
 class AstAcceptOn final : public AstNodeExpr {
-    // SVA abort operator `accept_on (cond) prop` (IEEE 1800-2023 16.16).
+    // SVA abort operator `accept_on (cond) prop` (IEEE 1800-2023 16.12.14).
     // Async: abort condition sampled at every Observed tick.
     // @astgen op1 := condp : AstNodeExpr
     // @astgen op2 := propp : AstNodeExpr
@@ -2113,7 +2113,7 @@ public:
     bool sameNode(const AstNode* /*samep*/) const override { return true; }
 };
 class AstRejectOn final : public AstNodeExpr {
-    // SVA abort operator `reject_on (cond) prop` (IEEE 1800-2023 16.16).
+    // SVA abort operator `reject_on (cond) prop` (IEEE 1800-2023 16.12.14).
     // Async: abort condition sampled at every Observed tick.
     // @astgen op1 := condp : AstNodeExpr
     // @astgen op2 := propp : AstNodeExpr
@@ -2599,7 +2599,7 @@ public:
     int instrCount() const override { return widthInstrs(); }
 };
 class AstSyncAcceptOn final : public AstNodeExpr {
-    // SVA abort operator `sync_accept_on (cond) prop` (IEEE 1800-2023 16.16).
+    // SVA abort operator `sync_accept_on (cond) prop` (IEEE 1800-2023 16.12.14).
     // Sync: abort condition sampled at matured clocking edge.
     // @astgen op1 := condp : AstNodeExpr
     // @astgen op2 := propp : AstNodeExpr
@@ -2620,7 +2620,7 @@ public:
     bool isMultiCycleSva() const override { return true; }
 };
 class AstSyncRejectOn final : public AstNodeExpr {
-    // SVA abort operator `sync_reject_on (cond) prop` (IEEE 1800-2023 16.16).
+    // SVA abort operator `sync_reject_on (cond) prop` (IEEE 1800-2023 16.12.14).
     // Sync: abort condition sampled at matured clocking edge.
     // @astgen op1 := condp : AstNodeExpr
     // @astgen op2 := propp : AstNodeExpr
