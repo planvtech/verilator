@@ -72,7 +72,7 @@ endmodule
 //
 // Covers:
 //   - class task $assertoff / $asserton
-//   - class static method $assertcontrol(Off=4 / On=3), IEEE 1800-2023 Table 20-6
+//   - class static method $assertcontrol(Off=4 / On=3), IEEE 1800-2023 Table 20-5
 //   - $assertkill from a class method
 //   - assert that lives inside a class method (obeys context-global gating)
 //   - interface function $assertoff / $asserton
@@ -81,27 +81,47 @@ endmodule
 //   - interface class (AstClass with isInterfaceClass) via a concrete impl
 
 interface AssertCtlIf;
-  function void suppress();            $assertoff; endfunction
-  function void enable();              $asserton;  endfunction
-  function void check_positive(int v); assert (v > 0); endfunction
+  function void suppress();
+    $assertoff;
+  endfunction
+  function void enable();
+    $asserton;
+  endfunction
+  function void check_positive(int v);
+    assert (v > 0);
+  endfunction
 endinterface
 
+// verilog_format: off  (verible-verilog-format mangles `pure virtual function`)
 interface class IAssertCtl;
   pure virtual function void suppress();
   pure virtual function void enable();
 endclass
+// verilog_format: on
 
 class IAssertCtlImpl implements IAssertCtl;
-  virtual function void suppress(); $assertoff; endfunction
-  virtual function void enable();   $asserton;  endfunction
+  virtual function void suppress();
+    $assertoff;
+  endfunction
+  virtual function void enable();
+    $asserton;
+  endfunction
 endclass
 
 module module_with_method_ctl;
   class Ctl;
-    static function void off_all();      $assertcontrol(4); endfunction
-    static function void on_all();       $asserton;         endfunction
-    function void kill_all();            $assertkill;       endfunction
-    function void check_positive(int v); assert (v > 0); endfunction
+    static function void off_all();
+      $assertcontrol(4);
+    endfunction
+    static function void on_all();
+      $asserton;
+    endfunction
+    function void kill_all();
+      $assertkill;
+    endfunction
+    function void check_positive(int v);
+      assert (v > 0);
+    endfunction
   endclass
 
   Ctl c;
@@ -110,24 +130,24 @@ module module_with_method_ctl;
   IAssertCtlImpl impl;
 
   initial begin
-    c    = new;
+    c = new;
     impl = new;
 
     // --- class method coverage ---
     Ctl::off_all();
-    assert (0);                // gated via class static -> no fire
+    assert (0);  // gated via class static -> no fire
     Ctl::on_all();
-    assert (0);                // fires
+    assert (0);  // fires
     Ctl::off_all();
-    c.check_positive(-1);      // assert inside class method, gated -> no fire
+    c.check_positive(-1);  // assert inside class method, gated -> no fire
     Ctl::on_all();
-    c.check_positive(-2);      // assert inside class method, fires
+    c.check_positive(-2);  // assert inside class method, fires
 
     // --- interface function coverage ---
     iface.suppress();
-    assert (0);                // gated via iface fn -> no fire
+    assert (0);  // gated via iface fn -> no fire
     iface.enable();
-    assert (0);                // fires
+    assert (0);  // fires
     iface.suppress();
     iface.check_positive(-1);  // assert inside iface fn, gated -> no fire
     iface.enable();
@@ -135,18 +155,18 @@ module module_with_method_ctl;
 
     // --- virtual interface handle ---
     vif.suppress();
-    assert (0);                // gated via virtual iface handle -> no fire
+    assert (0);  // gated via virtual iface handle -> no fire
     vif.enable();
-    assert (0);                // fires
+    assert (0);  // fires
 
     // --- interface class via concrete impl ---
     impl.suppress();
-    assert (0);                // gated via interface-class impl -> no fire
+    assert (0);  // gated via interface-class impl -> no fire
     impl.enable();
-    assert (0);                // fires
+    assert (0);  // fires
 
-    // --- $assertkill (last: terminal per IEEE 1800-2023 Table 20-6) ---
+    // --- $assertkill (last: terminal per IEEE 1800-2023 Table 20-5) ---
     c.kill_all();
-    assert (0);                // killed -> no fire
+    assert (0);  // killed -> no fire
   end
 endmodule
