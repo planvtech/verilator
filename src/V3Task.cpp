@@ -246,8 +246,14 @@ private:
         UASSERT_OBJ(nodep->taskp(), nodep, "Unlinked task");
         TaskFTaskVertex* const taskVtxp = getFTaskVertex(nodep->taskp());
         new TaskEdge{&m_callGraph, m_curVxp, taskVtxp};
-        if (isVirtualIfaceMethodCall(nodep) && isIfaceFTaskScope(getScope(nodep->taskp()))) {
-            taskVtxp->needsNonInlineCFunc(true);
+        // Upstream PR #7505 regression: visit(AstNodeFTaskRef) can fire before
+        // the target FTask's AstScope has been visited (cross-scope virtual-iface
+        // method call), leaving user3p null. Virtual-iface MethodCalls always
+        // target an iface FTask, so mark unconditionally when scope is not yet
+        // known; otherwise verify the scope as before.
+        if (isVirtualIfaceMethodCall(nodep)) {
+            const AstScope* const scopep = VN_CAST(nodep->taskp()->user3p(), Scope);
+            if (!scopep || isIfaceFTaskScope(scopep)) taskVtxp->needsNonInlineCFunc(true);
         }
         // Do we have to disable inlining the function?
         const V3TaskConnects tconnects = V3Task::taskConnects(nodep, nodep->taskp()->stmtsp());
