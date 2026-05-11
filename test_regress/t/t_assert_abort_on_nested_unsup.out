@@ -1,18 +1,18 @@
-%Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:10:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
-                                                           : ... note: In instance 't'
-   10 |   assert property (@(posedge clk) a |-> accept_on(b) c);
-      |   ^~~~~~
-                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:11:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
-                                                           : ... note: In instance 't'
-   11 |   assert property (@(posedge clk) a |-> reject_on(b) c);
-      |   ^~~~~~
 %Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:12:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
                                                            : ... note: In instance 't'
-   12 |   assert property (@(posedge clk) a |-> sync_accept_on(b) c);
+   12 |   assert property (@(posedge clk) a |-> accept_on (b) c);
       |   ^~~~~~
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
 %Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:13:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
                                                            : ... note: In instance 't'
-   13 |   assert property (@(posedge clk) a |-> sync_reject_on(b) c);
+   13 |   assert property (@(posedge clk) a |-> reject_on (b) c);
+      |   ^~~~~~
+%Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:14:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
+                                                           : ... note: In instance 't'
+   14 |   assert property (@(posedge clk) a |-> sync_accept_on (b) c);
+      |   ^~~~~~
+%Error-UNSUPPORTED: t/t_assert_abort_on_nested_unsup.v:15:3: Unsupported: accept_on/reject_on/sync_accept_on/sync_reject_on nested inside |-> implication RHS or sub-sequence body is not yet implemented in the NFA path (IEEE 1800-2023 16.12.14 permits this nesting)
+                                                           : ... note: In instance 't'
+   15 |   assert property (@(posedge clk) a |-> sync_reject_on (b) c);
       |   ^~~~~~
 %Error: Exiting due to
