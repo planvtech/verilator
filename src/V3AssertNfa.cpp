@@ -2085,6 +2085,7 @@ class AssertNfaVisitor final : public VNVisitor {
             for (AbortSpec& s : abortSpecs) {
                 if (s.condp) VL_DO_DANGLING(pushDeletep(s.condp), s.condp);
             }
+            if (senTreeOwned) VL_DO_DANGLING(pushDeletep(senTreep), senTreep);
             return;
         }
 
