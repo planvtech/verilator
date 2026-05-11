@@ -1848,6 +1848,30 @@ class AssertNfaVisitor final : public VNVisitor {
         AstNode* const propp = assertp->propp();
         if (!hasMultiCycleExpr(propp)) return;
 
+        // Bare 'until' (no other multi-cycle ops) is still lowered by
+        // V3AssertPre via AstLoop. Inside a multi-cycle property, the NFA
+        // builder has no AstUntil dispatch, so bail with E_UNSUPPORTED.
+        AstUntil* untilp = nullptr;
+        propp->exists([&](AstUntil* nodep) -> bool {
+            untilp = nodep;
+            return true;
+        });
+        if (untilp) {
+            if (untilp->isStrong()) {
+                untilp->v3warn(E_UNSUPPORTED, "Unsupported: s_until"
+                                                  << (untilp->isOverlapping() ? "_with" : "")
+                                                  << " in complex property expression");
+            } else {
+                untilp->v3warn(E_UNSUPPORTED, "Unsupported: 'until"
+                                                  << (untilp->isOverlapping() ? "_with" : "")
+                                                  << "' in complex property expression");
+            }
+            AstPropSpec* const propSpecp = VN_CAST(assertp->propp(), PropSpec);
+            UASSERT_OBJ(propSpecp, assertp, "Concurrent assertion must have PropSpec");
+            replaceBodyOnBuildError(assertp->fileline(), propSpecp, /*errorEmitted=*/true);
+            return;
+        }
+
         const PropertyParts parts = decomposeProperty(propp);
         UASSERT_OBJ(parts.seqExprp, propp, "Property body must be an expression");
 
