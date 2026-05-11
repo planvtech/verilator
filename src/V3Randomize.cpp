@@ -4821,8 +4821,7 @@ class RandomizeVisitor final : public VNVisitor {
                     // sizeVarp may live in a base class when the constrained
                     // array is inherited; route VarRef through its declaring
                     // class so V3Scope can resolve it.
-                    AstVarRef* const sizeVarRefp
-                        = new AstVarRef{fl, sizeVarp, VAccess::READ};
+                    AstVarRef* const sizeVarRefp = new AstVarRef{fl, sizeVarp, VAccess::READ};
                     sizeVarRefp->classOrPackagep(VN_AS(sizeVarp->user2p(), NodeModule));
                     pinp->addPinsp(sizeVarRefp);
                     randomizep->addStmtsp(pinp->makeStmt());
