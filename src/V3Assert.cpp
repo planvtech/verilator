@@ -430,9 +430,7 @@ class AssertVisitor final : public VNVisitor {
                 return;  // Later iterate will pick up
             }
             sentreep->unlinkFrBack();
-            if (m_procedurep) {
-                VL_DO_DANGLING(pushDeletep(sentreep), sentreep);
-            }
+            if (m_procedurep) { VL_DO_DANGLING(pushDeletep(sentreep), sentreep); }
         }
         //
         const string& message = nodep->name();
