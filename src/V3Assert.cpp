@@ -431,15 +431,8 @@ class AssertVisitor final : public VNVisitor {
             }
             sentreep->unlinkFrBack();
             if (m_procedurep) {
-                // Clock inferred from enclosing always (IEEE 1800-2023
-                // 16.14.6): procedural control flow (if/case/loop) gates the
-                // assertion attempt. The sentree is redundant -- the enclosing
-                // always drives activation and V3AssertPre already wrapped
-                // sampled reads.
                 VL_DO_DANGLING(pushDeletep(sentreep), sentreep);
             }
-            // else: !m_procedurep -- sentreep stays alive, reused below to
-            // wrap the body in an AstAlways.
         }
         //
         const string& message = nodep->name();
