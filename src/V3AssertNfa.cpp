@@ -679,8 +679,7 @@ class SvaNfaBuilder final {
         // Falls through to single-end behavior when both branches are simple
         // boolean leaves (lhs.termVertexp == rhs.termVertexp == entryVtxp);
         // mergeVtxp's OR-fold already matches IEEE there.
-        if (m_isCoverSeq
-            && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
+        if (m_isCoverSeq && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
             std::vector<SvaStateVertex*> mids;
             SvaStateVertex* const lhsTrigp = scopedCreateVertex();
             if (lhs.finalCondp) {
@@ -1679,9 +1678,7 @@ class AssertNfaVisitor final : public VNVisitor {
         // Skip the main term Link when midSources already cover every
         // end-of-match (cover_sequence path); otherwise the per-mid extraction
         // double-counts via the merge vertex.
-        if (!result.termIsMidMerge) {
-            graph.addLink(result.termVertexp, graph.m_matchVertexp);
-        }
+        if (!result.termIsMidMerge) { graph.addLink(result.termVertexp, graph.m_matchVertexp); }
         for (SvaStateVertex* srcVtxp : result.midSources) {
             AstNodeExpr* condp = nullptr;
             for (AstNodeExpr* const tc : srcVtxp->m_throughoutConds) {
@@ -2063,12 +2060,11 @@ class AssertNfaVisitor final : public VNVisitor {
         std::vector<AstNodeExpr*> perMidSrcs;
 
         AstNodeExpr* const alwaysTriggerp = new AstConst{flp, AstConst::BitTrue{}};
-        AstNodeExpr* const outputExprp
-            = m_loweringp->lower(flp, graph, alwaysTriggerp, senTreep, result.finalCondp, isCover,
-                                 disableExprp ? disableExprp->cloneTreePure(false) : nullptr,
-                                 negated, needMatch ? &matchExprp : nullptr, disableCntVarp,
-                                 snapshotVarp, needPerSrcFail ? &requiredStepSrcs : nullptr,
-                                 isCoverSeq ? &perMidSrcs : nullptr);
+        AstNodeExpr* const outputExprp = m_loweringp->lower(
+            flp, graph, alwaysTriggerp, senTreep, result.finalCondp, isCover,
+            disableExprp ? disableExprp->cloneTreePure(false) : nullptr, negated,
+            needMatch ? &matchExprp : nullptr, disableCntVarp, snapshotVarp,
+            needPerSrcFail ? &requiredStepSrcs : nullptr, isCoverSeq ? &perMidSrcs : nullptr);
 
         AstSenTree* const perSrcSenTreep
             = (requiredStepSrcs.size() >= 2) ? senTreep->cloneTree(false) : nullptr;
