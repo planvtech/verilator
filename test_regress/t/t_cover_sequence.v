@@ -4,65 +4,66 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-module t (/*AUTOARG*/
-   // Inputs
-   clk
-   );
+// verilog_format: off
+`define stop $stop
+`define checkh(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0x exp=%0x (%s !== %s)\n", `__FILE__,`__LINE__, (gotv), (expv), `"gotv`", `"expv`"); `stop; end while(0);
+`define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
+// verilog_format: on
 
-   input clk;
-   logic [63:0] crc = 64'h5aef0c8dd70a4497;
-   logic rst_n = 1'b0;
-   logic a, b, c, d, e;
-   int   cyc = 0;
+module t (
+    input clk
+);
 
-   int   hit_simple = 0;
-   int   hit_clocked = 0;
-   int   hit_clocked_disable = 0;
-   int   hit_default_disable = 0;
+  logic [63:0] crc = 64'h5aef0c8dd70a4497;
+  logic rst_n = 1'b0;
+  logic a, b, c, d, e;
+  int cyc = 0;
 
-   default clocking cb @(posedge clk);
-   endclocking
+  int hit_simple = 0;
+  int hit_clocked = 0;
+  int hit_clocked_disable = 0;
+  int hit_default_disable = 0;
 
-   always @(posedge clk) begin
-      if (cyc == 2) rst_n <= 1'b1;
-      crc <= {crc[62:0], crc[63] ^ crc[2] ^ crc[1] ^ crc[0]};
-      cyc <= cyc + 1;
-      if (cyc >= 99) begin
-         $write("*-* All Finished *-*\n");
-         $display("hit_simple=%0d hit_clocked=%0d hit_clocked_disable=%0d hit_default_disable=%0d",
-                  hit_simple, hit_clocked, hit_clocked_disable, hit_default_disable);
-         // Expect non-zero hits on every counter (non-vacuous match paths).
-         if (hit_simple == 0) $stop;
-         if (hit_clocked == 0) $stop;
-         if (hit_clocked_disable == 0) $stop;
-         if (hit_default_disable == 0) $stop;
-         $finish;
-      end
-   end
+  default clocking cb @(posedge clk);
+  endclocking
 
-   assign a = crc[0];
-   assign b = crc[5];
-   assign c = crc[10];
-   assign d = crc[15];
-   assign e = crc[20];
+  // Non-adjacent CRC bits to avoid LFSR shift correlation
+  assign a = crc[0];
+  assign b = crc[5];
+  assign c = crc[10];
+  assign d = crc[15];
+  assign e = crc[20];
 
-   // Form 1: cover sequence ( sexpr ) stmt
-   //   -- picks up default clocking, no disable iff
-   cover sequence (a | b | c | d | e) hit_simple++;
+  // Form 1: cover sequence ( sexpr ) stmt  -- default clocking, no disable
+  cover sequence (a | b | c | d | e) hit_simple++;
 
-   // Form 2: cover sequence ( clocking_event sexpr ) stmt
-   //   -- explicit clock, bounded range delay
-   cover sequence (@(posedge clk) (a | b | c | d | e) ##[1:3] b)
-     hit_clocked++;
+  // Form 2: cover sequence ( clocking_event sexpr ) stmt  -- explicit clock,
+  // bounded range delay (the case where IEEE "every end-of-match" diverges
+  // from cover_property's "one match per attempt" semantics)
+  cover sequence (@(posedge clk) (a | b | c | d | e) ##[1:3] b) hit_clocked++;
 
-   // Form 3: cover sequence ( clocking_event disable iff (expr) sexpr ) stmt
-   //   -- explicit clock + disable iff
-   cover sequence (@(posedge clk) disable iff (!rst_n) a ##1 b)
-     hit_clocked_disable++;
+  // Form 3: cover sequence ( clocking_event disable iff (expr) sexpr ) stmt
+  cover sequence (@(posedge clk) disable iff (!rst_n) a ##1 b) hit_clocked_disable++;
 
-   // Form 4: cover sequence ( disable iff (expr) sexpr ) stmt
-   //   -- default clocking + disable iff only
-   cover sequence (disable iff (!rst_n) a ##1 c)
-     hit_default_disable++;
+  // Form 4: cover sequence ( disable iff (expr) sexpr ) stmt  -- default clock
+  cover sequence (disable iff (!rst_n) a ##1 c) hit_default_disable++;
 
+  always @(posedge clk) begin
+`ifdef TEST_VERBOSE
+    $write("[%0t] cyc=%0d crc=%x a=%b b=%b c=%b d=%b e=%b\n",
+           $time, cyc, crc, a, b, c, d, e);
+`endif
+    cyc <= cyc + 1;
+    crc <= {crc[62:0], crc[63] ^ crc[2] ^ crc[1] ^ crc[0]};
+    if (cyc == 2) rst_n <= 1'b1;
+    if (cyc == 99) begin
+      `checkh(crc, 64'h261a9f1371d7aadf);
+      `checkd(hit_simple, 96);            // Questa:  95
+      `checkd(hit_clocked, 53);           // Questa: 149
+      `checkd(hit_clocked_disable, 28);   // Questa:  27
+      `checkd(hit_default_disable, 30);   // Questa:  30
+      $write("*-* All Finished *-*\n");
+      $finish;
+    end
+  end
 endmodule

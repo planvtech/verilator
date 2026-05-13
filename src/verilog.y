@@ -6498,20 +6498,33 @@ concurrent_assertion_statement<nodeStmtp>:  // ==IEEE: concurrent_assertion_stat
                         { $$ = new AstCover{$1, $4, $6, VAssertType::CONCURRENT}; }
         //                      // IEEE: cover_sequence_statement
         //                      // Reuses AstCover + AstPropSpec (same wrapper as
-        //                      // cover_property_statement above). V3AssertNfa lowers
-        //                      // via isCover=true; no dedicated AstCoverSeq needed.
+        //                      // cover_property_statement above) and the isCoverSeq
+        //                      // flag drives V3AssertNfa to fire stmt per end-of-match
+        //                      // (IEEE 1800-2023 16.18), not per property success.
         |       yCOVER ySEQUENCE '(' sexpr ')' stmt
-                        { $$ = new AstCover{$1, new AstPropSpec{$4->fileline(), nullptr, nullptr, $4},
-                                            $6, VAssertType::CONCURRENT}; }
+                        { AstCover* const coverp = new AstCover{$1,
+                              new AstPropSpec{$4->fileline(), nullptr, nullptr, $4},
+                              $6, VAssertType::CONCURRENT};
+                          coverp->isCoverSeq(true);
+                          $$ = coverp; }
         |       yCOVER ySEQUENCE '(' clocking_event sexpr ')' stmt
-                        { $$ = new AstCover{$1, new AstPropSpec{$4->fileline(), $4, nullptr, $5},
-                                            $7, VAssertType::CONCURRENT}; }
+                        { AstCover* const coverp = new AstCover{$1,
+                              new AstPropSpec{$4->fileline(), $4, nullptr, $5},
+                              $7, VAssertType::CONCURRENT};
+                          coverp->isCoverSeq(true);
+                          $$ = coverp; }
         |       yCOVER ySEQUENCE '(' clocking_event yDISABLE yIFF '(' expr/*expression_or_dist*/ ')' sexpr ')' stmt
-                        { $$ = new AstCover{$1, new AstPropSpec{$4->fileline(), $4, $8, $10},
-                                            $12, VAssertType::CONCURRENT}; }
+                        { AstCover* const coverp = new AstCover{$1,
+                              new AstPropSpec{$4->fileline(), $4, $8, $10},
+                              $12, VAssertType::CONCURRENT};
+                          coverp->isCoverSeq(true);
+                          $$ = coverp; }
         |       yCOVER ySEQUENCE '(' yDISABLE yIFF '(' expr/*expression_or_dist*/ ')' sexpr ')' stmt
-                        { $$ = new AstCover{$1, new AstPropSpec{$7->fileline(), nullptr, $7, $9},
-                                            $11, VAssertType::CONCURRENT}; }
+                        { AstCover* const coverp = new AstCover{$1,
+                              new AstPropSpec{$7->fileline(), nullptr, $7, $9},
+                              $11, VAssertType::CONCURRENT};
+                          coverp->isCoverSeq(true);
+                          $$ = coverp; }
         //                      // IEEE: restrict_property_statement
         |       yRESTRICT yPROPERTY '(' property_spec ')' ';'
                         { $$ = new AstRestrict{$1, $4}; }

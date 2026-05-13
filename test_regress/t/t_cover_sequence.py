@@ -11,12 +11,8 @@ import vltest_bootstrap
 
 test.scenarios('simulator')
 
-test.compile(timing_loop=True, verilator_flags2=['--assert', '--coverage-user', '--timing'])
+test.compile(timing_loop=True, verilator_flags2=['--assert', '--timing', '--coverage-user'])
 
 test.execute()
-
-test.file_grep(test.run_log_filename, r'\*-\* All Finished \*-\*')
-test.file_grep(test.run_log_filename,
-               r'hit_simple=\d+ hit_clocked=\d+ hit_clocked_disable=\d+ hit_default_disable=\d+')
 
 test.passes()
