@@ -58,9 +58,9 @@ module t (
     if (cyc == 2) rst_n <= 1'b1;
     if (cyc == 99) begin
       `checkh(crc, 64'h261a9f1371d7aadf);
-      `checkd(hit_simple, 96);            // Questa:  95
-      `checkd(hit_clocked, 53);           // Questa: 149
-      `checkd(hit_clocked_disable, 28);   // Questa:  27
+      `checkd(hit_simple, 96);            // Questa:  95 (single-sexpr sample-edge diff)
+      `checkd(hit_clocked, 149);          // IEEE 16.18: every end-of-match
+      `checkd(hit_clocked_disable, 28);   // Questa:  27 (sample-edge diff, ##1 single delay)
       `checkd(hit_default_disable, 30);   // Questa:  30
       $write("*-* All Finished *-*\n");
       $finish;
