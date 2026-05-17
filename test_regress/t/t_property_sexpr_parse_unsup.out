@@ -1,16 +1,16 @@
-%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:72:14: Logical operator IMPLICATION expects 1 bit on the RHS, but RHS's CMETHODHARD 'at' generates 8 bits.
+%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:78:14: Logical operator IMPLICATION expects 1 bit on the RHS, but RHS's CMETHODHARD 'at' generates 8 bits.
                                                      : ... note: In instance 't.ieee'
-   72 |     $rose(a) |-> q[0];
+   78 |     $rose(a) |-> q[0];
       |              ^~~
                      ... For warning description see https://verilator.org/warn/WIDTHTRUNC?v=latest
                      ... Use "/* verilator lint_off WIDTHTRUNC */" and lint_on around source to disable this message.
-%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:77:29: Logical operator SEXPR expects 1 bit on the exprp, but exprp's CMETHODHARD 'at' generates 8 bits.
+%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:83:29: Logical operator SEXPR expects 1 bit on the exprp, but exprp's CMETHODHARD 'at' generates 8 bits.
                                                      : ... note: In instance 't.ieee'
-   77 |     ($rose(a), l_b = b) |-> ##[3:10] q[l_b];
+   83 |     ($rose(a), l_b = b) |-> ##[3:10] q[l_b];
       |                             ^~
-%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:98:31: Logical operator SEXPR expects 1 bit on the exprp, but exprp's VARREF 'b' generates 32 bits.
-                                                     : ... note: In instance 't.ieee'
-   98 |   assert property (@clk not a ##1 b);
+%Warning-WIDTHTRUNC: t/t_property_sexpr_unsup.v:104:31: Logical operator SEXPR expects 1 bit on the exprp, but exprp's VARREF 'b' generates 32 bits.
+                                                      : ... note: In instance 't.ieee'
+  104 |   assert property (@clk not a ##1 b);
       |                               ^~
 %Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:45:44: Unsupported: 'until' in complex property expression
                                                     : ... note: In instance 't'
@@ -25,6 +25,18 @@
                                                     : ... note: In instance 't'
    55 |   assert property (@(posedge clk) (val ##1 val) |=> val until val) $display("[%0t] until on implication consequent, fileline:%d", $time, 55);
       |                                                         ^~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:57:57: Unsupported: 'until_with' in complex property expression
+                                                    : ... note: In instance 't'
+   57 |   assert property (@(posedge clk) (val ##1 val) |=> val until_with val) $display("[%0t] until_with on implication consequent, fileline:%d", $time, 57);
+      |                                                         ^~~~~~~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:59:57: Unsupported: s_until in complex property expression
+                                                    : ... note: In instance 't'
+   59 |   assert property (@(posedge clk) (val ##1 val) |=> val s_until val) $display("[%0t] s_until on implication consequent, fileline:%d", $time, 59);
+      |                                                         ^~~~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:61:57: Unsupported: s_until_with in complex property expression
+                                                    : ... note: In instance 't'
+   61 |   assert property (@(posedge clk) (val ##1 val) |=> val s_until_with val) $display("[%0t] s_until_with on implication consequent, fileline:%d", $time, 61);
+      |                                                         ^~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:47:49: Unsupported: 'until' in complex property expression
                                                     : ... note: In instance 't'
    47 |   assert property (@(posedge clk) val until val until val) $display("[%0t] nested until, fileline:%d", $time, 47);

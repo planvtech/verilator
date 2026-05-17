@@ -11,6 +11,18 @@
                                                     : ... note: In instance 't'
    55 |   assert property (@(posedge clk) (val ##1 val) |=> val until val) $display("[%0t] until on implication consequent, fileline:%d", $time, 55);
       |                                                         ^~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:57:57: Unsupported: 'until_with' in complex property expression
+                                                    : ... note: In instance 't'
+   57 |   assert property (@(posedge clk) (val ##1 val) |=> val until_with val) $display("[%0t] until_with on implication consequent, fileline:%d", $time, 57);
+      |                                                         ^~~~~~~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:59:57: Unsupported: s_until in complex property expression
+                                                    : ... note: In instance 't'
+   59 |   assert property (@(posedge clk) (val ##1 val) |=> val s_until val) $display("[%0t] s_until on implication consequent, fileline:%d", $time, 59);
+      |                                                         ^~~~~~~
+%Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:61:57: Unsupported: s_until_with in complex property expression
+                                                    : ... note: In instance 't'
+   61 |   assert property (@(posedge clk) (val ##1 val) |=> val s_until_with val) $display("[%0t] s_until_with on implication consequent, fileline:%d", $time, 61);
+      |                                                         ^~~~~~~~~~~~
 %Error-UNSUPPORTED: t/t_property_sexpr_unsup.v:47:49: Unsupported: 'until' in complex property expression
                                                     : ... note: In instance 't'
    47 |   assert property (@(posedge clk) val until val until val) $display("[%0t] nested until, fileline:%d", $time, 47);
