@@ -215,6 +215,14 @@ class SvaNfaBuilder final {
         return guardp;
     }
 
+    // IEEE 1800-2023 16.18: cover sequence counts every end-of-match. Some
+    // enclosing operators forward only a sub-sequence's final end, so a
+    // sub-sequence that itself has several ends would be under-counted. Detect
+    // that case so the builder can reject it rather than emit a wrong count.
+    bool coverSeqDropsEnds(const BuildResult& sub) const {
+        return m_isCoverSeq && (!sub.midSources.empty() || sub.termIsMidMerge);
+    }
+
     static int getConstInt(AstNodeExpr* exprp) {
         AstNodeExpr* const constp = V3Const::constifyEdit(exprp->cloneTreePure(false));
         const AstConst* const cp = VN_CAST(constp, Const);
@@ -399,6 +407,15 @@ class SvaNfaBuilder final {
         // count is O(1) in range regardless of user input; no adversarial N
         // blowup is possible.
         constexpr int kChainLimit = 256;
+        // IEEE 1800-2023 16.18: only a small bounded range before a plain
+        // boolean enumerates every end-of-match below. The counter FSM drops
+        // overlapping ends and the nested-sequence merge collapses them, so
+        // reject those for a cover sequence rather than under-count.
+        if (m_isCoverSeq && (range > kChainLimit || VN_IS(rhsExprp, SExpr))) {
+            flp->v3warn(E_UNSUPPORTED, "Unsupported: cover sequence with this ranged cycle delay");
+            outErrorEmitted = true;
+            return false;
+        }
         if (range > kChainLimit) {
             // Large range: counter FSM. Overlapping triggers during an active
             // count are dropped (non-overlapping semantics only).
@@ -659,6 +676,11 @@ class SvaNfaBuilder final {
         if (!lhs.valid() || !rhs.valid()) {  // LCOV_EXCL_START -- sub-build fail bail
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
+        if (coverSeqDropsEnds(lhs) || coverSeqDropsEnds(rhs)) {
+            flp->v3warn(E_UNSUPPORTED,
+                        "Unsupported: cover sequence where an 'or' operand has multiple matches");
+            return BuildResult::failWithError();
+        }
         SvaStateVertex* const mergeVtxp = scopedCreateVertex();
         if (lhs.finalCondp) {
             guardedLink(lhs.termVertexp, mergeVtxp, sampled(lhs.finalCondp->cloneTreePure(false)),
