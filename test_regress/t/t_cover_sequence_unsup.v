@@ -13,18 +13,17 @@ module t (
   default clocking cb @(posedge clk);
   endclocking
 
-  // cover sequence (IEEE 1800-2023 16.18) counts every end-of-match. The
-  // following forms have a sub-sequence that itself ends more than once but is
-  // consumed by an operator that forwards only its final end, so they are
-  // rejected rather than under-counted.
+  // cover sequence (IEEE 1800-2023 16.14.3) counts every end-of-match. The
+  // following forms put a sub-sequence where only its final end is forwarded,
+  // so they are rejected rather than under-counted.
 
-  // 'or' operand with several ends (ranged cycle delay).
+  // Sequence operand of 'or' (ranged cycle delay).
   cover sequence ((a ##[1:3] b) or 1'b0);
 
-  // 'or' operand with several ends (consecutive repetition).
+  // Sequence operand of 'or' (consecutive repetition).
   cover sequence ((a [* 1: 3]) or 1'b0);
 
-  // Ranged cycle delay before a multi-cycle sequence (nested-sequence merge).
+  // Ranged cycle delay before a multi-cycle sequence.
   cover sequence (a ##[1:2] (b ##1 c));
 
   // Ranged cycle delay wide enough to use the counter FSM.

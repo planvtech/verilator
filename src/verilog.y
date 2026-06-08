@@ -6500,7 +6500,7 @@ concurrent_assertion_statement<nodeStmtp>:  // ==IEEE: concurrent_assertion_stat
         //                      // Reuses AstCover + AstPropSpec (same wrapper as
         //                      // cover_property_statement above) and the isCoverSeq
         //                      // flag drives V3AssertNfa to fire stmt per end-of-match
-        //                      // (IEEE 1800-2023 16.18), not per property success.
+        //                      // (IEEE 1800-2023 16.14.3), not per property success.
         |       yCOVER ySEQUENCE '(' sexpr ')' stmt
                         { AstCover* const coverp = new AstCover{$1,
                               new AstPropSpec{$4->fileline(), nullptr, nullptr, $4},

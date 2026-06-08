@@ -1600,7 +1600,7 @@ public:
 };
 class AstCover final : public AstNodeCoverOrAssert {
     // @astgen op3 := coverincsp: List[AstNode] // Coverage node
-    bool m_isCoverSeq = false;  // 'cover sequence' (IEEE 1800-2023 16.18): fires per
+    bool m_isCoverSeq = false;  // 'cover sequence' (IEEE 1800-2023 16.14.3): fires per
                                 // end-of-match, not per property success
 public:
     ASTGEN_MEMBERS_AstCover;

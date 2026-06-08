@@ -193,7 +193,7 @@ class SvaNfaBuilder final {
     V3UniqueNames& m_propTempNames;  // Module-shared temp-var name source
     std::vector<AstNodeExpr*> m_throughoutStack;  // Active throughout guards (IEEE 16.9.9)
     bool m_inUnboundedScope = false;  // Sticky: nodes created after inherit liveness
-    // IEEE 1800-2023 16.18 cover sequence: each end-of-match fires the action,
+    // IEEE 1800-2023 16.14.3 cover sequence: each end-of-match fires the action,
     // not just the first. Builder builds parallel-branch (no first-match-wins)
     // topology when true. Default false preserves cover_property semantics.
     bool m_isCoverSeq = false;
@@ -213,14 +213,6 @@ class SvaNfaBuilder final {
         }
         if (baseCondp) { guardp = new AstAnd{flp, baseCondp, guardp}; }
         return guardp;
-    }
-
-    // IEEE 1800-2023 16.18: cover sequence counts every end-of-match. Some
-    // enclosing operators forward only a sub-sequence's final end, so a
-    // sub-sequence that itself has several ends would be under-counted. Detect
-    // that case so the builder can reject it rather than emit a wrong count.
-    bool coverSeqDropsEnds(const BuildResult& sub) const {
-        return m_isCoverSeq && (!sub.midSources.empty() || sub.termIsMidMerge);
     }
 
     static int getConstInt(AstNodeExpr* exprp) {
@@ -407,7 +399,7 @@ class SvaNfaBuilder final {
         // count is O(1) in range regardless of user input; no adversarial N
         // blowup is possible.
         constexpr int kChainLimit = 256;
-        // IEEE 1800-2023 16.18: only a small bounded range before a plain
+        // IEEE 1800-2023 16.14.3: only a small bounded range before a plain
         // boolean enumerates every end-of-match below. The counter FSM drops
         // overlapping ends and the nested-sequence merge collapses them, so
         // reject those for a cover sequence rather than under-count.
@@ -438,7 +430,7 @@ class SvaNfaBuilder final {
         } else {
             // Pure boolean RHS: register chain. Each mid-position links to
             // match (match-only); last position is the reject source.
-            // For cover_sequence (IEEE 1800-2023 16.18) the advance edge is
+            // For cover_sequence (IEEE 1800-2023 16.14.3) the advance edge is
             // unconditional so every (start, end) pair fires independently --
             // dropping NOT(b) turns "first-match-wins" into "every end fires".
             AstVar* const hoistVarp
@@ -543,7 +535,7 @@ class SvaNfaBuilder final {
         }
         AstVar* const hoistVarp = tryHoistSampled(exprp, flp, totalSites);
 
-        // Cover-sequence (IEEE 1800-2023 16.18): collect each end-of-match
+        // Cover-sequence (IEEE 1800-2023 16.14.3): collect each end-of-match
         // position so they all fire the action, not just the merged terminal.
         std::vector<SvaStateVertex*> consMidSources;
 
@@ -676,9 +668,14 @@ class SvaNfaBuilder final {
         if (!lhs.valid() || !rhs.valid()) {  // LCOV_EXCL_START -- sub-build fail bail
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
-        if (coverSeqDropsEnds(lhs) || coverSeqDropsEnds(rhs)) {
+        // IEEE 1800-2023 16.14.3: a cover sequence counts every end-of-match. A
+        // sequence operand of 'or' can end more than once, but only its final
+        // end reaches the merge vertex below, so reject sequence operands rather
+        // than under-count. Plain boolean disjunction has one end per cycle and
+        // is handled by the OR-fold.
+        if (m_isCoverSeq && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
             flp->v3warn(E_UNSUPPORTED,
-                        "Unsupported: cover sequence where an 'or' operand has multiple matches");
+                        "Unsupported: cover sequence with a sequence operand of 'or'");
             return BuildResult::failWithError();
         }
         SvaStateVertex* const mergeVtxp = scopedCreateVertex();
@@ -693,40 +690,6 @@ class SvaNfaBuilder final {
                         flp);
         } else {
             guardedLink(rhs.termVertexp, mergeVtxp, flp);
-        }
-        // Cover-sequence (IEEE 1800-2023 16.18): each alternative end fires the
-        // action independently. Branch-specific trigger vertices carry the
-        // per-branch sampled condition in their stateSig (incoming Link is
-        // gated), so the midSource Link to matchVertex needs no extra cond.
-        // Falls through to single-end behavior when both branches are simple
-        // boolean leaves (lhs.termVertexp == rhs.termVertexp == entryVtxp);
-        // mergeVtxp's OR-fold already matches IEEE there.
-        if (m_isCoverSeq && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
-            std::vector<SvaStateVertex*> mids;
-            SvaStateVertex* const lhsTrigp = scopedCreateVertex();
-            if (lhs.finalCondp) {
-                m_graph.addLink(lhs.termVertexp, lhsTrigp,
-                                sampled(lhs.finalCondp->cloneTreePure(false)));
-            } else {
-                m_graph.addLink(lhs.termVertexp, lhsTrigp);
-            }
-            mids.push_back(lhsTrigp);
-
-            SvaStateVertex* const rhsTrigp = scopedCreateVertex();
-            if (rhs.finalCondp) {
-                m_graph.addLink(rhs.termVertexp, rhsTrigp,
-                                sampled(rhs.finalCondp->cloneTreePure(false)));
-            } else {
-                m_graph.addLink(rhs.termVertexp, rhsTrigp);
-            }
-            mids.push_back(rhsTrigp);
-
-            BuildResult res;
-            res.termVertexp = mergeVtxp;
-            res.finalCondp = nullptr;
-            res.midSources = std::move(mids);
-            res.termIsMidMerge = true;
-            return res;
         }
         return {mergeVtxp, nullptr, {}};
     }
@@ -1248,7 +1211,7 @@ class SvaNfaLowering final {
     // Phase 3: terminalActive and rejectBase from Links to matchVertex.
     // Builder only adds Links (non-clocked) to matchVertex via addLink in
     // wireMatchAndMidSources. When outPerMidSrcsp is non-null, also collect
-    // the per-edge match signal (IEEE 1800-2023 16.18 cover sequence: each
+    // the per-edge match signal (IEEE 1800-2023 16.14.3 cover sequence: each
     // end-of-match fires the action independently, no OR-fold).
     void computeTerminalMatchAndReject(LowerCtx& c, AstNodeExpr* snapshotOkp, SignalSet& sigs,
                                        std::vector<AstNodeExpr*>* outPerMidSrcsp = nullptr) {
@@ -2075,7 +2038,7 @@ class AssertNfaVisitor final : public VNVisitor {
             = !isCover && !parts.hasImplication && assertWithFailp && assertWithFailp->failsp();
         std::vector<AstNodeExpr*> requiredStepSrcs;
 
-        // For `cover sequence` (IEEE 1800-2023 16.18) collect per-edge match
+        // For `cover sequence` (IEEE 1800-2023 16.14.3) collect per-edge match
         // signals so each end-of-match fires the action independently, rather
         // than getting OR-folded into a single per-cycle terminalActive.
         // coverp / isCoverSeq are computed earlier (passed to SvaNfaBuilder).
