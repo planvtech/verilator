@@ -1,0 +1,16 @@
+%Error-UNSUPPORTED: t/t_property_strong_weak_unsup.v:17:26: Unsupported: 'strong' in complex property expression
+                                                          : ... note: In instance 't'
+   17 |   a1 : assert property ((strong(a ##[1:$] b)) and c);
+      |                          ^~~~~~
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
+%Error-UNSUPPORTED: t/t_property_strong_weak_unsup.v:18:30: Unsupported: 'weak' in complex property expression
+                                                          : ... note: In instance 't'
+   18 |   a2 : assert property (c or weak(a ##[1:$] b));
+      |                              ^~~~
+%Warning-COVERIGN: t/t_property_strong_weak_unsup.v:21:24: Ignoring unsupported: weak property in cover
+                                                         : ... note: In instance 't'
+   21 |   c1 : cover property (weak(a ##[1:$] b));
+      |                        ^~~~
+                   ... For warning description see https://verilator.org/warn/COVERIGN?v=latest
+                   ... Use "/* verilator lint_off COVERIGN */" and lint_on around source to disable this message.
+%Error: Exiting due to

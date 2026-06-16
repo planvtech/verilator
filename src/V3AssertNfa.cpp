@@ -1037,6 +1037,11 @@ public:
         if (AstUntil* const untilp = VN_CAST(nodep, Until)) {
             return buildUntil(untilp, entryVtxp, isTopLevelStep);
         }
+        if (AstStrongWeak* const swp = VN_CAST(nodep, StrongWeak)) {
+            swp->v3warn(E_UNSUPPORTED, "Unsupported: '" << swp->verilogKwd()
+                                                        << "' in complex property expression");
+            return BuildResult::failWithError();
+        }
         // Boolean leaf (including LogAnd): return as finalCond
         return {entryVtxp, nodep, {}};
     }
@@ -1648,7 +1653,8 @@ public:
                        AstNodeExpr* disableExprp = nullptr, bool negated = false,
                        AstNodeExpr** outMatchpp = nullptr, AstVar* disableCntVarp = nullptr,
                        AstVar* snapshotVarp = nullptr,
-                       std::vector<AstNodeExpr*>* outRequiredStepSrcsp = nullptr) {
+                       std::vector<AstNodeExpr*>* outRequiredStepSrcsp = nullptr,
+                       AstNodeExpr** outStrongPendingpp = nullptr) {
         const std::string baseName = m_names.get("");
 
         // Number vertices with sequential colors for array indexing.
@@ -1739,6 +1745,22 @@ public:
         AstNodeExpr* const resultp = assembleResult(
             flp, isCover, negated, matchCondp, sigs.terminalActivep, sigs.rejectBasep,
             sigs.throughoutRejectp, sigs.requiredStepRejectp, outMatchpp);
+
+        // strong(seq) end-of-trace obligation (IEEE 1800-2023 16.12.2): an
+        // unbounded (liveness) wait still active at end of simulation means the
+        // sequence never matched, which is a strong failure. The state register
+        // of each liveness vertex is set exactly while such an attempt is
+        // pending, so OR them for the end-of-trace check.
+        if (outStrongPendingpp) {
+            AstNodeExpr* pendingp = nullptr;
+            for (int i = 0; i < N; ++i) {
+                if (!vtx[i]->m_isUnbounded) continue;
+                AstVar* const svp = vtx[i]->datap()->stateVarp;
+                if (!svp) continue;
+                pendingp = orExprs(flp, pendingp, new AstVarRef{flp, svp, VAccess::READ});
+            }
+            *outStrongPendingpp = pendingp;
+        }
 
         // Clear userp on every vertex before vertexData unique_ptrs are destroyed.
         for (int i = 0; i < N; ++i) vtx[i]->userp(nullptr);
@@ -1942,6 +1964,69 @@ class AssertNfaVisitor final : public VNVisitor {
         };
         if (hasSeq(untilp->lhsp()) || hasSeq(untilp->rhsp())) return false;
         return true;
+    }
+
+    // Locate a maximal strong()/weak() wrapper: directly under the PropSpec
+    // (`assert property (strong(s))`) or as an implication consequent
+    // (`req |-> strong(s)`). Other embeddings stay wrapped and reach buildStep.
+    static AstStrongWeak* findMaximalStrongWeak(AstPropSpec* specp) {
+        AstNode* const bodyp = specp->propp();
+        if (AstStrongWeak* const swp = VN_CAST(bodyp, StrongWeak)) return swp;
+        if (AstImplication* const implp = VN_CAST(bodyp, Implication)) {
+            return VN_CAST(implp->rhsp(), StrongWeak);
+        }
+        return nullptr;
+    }
+    void unwrapStrongWeak(AstStrongWeak* swp) {
+        AstNodeExpr* const innerp = swp->propp()->unlinkFrBack();
+        swp->replaceWith(innerp);
+        VL_DO_DANGLING(pushDeletep(swp), swp);
+    }
+
+    // strong()/weak() (IEEE 1800-2023 16.12.2). weak is the assert default and
+    // strong the cover default; in those cases the keyword unwraps to the bare
+    // sequence and reuses the normal NFA lowering. strong in an assert unwraps
+    // too but sets strongObligationRef so processAssertion adds an end-of-trace
+    // obligation. weak in a cover is not modelled.
+    // Returns true if processAssertion must stop (the body was neutralized).
+    bool normalizeStrongWeak(AstNodeCoverOrAssert* assertp, bool isCover,
+                             bool& strongObligationRef) {
+        AstPropSpec* const specp = VN_CAST(assertp->propp(), PropSpec);
+        if (!specp) return false;
+        AstStrongWeak* const swp = findMaximalStrongWeak(specp);
+        if (!swp) return false;
+        const bool matchesContextDefault = isCover ? swp->isStrong() : !swp->isStrong();
+        if (matchesContextDefault) {
+            unwrapStrongWeak(swp);
+            return false;
+        }
+        if (isCover) {  // weak cover -- not modelled
+            swp->v3warn(COVERIGN, "Ignoring unsupported: weak property in cover");
+            swp->replaceWith(new AstConst{swp->fileline(), AstConst::BitFalse{}});
+            VL_DO_DANGLING(pushDeletep(swp), swp);
+            return true;
+        }
+        unwrapStrongWeak(swp);  // strong assert: build as weak + end-of-trace obligation
+        strongObligationRef = true;
+        return false;
+    }
+
+    // Emit the strong end-of-trace obligation: an immediate assertion inside a
+    // `final` block that fires when any liveness wait is still pending at end of
+    // simulation. Reuses the source assertion's fail action when present.
+    void emitStrongEotObligation(AstNodeCoverOrAssert* assertp, AstNodeExpr* pendingp,
+                                 FileLine* flp) {
+        AstAssert* const srcp = VN_CAST(assertp, Assert);
+        AstNode* const failsp
+            = (srcp && srcp->failsp()) ? srcp->failsp()->cloneTree(true) : nullptr;
+        AstAssert* const eotp = new AstAssert{flp,
+                                              new AstLogNot{flp, pendingp},
+                                              nullptr,
+                                              failsp,
+                                              VAssertType::SIMPLE_IMMEDIATE,
+                                              VAssertDirectiveType::ASSERT,
+                                              assertp->name()};
+        m_modp->addStmtsp(new AstFinal{flp, eotp});
     }
 
     struct PropertyParts final {
@@ -2189,6 +2274,10 @@ class AssertNfaVisitor final : public VNVisitor {
 
         inlineAllSequenceRefs(assertp->propp());
 
+        const bool isCover = VN_IS(assertp, Cover);
+        bool strongObligation = false;
+        if (normalizeStrongWeak(assertp, isCover, strongObligation)) return;
+
         AstNode* const propp = assertp->propp();
         if (!hasMultiCycleExpr(propp)) return;
         if (isBareTopLevelUntil(propp)) return;
@@ -2233,7 +2322,6 @@ class AssertNfaVisitor final : public VNVisitor {
         if (!senTreep) return;
 
         FileLine* const flp = assertp->fileline();
-        const bool isCover = VN_IS(assertp, Cover);
 
         SvaGraph graph;
         SvaNfaBuilder builder{graph, m_modp, m_propTempNames};
@@ -2269,11 +2357,13 @@ class AssertNfaVisitor final : public VNVisitor {
         std::vector<AstNodeExpr*> requiredStepSrcs;
 
         AstNodeExpr* const alwaysTriggerp = new AstConst{flp, AstConst::BitTrue{}};
+        AstNodeExpr* strongPendingp = nullptr;
         AstNodeExpr* const outputExprp
             = m_loweringp->lower(flp, graph, alwaysTriggerp, senTreep, result.finalCondp, isCover,
                                  disableExprp ? disableExprp->cloneTreePure(false) : nullptr,
                                  negated, needMatch ? &matchExprp : nullptr, disableCntVarp,
-                                 snapshotVarp, needPerSrcFail ? &requiredStepSrcs : nullptr);
+                                 snapshotVarp, needPerSrcFail ? &requiredStepSrcs : nullptr,
+                                 strongObligation ? &strongPendingp : nullptr);
 
         AstSenTree* const perSrcSenTreep
             = (requiredStepSrcs.size() >= 2) ? senTreep->cloneTree(false) : nullptr;
@@ -2289,6 +2379,12 @@ class AssertNfaVisitor final : public VNVisitor {
         AstNode* const innerPropp = propSpecp->propp();
         innerPropp->replaceWith(outputExprp);
         VL_DO_DANGLING(pushDeletep(innerPropp), innerPropp);
+
+        if (strongObligation && strongPendingp) {
+            emitStrongEotObligation(assertp, strongPendingp, flp);
+        } else if (strongPendingp) {
+            VL_DO_DANGLING(pushDeletep(strongPendingp), strongPendingp);
+        }
 
         UINFO(4, "NFA converted assertion at " << flp << endl);
     }

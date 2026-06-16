@@ -2672,6 +2672,14 @@ void AstUntil::dumpJson(std::ostream& str) const {
     dumpJsonBoolFuncIf(str, isStrong);
     dumpJsonBoolFuncIf(str, isOverlapping);
 }
+void AstStrongWeak::dump(std::ostream& str) const {
+    this->AstNodeExpr::dump(str);
+    str << (isStrong() ? " [strong]" : " [weak]");
+}
+void AstStrongWeak::dumpJson(std::ostream& str) const {
+    this->AstNodeExpr::dumpJson(str);
+    dumpJsonBoolFuncIf(str, isStrong);
+}
 string AstNodeUOrStructDType::prettyDTypeName(bool full) const {
     string result = verilogKwd() + "{";
     if (full) {  // else shorten for errors

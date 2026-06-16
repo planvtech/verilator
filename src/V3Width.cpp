@@ -1759,6 +1759,16 @@ class WidthVisitor final : public VNVisitor {
             nodep->dtypeSetBit();
         }
     }
+    void visit(AstStrongWeak* nodep) override {
+        // IEEE 1800-2023 16.12.2 strong/weak sequence property. The end-of-trace
+        // obligation for strong is lowered by V3AssertNfa into a clocked state
+        // machine plus a final block, so no --timing support is required.
+        assertAtExpr(nodep);
+        if (m_vup->prelim()) {
+            iterateCheckBool(nodep, "prop", nodep->propp(), BOTH);
+            nodep->dtypeSetBit();
+        }
+    }
     void visit(AstSGotoRep* nodep) override {
         assertAtExpr(nodep);
         if (m_vup->prelim()) {

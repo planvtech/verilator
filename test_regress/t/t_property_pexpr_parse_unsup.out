@@ -1,13 +1,7 @@
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:24:11: Unsupported: strong (in property expression)
-   24 |     strong(a);
-      |           ^
-                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:28:9: Unsupported: weak (in property expression)
-   28 |     weak(a);
-      |         ^
 %Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:56:5: Unsupported: nexttime (in property expression)
    56 |     nexttime a;
       |     ^~~~~~~~
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
 %Error-UNSUPPORTED: t/t_property_pexpr_unsup.v:60:5: Unsupported: nexttime[] (in property expression)
    60 |     nexttime [2] a;
       |     ^~~~~~~~

@@ -2675,6 +2675,32 @@ public:
     bool sameNode(const AstNode* /*samep*/) const override { return true; }
     bool isSystemFunc() const override { return true; }
 };
+class AstStrongWeak final : public AstNodeExpr {
+    // IEEE 1800-2023 16.12.2: strong(seq) / weak(seq) sequence property.
+    // m_strong selects the verdict at end-of-trace: weak holds unless the
+    // sequence definitively fails; strong additionally fails an attempt still
+    // pending at end-of-trace.
+    // @astgen op1 := propp : AstNodeExpr
+    const bool m_strong;
+
+public:
+    AstStrongWeak(FileLine* fl, bool strong, AstNodeExpr* propp)
+        : ASTGEN_SUPER_StrongWeak(fl)
+        , m_strong{strong} {
+        this->propp(propp);
+    }
+    ASTGEN_MEMBERS_AstStrongWeak;
+    void dump(std::ostream& str) const override;
+    void dumpJson(std::ostream& str) const override;
+    string emitVerilog() override { V3ERROR_NA_RETURN(""); }
+    string emitC() override { V3ERROR_NA_RETURN(""); }
+    string emitSimpleOperator() override { V3ERROR_NA_RETURN(""); }
+    string verilogKwd() const override { return isStrong() ? "strong" : "weak"; }
+    bool cleanOut() const override { V3ERROR_NA_RETURN(""); }
+    bool sameNode(const AstNode* /*samep*/) const override { return true; }
+    bool isMultiCycleSva() const override { return true; }
+    bool isStrong() const { return m_strong; }
+};
 class AstStructSel final : public AstNodeExpr {
     // Unpacked struct/union member access
     // Parents: math|stmt

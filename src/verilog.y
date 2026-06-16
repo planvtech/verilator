@@ -6740,9 +6740,9 @@ pexpr<nodeExprp>:  // IEEE: property_expr  (The name pexpr is important as regex
                 yNOT pexpr
                         { $$ = new AstLogNot{$1, $2, /*fromProperty=*/true}; }
         |       ySTRONG '(' sexpr ')'
-                        { $$ = $3; BBUNSUP($2, "Unsupported: strong (in property expression)"); }
+                        { $$ = new AstStrongWeak{$1, /*strong=*/true, $3}; }
         |       yWEAK '(' sexpr ')'
-                        { $$ = $3; BBUNSUP($2, "Unsupported: weak (in property expression)"); }
+                        { $$ = new AstStrongWeak{$1, /*strong=*/false, $3}; }
         //                      // IEEE: pexpr yOR pexpr
         //                      // IEEE: pexpr yAND pexpr
         //                      // Under ~p~sexpr and/or ~p~sexpr
