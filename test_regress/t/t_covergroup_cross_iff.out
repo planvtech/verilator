@@ -1,0 +1,16 @@
+cg_iff.addr_cmd.addr0_x_read [cross]: 1
+cg_iff.addr_cmd.addr0_x_write [cross]: 0
+cg_iff.addr_cmd.addr1_x_read [cross]: 0
+cg_iff.addr_cmd.addr1_x_write [cross]: 1
+cg_iff.cp_addr.addr0: 3
+cg_iff.cp_addr.addr1: 2
+cg_iff.cp_cmd.read: 3
+cg_iff.cp_cmd.write: 2
+cg_iff2.addr_cmd.addr0_x_read [cross]: 1
+cg_iff2.addr_cmd.addr0_x_write [cross]: 0
+cg_iff2.addr_cmd.addr1_x_read [cross]: 0
+cg_iff2.addr_cmd.addr1_x_write [cross]: 0
+cg_iff2.cp_addr.addr0: 2
+cg_iff2.cp_addr.addr1: 2
+cg_iff2.cp_cmd.read: 2
+cg_iff2.cp_cmd.write: 2

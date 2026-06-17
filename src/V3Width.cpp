@@ -1932,6 +1932,14 @@ class WidthVisitor final : public VNVisitor {
         if (nodep->iffp()) iterateCheckBool(nodep, "iff condition", nodep->iffp(), BOTH);
         userIterateAndNext(nodep->optionsp(), nullptr);
     }
+    void visit(AstCoverCross* nodep) override {
+        // The optional 'iff' guard is a self-determined boolean (IEEE 1800-2023 19.6); width it
+        // with a context so a compound expression is not left at assertAtExpr() with m_vup==null.
+        userIterateAndNext(nodep->itemsp(), nullptr);
+        userIterateAndNext(nodep->optionsp(), nullptr);
+        userIterateAndNext(nodep->rawBodyp(), nullptr);
+        if (nodep->iffp()) iterateCheckBool(nodep, "iff condition", nodep->iffp(), BOTH);
+    }
     void visit(AstCoverBin* nodep) override {
         // Bin range/value entries are self-determined constant expressions (IEEE 1800-2023
         // 19.5).  Width each plain single-value entry self-determined so a referenced

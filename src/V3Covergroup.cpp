@@ -1269,6 +1269,11 @@ class FunctionalCoverageVisitor final : public VNVisitor {
             }
         }
 
+        // Apply the cross 'iff' guard if present
+        if (AstNodeExpr* const iffp = crossp->iffp()) {
+            fullCondp = new AstAnd{crossp->fileline(), iffp->cloneTree(false), fullCondp};
+        }
+
         // Generate: if (cond1 && cond2 && ... && condN) { ++varName; }
         AstNodeStmt* const incrp = makeBinHitIncrement(crossp->fileline(), hitVarp);
 

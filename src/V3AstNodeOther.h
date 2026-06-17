@@ -2765,6 +2765,7 @@ class AstCoverCross final : public AstNodeFuncCovItem {
     // @astgen op2 := optionsp : List[AstCoverOption]     // post-LinkParse only
     // @astgen op3 := rawBodyp : List[AstNode]  // Parse: raw cross_body items;
     //                                          // post-LinkParse: empty
+    // @astgen op4 := iffp : Optional[AstNodeExpr]  // Optional 'iff' guard
 public:
     AstCoverCross(FileLine* fl, const string& name, AstCoverpointRef* itemsp)
         : ASTGEN_SUPER_CoverCross(fl, name) {

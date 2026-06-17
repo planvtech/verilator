@@ -3,12 +3,6 @@
       |                        ^~
                    ... For warning description see https://verilator.org/warn/COVERIGN?v=latest
                    ... Use "/* verilator lint_off COVERIGN */" and lint_on around source to disable this message.
-%Warning-COVERIGN: t/t_covergroup_unsup.v:98:21: Unsupported: 'iff' in coverage cross
-   98 |     cross a, b iff (!rst);
-      |                     ^
-%Warning-COVERIGN: t/t_covergroup_unsup.v:101:21: Unsupported: 'iff' in coverage cross
-  101 |     cross a, b iff (!rst) {}
-      |                     ^
 %Warning-COVERIGN: t/t_covergroup_unsup.v:108:21: Unsupported: 'function' in coverage cross body
   108 |       function void crossfunc; endfunction
       |                     ^~~~~~~~~
@@ -18,9 +12,6 @@
 %Warning-COVERIGN: t/t_covergroup_unsup.v:109:7: Unsupported: explicit coverage cross bins
   109 |       bins one = crossfunc();
       |       ^~~~
-%Warning-COVERIGN: t/t_covergroup_unsup.v:113:31: Unsupported: 'iff' in coverage cross
-  113 |     my_cg_id: cross a, b iff (!rst);
-      |                               ^
 %Warning-COVERIGN: t/t_covergroup_unsup.v:123:14: Unsupported: 'bins' explicit array size (treated as '[]')
   123 |     { bins ba[2] = {a}; }
       |              ^
