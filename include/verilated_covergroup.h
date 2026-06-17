@@ -116,7 +116,8 @@ public:
                        int col) {
         addNamer(set, count, VlCovBinNaming::Array, name, file, line, col);
     }
-    void registerBins(VerilatedCovContext* covcontextp, const char* page);
+    void registerBins(VerilatedCovContext* covcontextp, const char* page, const char* comment = "",
+                      int goal = -1);
 
     // ---- hot path (from generated sample()) ----
     void incrementBin(int i) { ++m_counts[i]; }  // Normal bin: count only

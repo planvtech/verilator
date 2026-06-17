@@ -2082,6 +2082,9 @@ void AstClass::dump(std::ostream& str) const {
     if (isVirtual()) str << " [VIRT]";
     if (useVirtualPublic()) str << " [VIRPUB]";
     if (isPrintedFrom()) str << " [PRINTED]";
+    if (cgAutoBinMax() >= 0) str << " auto_bin_max=" << cgAutoBinMax();
+    if (cgGoal() >= 0) str << " goal=" << cgGoal();
+    if (!cgComment().empty()) str << " comment=" << cgComment();
 }
 void AstClass::dumpJson(std::ostream& str) const {
     // dumpJsonNumFunc(str, declTokenNum);  // Not dumped as adding token changes whole file
@@ -2090,6 +2093,9 @@ void AstClass::dumpJson(std::ostream& str) const {
     dumpJsonBoolFuncIf(str, isInterfaceClass);
     dumpJsonBoolFuncIf(str, isVirtual);
     dumpJsonBoolFuncIf(str, isPrintedFrom);
+    if (cgAutoBinMax() >= 0) dumpJsonNumFunc(str, cgAutoBinMax);
+    if (cgGoal() >= 0) dumpJsonNumFunc(str, cgGoal);
+    if (!cgComment().empty()) dumpJsonStrFunc(str, cgComment);
     if (baseOverride().isAny()) dumpJsonStr(str, "baseOverride", baseOverride().ascii());
     dumpJsonGen(str);
 }

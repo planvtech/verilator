@@ -27,6 +27,7 @@
 #include "V3Covergroup.h"
 
 #include "V3Const.h"
+#include "V3File.h"
 #include "V3MemberMap.h"
 
 #include <set>
@@ -774,10 +775,16 @@ class FunctionalCoverageVisitor final : public VNVisitor {
         m_constructorp->addStmtsp(initp);
         for (AstCStmt* const ns : namerStmts) m_constructorp->addStmtsp(ns);
         if (v3Global.opt.coverage()) {
+            // Covergroup-level option.comment / option.goal (IEEE 1800-2023 Table 19-1) are
+            // forwarded so registerBins surfaces them as coverage-database annotations; goal
+            // is the target a report uses to judge the covergroup covered/uncovered.
+            const std::string comment
+                = V3OutFormatter::quoteNameControls(m_covergroupp->cgComment());
             AstCStmt* const regp = new AstCStmt{fl};
             regp->add(memberRef(fl, cpVarp));
             regp->add(".registerBins(vlSymsp->_vm_contextp__->coveragep(), \"v_covergroup/"
-                      + m_covergroupp->name() + "\");");
+                      + m_covergroupp->name() + "\", \"" + comment + "\", "
+                      + std::to_string(m_covergroupp->cgGoal()) + ");");
             m_constructorp->addStmtsp(regp);
         }
     }
@@ -1594,6 +1601,18 @@ class FunctionalCoverageVisitor final : public VNVisitor {
 
         if (m_binInfos.empty()) return;
 
+        // Covergroup-level option.comment / option.goal (IEEE 1800-2023 Table 19-1) are
+        // surfaced as coverage-database annotations on every bin reaching this static path
+        // (crosses); coverpoints carry them via VlCoverpoint::registerBins instead.
+        std::string optionSuffix;
+        if (!m_covergroupp->cgComment().empty()) {
+            optionSuffix += ", \"comment\", \""
+                            + V3OutFormatter::quoteNameControls(m_covergroupp->cgComment()) + "\"";
+        }
+        if (m_covergroupp->cgGoal() >= 0) {
+            optionSuffix += ", \"goal\", \"" + std::to_string(m_covergroupp->cgGoal()) + "\"";
+        }
+
         // For each bin, generate a VL_COVER_INSERT call
         // The calls use CCall nodes to invoke VL_COVER_INSERT macro
         for (const BinInfo& binInfo : m_binInfos) {
@@ -1654,12 +1673,12 @@ class FunctionalCoverageVisitor final : public VNVisitor {
                          : "";
             if (binp->binsType() == VCoverBinsType::BINS_IGNORE) {
                 cstmtp->add("\"bin\", \"" + binName + "\", \"bin_type\", \"ignore\"" + crossSuffix
-                            + ");");
+                            + optionSuffix + ");");
             } else if (binp->binsType() == VCoverBinsType::BINS_ILLEGAL) {
                 cstmtp->add("\"bin\", \"" + binName + "\", \"bin_type\", \"illegal\"" + crossSuffix
-                            + ");");
+                            + optionSuffix + ");");
             } else {
-                cstmtp->add("\"bin\", \"" + binName + "\"" + crossSuffix + ");");
+                cstmtp->add("\"bin\", \"" + binName + "\"" + crossSuffix + optionSuffix + ");");
             }
 
             // Add to constructor

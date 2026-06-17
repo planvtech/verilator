@@ -2881,6 +2881,8 @@ class AstClass final : public AstNodeModule {
     bool m_printedFrom = false;  // This class is printed from i.e. is used as format arg.
     // Covergroup options (when m_covergroup is true)
     int m_cgAutoBinMax = -1;  // option.auto_bin_max value (-1 = not set, use default 64)
+    int m_cgGoal = -1;  // option.goal value (-1 = not set, use default 100)
+    string m_cgComment;  // option.comment value (empty = not set)
 
 public:
     AstClass(FileLine* fl, const string& name, const string& libname)
@@ -2913,6 +2915,10 @@ public:
     // Covergroup options accessors
     int cgAutoBinMax() const { return m_cgAutoBinMax; }
     void cgAutoBinMax(int value) { m_cgAutoBinMax = value; }
+    int cgGoal() const { return m_cgGoal; }
+    void cgGoal(int value) { m_cgGoal = value; }
+    const string& cgComment() const { return m_cgComment; }
+    void cgComment(const string& value) { m_cgComment = value; }
     // Return true if this class is an extension of base class (SLOW)
     // Accepts nullptrs
     static bool isClassExtendedFrom(const AstClass* refClassp, const AstClass* baseClassp);

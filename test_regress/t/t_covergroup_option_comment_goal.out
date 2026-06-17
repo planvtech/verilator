@@ -1,0 +1,4 @@
+cg_hi.cp.hi comment='high goal group' goal=90
+cg_hi.cp.lo comment='high goal group' goal=90
+cg_lo.cp.hi comment='low goal group' goal=40
+cg_lo.cp.lo comment='low goal group' goal=40

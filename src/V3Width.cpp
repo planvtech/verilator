@@ -1906,19 +1906,25 @@ class WidthVisitor final : public VNVisitor {
         // Extract covergroup option values and store in AstClass before deleting.
         // m_cgClassp is always set here: AstCgOptionAssign only appears in covergroup
         // class bodies, and visitClass sets m_cgClassp before iterating children.
-        if (nodep->optionType() == VCoverOptionType::AUTO_BIN_MAX) {
-            // By V3Width time, V3Param has already folded any parameter references.
-            // If the value is still not a constant, it is a runtime expression - emit error.
-            if (AstConst* constp = VN_CAST(nodep->valuep(), Const)) {
+        // By V3Width time, V3Param has already folded any parameter references; a value
+        // that is still not a constant is a runtime expression, which these options
+        // (IEEE 1800-2023 Table 19-1) do not support.
+        const VCoverOptionType optType = nodep->optionType();
+        AstConst* const constp = VN_CAST(nodep->valuep(), Const);
+        if (optType == VCoverOptionType::AUTO_BIN_MAX || optType == VCoverOptionType::GOAL
+            || optType == VCoverOptionType::COMMENT) {
+            if (!constp) {
+                nodep->valuep()->v3warn(COVERIGN, "Ignoring unsupported: non-constant 'option."
+                                                      << optType.ascii()
+                                                      << "'; using default value");
+            } else if (optType == VCoverOptionType::AUTO_BIN_MAX) {
                 m_cgClassp->cgAutoBinMax(constp->toSInt());
-                UINFO(6, "  Covergroup " << m_cgClassp->name()
-                                         << " option.auto_bin_max = " << constp->toSInt() << endl);
+            } else if (optType == VCoverOptionType::GOAL) {
+                m_cgClassp->cgGoal(constp->toSInt());
             } else {
-                nodep->valuep()->v3warn(COVERIGN, "Ignoring unsupported: non-constant "
-                                                  "'option.auto_bin_max'; using default value");
+                m_cgClassp->cgComment(constp->num().toString());
             }
         }
-        // Add more options here as needed (weight, goal, at_least, per_instance, comment)
 
         // Delete the assignment node (we've extracted the value)
         VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);

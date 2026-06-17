@@ -54,7 +54,13 @@ std::string VlCoverpoint::binName(int i) const {
     return name;
 }
 
-void VlCoverpoint::registerBins(VerilatedCovContext* covcontextp, const char* page) {
+void VlCoverpoint::registerBins(VerilatedCovContext* covcontextp, const char* page,
+                                const char* comment, int goal) {
+    // option.comment / option.goal (IEEE 1800-2023 Table 19-1) are covergroup-level
+    // annotations saved with every bin; an empty key makes VL_COVER_INSERT skip the pair.
+    const std::string goalStr = goal >= 0 ? std::to_string(goal) : "";
+    const char* const commentKey = comment[0] ? "comment" : "";
+    const char* const goalKey = goal >= 0 ? "goal" : "";
     for (int i = 0; i < binCount(); ++i) {
         const VlCovNamer& nm = namerFor(i);
         const VlCovBinKind kind = binKind(i);
@@ -65,14 +71,15 @@ void VlCoverpoint::registerBins(VerilatedCovContext* covcontextp, const char* pa
         if (kind == VlCovBinKind::KIND_NORMAL) {
             VL_COVER_INSERT(covcontextp, full.c_str(), &m_counts[i], "page", page, "filename",
                             nm.file(), "lineno", lineStr.c_str(), "column", colStr.c_str(), "bin",
-                            binp.c_str());
+                            binp.c_str(), commentKey, comment, goalKey, goalStr.c_str());
         } else {
             const char* const binType = kind == VlCovBinKind::KIND_IGNORE    ? "ignore"
                                         : kind == VlCovBinKind::KIND_ILLEGAL ? "illegal"
                                                                              : "default";
             VL_COVER_INSERT(covcontextp, full.c_str(), &m_counts[i], "page", page, "filename",
                             nm.file(), "lineno", lineStr.c_str(), "column", colStr.c_str(), "bin",
-                            binp.c_str(), "bin_type", binType);
+                            binp.c_str(), "bin_type", binType, commentKey, comment, goalKey,
+                            goalStr.c_str());
         }
     }
 }
