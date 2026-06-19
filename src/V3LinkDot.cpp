@@ -1024,7 +1024,8 @@ public:
         return false;
     }
     VSymEnt* resolveClassOrPackage(VSymEnt* lookSymp, AstClassOrPackageRef* nodep, bool fallback,
-                                   bool classOnly, const string& forWhat) {
+                                   bool classOnly, const string& forWhat,
+                                   bool errIfNotFound = true) {
         if (nodep->classOrPackageSkipp()) return getNodeSym(nodep->classOrPackageSkipp());
         VSymEnt* foundp;
         VSymEnt* searchSymp = lookSymp;
@@ -1049,6 +1050,11 @@ public:
         if (foundp) {
             nodep->classOrPackageNodep(foundp->nodep());
             return foundp;
+        }
+        if (!errIfNotFound) {
+            // Inside a class extending a parameterized base, an inherited symbol
+            // is not imported until linkDotParamed; defer rather than error.
+            return nullptr;
         }
         const string suggest
             = suggestSymFallback(lookSymp, nodep->name(), LinkNodeMatcherClassOrPackage{});
@@ -4710,7 +4716,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
 
             if (!nodep->classOrPackageSkipp() && nodep->name() != "local::") {
                 m_statep->resolveClassOrPackage(m_ds.m_dotSymp, nodep, m_ds.m_dotPos != DP_PACKAGE,
-                                                false, ":: reference");
+                                                false, ":: reference", !m_insideClassExtParam);
             }
 
             // ClassRef's have pins, so track

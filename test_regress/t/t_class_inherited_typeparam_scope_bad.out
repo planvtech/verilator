@@ -1,0 +1,6 @@
+%Error: t/t_class_inherited_typeparam_scope_bad.v:30:11: Package/class for ':: reference' not found: 'Undefined'
+                                                       : ... note: In instance 't'
+   30 |       r = Undefined::create("x");
+      |           ^~~~~~~~~
+        ... See the manual at https://verilator.org/verilator_doc.html?v=latest for more assistance.
+%Error: Exiting due to
