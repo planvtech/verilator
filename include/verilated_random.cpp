@@ -335,6 +335,19 @@ static std::string parseNestedSelect(const std::string& nested_select_expr,
     return name;
 }
 
+// Resynchronise the persistent solver pipe after a malformed or partially consumed
+// reply: emit a unique echo sentinel and discard everything up to and including it.
+// Without this a single bad reply leaves stale bytes that the next randomize() reads
+// as the head of its own response, so every following solve in the process fails.
+static void resyncSolver(std::iostream& os) {
+    static const char* const tokenp = "__VlSolverResync__";
+    os << "(echo \"" << tokenp << "\")\n";
+    std::string line;
+    while (std::getline(os, line)) {
+        if (line.find(tokenp) != std::string::npos) break;
+    }
+}
+
 //======================================================================
 // VlRandomizer:: Methods
 
@@ -786,6 +799,7 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
         msg << "Internal: Solver error: " << sat;
         const std::string str = msg.str();
         VL_WARN_MT(__FILE__, __LINE__, "randomize", str.c_str());
+        resyncSolver(os);
         return false;
     }
 
@@ -804,6 +818,7 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
     if (c != '(') {
         VL_WARN_MT(__FILE__, __LINE__, "randomize",
                    "Internal: Unable to parse solver's response: invalid S-expression");
+        resyncSolver(os);
         return false;
     }
     while (true) {
@@ -812,6 +827,7 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
         if (c != '(') {
             VL_WARN_MT(__FILE__, __LINE__, "randomize",
                        "Internal: Unable to parse solver's response: invalid S-expression");
+            resyncSolver(os);
             return false;
         }
         std::string name;
@@ -824,7 +840,30 @@ bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
             const std::string selectExpr = readUntilBalanced(os);
             name = parseNestedSelect(selectExpr, indices);
         }
-        std::getline(os, value, ')');
+        // The value is normally an atom (`#x..`/`#b..`), but z3 can return a compound,
+        // paren-bearing model -- e.g. the whole-array form `((as const (Array ...)) #x..)`
+        // or `(store ...)` it emits for a bare array symbol. A flat getline(value, ')')
+        // stops at the first inner ')', leaving the rest of the reply in the pipe; the
+        // next randomize() then reads that stale tail and every following solve fails.
+        // Track paren depth so the entire value is consumed either way.
+        os >> std::ws;
+        if (os.peek() == '(') {
+            char vc;
+            os.get(vc);  // opening '('
+            value = "(";
+            int depth = 1;
+            while (depth > 0 && os.get(vc)) {
+                value += vc;
+                if (vc == '(') {
+                    ++depth;
+                } else if (vc == ')') {
+                    --depth;
+                }
+            }
+            os >> c;  // closing ')' of the (name value) pair
+        } else {
+            std::getline(os, value, ')');
+        }
         const auto it = m_vars.find(name);
         if (it == m_vars.end()) continue;
         const VlRandomVar& varr = *it->second;
@@ -1072,7 +1111,15 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
             auto getValueCmd = [&]() {
                 os << "(get-value (";
                 for (const auto& varName : layerVars) {
-                    if (m_vars.count(varName)) os << varName << " ";
+                    const auto it = m_vars.find(varName);
+                    if (it == m_vars.end()) continue;
+                    // Skip arrays: a bare array symbol makes z3 return a whole-array
+                    // model (`((as const ...) ...)` / `(store ...)`) that this phase
+                    // cannot pin element-wise, and emitting it as a pin produces
+                    // malformed SMT. Arrays are resolved in the final phase via
+                    // per-element selects instead.
+                    if (it->second->dimension() > 0) continue;
+                    os << varName << " ";
                 }
                 os << "))\n";
             };
@@ -1097,8 +1144,7 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
                         // Compound value like (_ bv5 32)
                         value = "(";
                         int depth = 1;
-                        while (depth > 0) {
-                            os.get(c);
+                        while (depth > 0 && os.get(c)) {
                             value += c;
                             if (c == '(')
                                 depth++;
@@ -1120,6 +1166,23 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
                 }
                 return true;
             };
+
+            // If this layer contributes no pinnable (scalar) vars -- e.g. it holds
+            // only arrays, which getValueCmd skips and which are resolved in the final
+            // phase -- there is nothing to read or pin. Emitting (get-value ()) here
+            // would itself be a solver error, so skip straight to the next layer.
+            bool hasPinnable = false;
+            for (const auto& varName : layerVars) {
+                const auto it = m_vars.find(varName);
+                if (it != m_vars.end() && it->second->dimension() == 0) {
+                    hasPinnable = true;
+                    break;
+                }
+            }
+            if (!hasPinnable) {
+                os << "(reset)\n";
+                continue;
+            }
 
             // Get baseline values (deterministic, always valid)
             getValueCmd();
