@@ -3314,7 +3314,8 @@ class RandomizeVisitor final : public VNVisitor {
             m_dynarrayDtp->dtypep(m_dynarrayDtp);
             v3Global.rootp()->typeTablep()->addTypesp(m_dynarrayDtp);
         }
-        AstVar* const modeVarp = new AstVar{fl, VVarType::MODULETEMP, name, m_dynarrayDtp};
+        AstVar* const modeVarp = new AstVar{fl, VVarType::MEMBER, name, m_dynarrayDtp};
+        modeVarp->lifetime(VLifetime::AUTOMATIC_IMPLICIT);
         modeVarp->user2p(classp);
         classp->addStmtsp(modeVarp);
         return modeVarp;
