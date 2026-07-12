@@ -513,7 +513,8 @@ class DelayedVisitor final : public VNVisitor {
         FileLine* const flp = vscp->fileline();
         AstScope* const topScopep = netlistp->topScopep()->scopep();
         if (!netlistp->nbaEventp()) {
-            AstBasicDType* const dtypep = new AstBasicDType{flp, VBasicDTypeKwd::EVENT, VSigning::UNSIGNED};
+            AstBasicDType* const dtypep
+                = new AstBasicDType{flp, VBasicDTypeKwd::EVENT, VSigning::UNSIGNED};
             netlistp->typeTablep()->addTypesp(dtypep);
             netlistp->nbaEventp(topScopep->createTemp("__VnbaEvent", dtypep));
         }
@@ -740,8 +741,8 @@ class DelayedVisitor final : public VNVisitor {
             AstScope* const scopep = VN_AS(nodep->user2p(), Scope);
             const std::string baseName = uniqueTmpName(scopep, vscp, vscpInfo);
             // A Reactive action loop re-executes the NBA; capture RHS then LHS once.
-            AstNodeExpr* const capturedRhsp = captureVal(scopep, nodep, nodep->rhsp()->unlinkFrBack(),
-                                                         "__VdlyVal" + baseName);
+            AstNodeExpr* const capturedRhsp
+                = captureVal(scopep, nodep, nodep->rhsp()->unlinkFrBack(), "__VdlyVal" + baseName);
             nodep->rhsp(capturedRhsp);
             AstNodeExpr* const capturedLhsp
                 = captureLhs(scopep, nodep, nodep->lhsp()->unlinkFrBack(), baseName);
