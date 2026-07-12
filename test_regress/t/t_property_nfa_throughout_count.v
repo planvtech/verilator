@@ -4,9 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// A throughout guard drop terminates every live sequence attempt.  Fixed and
-// large-range delays use bit-vector rings, so each live bit must execute the
-// failure action independently; reducing the ring to one boolean loses count.
+// A throughout guard drop fails each live delay-ring attempt independently
 
 // verilog_format: off
 `define stop $stop

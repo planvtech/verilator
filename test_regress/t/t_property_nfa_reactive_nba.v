@@ -4,10 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Check nonblocking assignments made by an NFA assertion action.  Two
-// attempts match in one Observed region, so the generated Reactive action loop
-// executes twice and its NBAs must commit in the Re-NBA region of this same
-// time slot.
+// NBAs from a Reactive assertion action commit in the same time slot
 
 // verilog_format: off
 `define stop $stop
@@ -41,9 +38,7 @@ module t (
   unpacked_pair_t whole_last = '{8'h22, 8'h2a};
   logic [7:0] unpacked_elements[0:3] = '{default: 8'h00};
 
-  // Exercise Reactive-NBA lowering schemes that need more than a simple
-  // shadow variable.  Each target is updated twice by the generated action
-  // multiplicity loop.
+  // Targets for Reactive-NBA lowering schemes beyond a simple shadow variable
   logic [15:0] masked_parts = 16'h0000;
   logic [7:0] unique_flag = 8'h00;
   /* verilator lint_off MULTIDRIVEN */
@@ -84,9 +79,7 @@ module t (
     masked_parts[7:0] = action_ordinal[7:0];
     masked_parts[15:8] <= 8'h60 + action_ordinal[7:0];
 
-    // A partial update of an unpacked-array element inside the action loop
-    // requires a value/mask commit queue.  Include both distinct destinations
-    // and repeated writes to element 1.
+    // Partial unpacked-element updates go through the value/mask commit queue
     queued_parts[(action_ordinal-1)%2][7:0] <= 8'h70 + action_ordinal[7:0];
     queued_parts[1][15:12] <= action_ordinal[3:0];
 
@@ -94,9 +87,7 @@ module t (
     // win over it, and a later normal-only NBA must not replay stale state.
     mixed_nba <= 8'ha0 + action_ordinal[7:0];
 
-    // Keeping the fork in this action makes the whole Reactive process
-    // suspendable.  Dynamic packed selects above must still retain every
-    // multiplicity-loop update rather than collapsing through FlagUnique.
+    // The fork makes the whole Reactive process suspendable
     fork
       unique_flag <= 8'h50 + action_ordinal[7:0];
     join
@@ -138,9 +129,7 @@ module t (
     end
   end
 
-  // A value-change process caused by the scalar Re-NBA commit is another
-  // same-slot observation point.  Do not inspect other NBA targets here:
-  // separate commit processes in the same region have no relative ordering.
+  // Same-slot observation via a process sensitive to the Re-NBA commit
   always @(scalar) begin
     if (scalar == 8'h02) begin
       `checkd($time, match_slot_time);

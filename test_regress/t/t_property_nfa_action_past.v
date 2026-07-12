@@ -4,9 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// A lowered NFA action executes in Reactive, after the current clock's NBA
-// commits.  $past must nevertheless return the previous sampled value, not the
-// just-committed stage of its sampling pipeline.
+// $past in a Reactive assertion action returns the previous sampled value
 
 // verilog_format: off
 `define stop $stop
@@ -21,9 +19,6 @@ module t (
   bit history[0:4] = '{default: 0};
   int history_count = 0;
 
-  // The current sampled value alternates on every clock.  Because this update
-  // is an NBA, a Reactive reader of the first $past pipeline stage would see
-  // the current sample and produce the inverse of the expected history.
   always @(posedge clk) data <= ~data;
 
   assert property (@(posedge clk) 1'b1 ##1 1'b1) begin

@@ -4,9 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Property case is parser-normalized control flow, not temporal sequence AND.
-// Two attempts select branches of different lengths and fail on the same tick;
-// both failure actions must run without cross-pairing or OR-collapsing them.
+// Property-case branches of different lengths fail on the same tick
 
 // verilog_format: off
 `define stop $stop

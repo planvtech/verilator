@@ -39,9 +39,7 @@ module t (
   bit cross_r_end = 0;
   int cross_hits = 0;
 
-  // At the third sampled tick, the LHS matches the attempt started one tick
-  // later while the RHS matches the older attempt.  A global doneL/doneR pair
-  // incorrectly combines them; no real assertion attempt matches both arms.
+  // LHS and RHS arms match from different start cycles at the same tick
   cover property (@(posedge clk) (cross_l_start ##1 cross_l_end) and(cross_r_start ##2 cross_r_end))
     cross_hits++;
 
@@ -50,9 +48,7 @@ module t (
   int throughout_pass = 0;
   int throughout_fail = 0;
 
-  // The first pulse drops the guard at offset 1 and fails once.  The second
-  // holds it over offsets 0..2 and passes once.  The shorter SAnd operand ends
-  // at offset 1; the composite endpoint remains the longer operand's offset 2.
+  // First pulse drops the guard and fails; second holds it and passes
   assert property (@(posedge clk) throughout_start |->
       ((throughout_guard throughout (1'b1 ##2 1'b1)) and
        (1'b1 ##1 1'b1)))

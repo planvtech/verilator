@@ -597,7 +597,7 @@ class AssertVisitor final : public VNVisitor {
                 // V3Coverage assigned us a bucket to increment.
                 AstCoverInc* const covincp = VN_AS(snodep->coverincsp(), CoverInc);
                 UASSERT_OBJ(covincp, snodep, "Missing AstCoverInc under assertion");
-                AstNodeExpr* multiplicityp = covincp->multiplicityp();
+                AstNodeExpr* const multiplicityp = covincp->multiplicityp();
                 if (multiplicityp) multiplicityp->unlinkFrBack();
                 covincp->unlinkFrBackWithNext();  // next() might have  AstAssign for trace
                 if (message != "") covincp->declp()->comment(message);

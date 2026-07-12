@@ -91,9 +91,7 @@ module t (
   int large_reject_pass = 0;
   int large_reject_fail = 0;
 
-  // The 300-cycle upper bound selects the ring-buffer lowering.  Two pending
-  // attempts match together; the implication also has the current vacuous
-  // success, hence three action executions guarded by large_b.
+  // The 300-cycle upper bound selects the ring-buffer lowering
   assert property (@(posedge clk) large_a ##[1:300] large_b) large_pass++;
   else large_fail++;
   cover property (@(posedge clk) large_a ##[1:300] large_b) large_cover++;
@@ -124,9 +122,7 @@ module t (
       `checkd(large_fail, 2);
       `checkd(large_cover, 2);
       `checkd(large_implication_at_b, 3);
-      // The abort has priority over both old attempts and the current vacuous
-      // implication attempt.  Accept therefore yields three vacuous successes;
-      // reject yields three failures.
+      // Abort priority applies to all three live attempts
       `checkd(large_accept_pass, 3);
       `checkd(large_accept_fail, 0);
       `checkd(large_reject_pass, 0);  // Other sims: 1

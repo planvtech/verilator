@@ -4,10 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Fixed-length intersect operands have one common endpoint.  Composite arms
-// that cannot use the per-cycle conjoin path must still combine only matches
-// from the same assertion attempt, collapse simultaneous alternatives to one
-// verdict, and reject once when either side misses its terminal condition.
+// Same-end intersect combines only matches from the same assertion attempt
 
 // verilog_format: off
 `define stop $stop

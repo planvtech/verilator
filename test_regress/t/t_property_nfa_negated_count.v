@@ -50,9 +50,7 @@ module t (
   assert property (@(posedge clk) not (a ##[1:300] b))
   else if (b) large_fail_at_b++;
 
-  // At chain_target the positive sequence has two rejects and one match
-  // belonging to different attempts.  Negation swaps them into two passes
-  // and one failure, all in the same Reactive region.
+  // Negation swaps each attempt's rejects and match at chain_target
   assert property (@(posedge clk) not (chain_a ##1 chain_b ##1 chain_c)) begin
     if (chain_target) pass_at_chain_target++;
   end

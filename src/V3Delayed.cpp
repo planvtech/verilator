@@ -246,7 +246,7 @@ class DelayedVisitor final : public VNVisitor {
     struct NBA final {
         AstAssignDly* nodep = nullptr;  // The NBA this record refers to
         AstVarScope* vscp = nullptr;  // The target variable the NBA is updating
-        bool m_fromReactive = false;  // The NBA executes in the Reactive region
+        bool fromReactive = false;  // The NBA executes in the Reactive region
     };
 
     // NODE STATE
@@ -420,7 +420,7 @@ class DelayedVisitor final : public VNVisitor {
         const AstNodeDType* const dtypep = vscp->dtypep()->skipRefp();
         // Unpacked arrays
         if (const AstUnpackArrayDType* const uaDTypep = VN_CAST(dtypep, UnpackArrayDType)) {
-            // Whole-array targets use ShadowVar.
+            // If whole array is target of NBA, use ShadowVar
             if (vscpInfo.m_whole) return Scheme::ShadowVar;
             // Basic underlying type of elements, if any.
             const AstBasicDType* const basicp = uaDTypep->basicp();
@@ -469,14 +469,14 @@ class DelayedVisitor final : public VNVisitor {
             if (isIntegralOrPacked) return Scheme::ShadowVarMasked;
             // If it's inside a loop, use Scheme::ShadowVar, which is safe,
             // but will generate incorrect code if a partial update is used
-            if (vscpInfo.m_inLoop) { return Scheme::ShadowVar; }
+            if (vscpInfo.m_inLoop) return Scheme::ShadowVar;
             // Otherwise (for not packed variables), use the FlagUnique scheme,
             // which at least handles partial updates correctly, but might break
             // in loops or other dynamic context
             return Scheme::FlagUnique;
         }
 
-        // Otherwise use the simple shadow variable scheme.
+        // Otherwise use the simple shadow variable scheme
         return Scheme::ShadowVar;
     }
 
@@ -513,7 +513,7 @@ class DelayedVisitor final : public VNVisitor {
         FileLine* const flp = vscp->fileline();
         AstScope* const topScopep = netlistp->topScopep()->scopep();
         if (!netlistp->nbaEventp()) {
-            auto* const dtypep = new AstBasicDType{flp, VBasicDTypeKwd::EVENT, VSigning::UNSIGNED};
+            AstBasicDType* const dtypep = new AstBasicDType{flp, VBasicDTypeKwd::EVENT, VSigning::UNSIGNED};
             netlistp->typeTablep()->addTypesp(dtypep);
             netlistp->nbaEventp(topScopep->createTemp("__VnbaEvent", dtypep));
         }
@@ -735,20 +735,21 @@ class DelayedVisitor final : public VNVisitor {
         AstVarScope* const shadowVscp = vscpInfo.shadowVarMaskedKit().vscp;
         AstVarScope* const maskVscp = vscpInfo.shadowVarMaskedKit().maskp;
 
-        AstScope* const scopep = VN_AS(nodep->user2p(), Scope);
-        const std::string baseName = uniqueTmpName(scopep, vscp, vscpInfo);
-
-        // Preserve the same RHS-before-LHS snapshot order used by the flag and
-        // queue schemes.
-        AstNodeExpr* const capturedRhsp
-            = captureVal(scopep, nodep, nodep->rhsp()->unlinkFrBack(), "__VdlyVal" + baseName);
-        nodep->rhsp(capturedRhsp);
-
-        // Capture select/array indices once so value and mask name the same bits.
-        AstNodeExpr* const capturedLhsp
-            = captureLhs(scopep, nodep, nodep->lhsp()->unlinkFrBack(), baseName);
-        AstNodeExpr* const lhsClonep = capturedLhsp->cloneTree(false);
-        nodep->lhsp(capturedLhsp);
+        AstNodeExpr* lhsClonep = nullptr;
+        if (fromReactive) {
+            AstScope* const scopep = VN_AS(nodep->user2p(), Scope);
+            const std::string baseName = uniqueTmpName(scopep, vscp, vscpInfo);
+            // A Reactive action loop re-executes the NBA; capture RHS then LHS once.
+            AstNodeExpr* const capturedRhsp = captureVal(scopep, nodep, nodep->rhsp()->unlinkFrBack(),
+                                                         "__VdlyVal" + baseName);
+            nodep->rhsp(capturedRhsp);
+            AstNodeExpr* const capturedLhsp
+                = captureLhs(scopep, nodep, nodep->lhsp()->unlinkFrBack(), baseName);
+            lhsClonep = capturedLhsp->cloneTree(false);
+            nodep->lhsp(capturedLhsp);
+        } else {
+            lhsClonep = nodep->lhsp()->cloneTree(false);
+        }
 
         // Replace the write ref on the LHS with the shadow variable
         nodep->lhsp()->foreach([&](AstVarRef* const refp) {
@@ -1163,11 +1164,11 @@ class DelayedVisitor final : public VNVisitor {
                 break;
             }
             case Scheme::ShadowVar: {
-                convertSchemeShadowVar(nbap, vscp, vscpInfo, nba.m_fromReactive);
+                convertSchemeShadowVar(nbap, vscp, vscpInfo, nba.fromReactive);
                 break;
             }
             case Scheme::ShadowVarMasked: {
-                convertSchemeShadowVarMasked(nbap, vscp, vscpInfo, nba.m_fromReactive);
+                convertSchemeShadowVarMasked(nbap, vscp, vscpInfo, nba.fromReactive);
                 break;
             }
             case Scheme::FlagShared: {
@@ -1175,17 +1176,17 @@ class DelayedVisitor final : public VNVisitor {
                 break;
             }
             case Scheme::FlagUnique: {
-                convertSchemeFlagUnique(nbap, vscp, vscpInfo, nba.m_fromReactive);
+                convertSchemeFlagUnique(nbap, vscp, vscpInfo, nba.fromReactive);
                 break;
             }
             case Scheme::ValueQueueWhole: {
                 convertSchemeValueQueue(nbap, vscp, vscpInfo, /* partial: */ false,
-                                        nba.m_fromReactive);
+                                        nba.fromReactive);
                 break;
             }
             case Scheme::ValueQueuePartial:
                 convertSchemeValueQueue(nbap, vscp, vscpInfo, /* partial: */ true,
-                                        nba.m_fromReactive);
+                                        nba.fromReactive);
                 break;
             }
         }
@@ -1411,7 +1412,7 @@ class DelayedVisitor final : public VNVisitor {
         NBA& nba = m_nbas.back();
         nba.nodep = nodep;
         nba.vscp = vscp;
-        nba.m_fromReactive = VN_IS(m_procp, AlwaysReactive);
+        nba.fromReactive = VN_IS(m_procp, AlwaysReactive);
 
         // Record write reference
         recordWriteRef(m_currNbaLhsRefp, true);

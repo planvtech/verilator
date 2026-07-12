@@ -20,9 +20,7 @@ module t (
   bit disable_now = 0;
   bit abort_now = 0;
 
-  // The final action executes after the last clock's NBA.  On the finish edge
-  // the current sample is 1, while the preceding clock sampled 0; this makes
-  // the extra post-NBA $past pipeline stage observable.
+  // Finish-edge sample differs from the preceding clock's sample
   always @(posedge clk) begin
     if (cyc == 8) data <= 0;
     else if (cyc == 9) data <= 1;
@@ -40,15 +38,11 @@ module t (
   assert property (@(posedge clk) s_always[1: 1] 1'b1)
   else $display("EOS_PAST=%0d", $past(data));
 
-  // Both branches represent the same outer property attempt.  The two live
-  // NFA paths must be OR-folded by attempt start cycle before applying the
-  // EOS action multiplicity; summing branch states would incorrectly print 6.
+  // Branch states OR-fold by attempt start cycle before EOS multiplicity
   assert property (@(posedge clk) (s_always[1: 3] 1'b1) or(s_always[1: 3] 1'b1))
   else $display("EOS_BRANCH");
 
-  // The immediate sibling resolves every outer attempt at its start cycle.
-  // Pending states in the unevaluated-to-completion strong sibling must not
-  // turn those already-successful attempts into shutdown failures.
+  // Attempts resolved by the immediate sibling are not EOS failures
   assert property (@(posedge clk) 1'b1 or(s_always[1: 3] 1'b1))
   else $display("EOS_RESOLVED_BAD");
 
