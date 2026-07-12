@@ -1,0 +1,13 @@
+*-* All Finished *-*
+EOS_FAIL
+EOS_FAIL
+EOS_FAIL
+EOS_RING
+EOS_RING
+EOS_PAST=0
+EOS_BRANCH
+EOS_BRANCH
+EOS_BRANCH
+[115] %Error: t_prop_s_always_eos_count.v:72: Assertion failed in top.t
+[115] %Error: t_prop_s_always_eos_count.v:72: Assertion failed in top.t
+[115] %Error: t_prop_s_always_eos_count.v:72: Assertion failed in top.t

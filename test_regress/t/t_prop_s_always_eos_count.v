@@ -1,0 +1,91 @@
+// DESCRIPTION: Verilator: Verilog Test module
+//
+// This file ONLY is placed under the Creative Commons Public Domain.
+// SPDX-FileCopyrightText: 2026 PlanV GmbH
+// SPDX-License-Identifier: CC0-1.0
+
+module t (
+`ifdef VERILATOR
+    input clk
+`endif
+);
+
+`ifndef VERILATOR
+  logic clk = 1'b0;
+  always #5 clk = ~clk;
+`endif
+
+  int cyc = 0;
+  bit data = 0;
+  bit disable_now = 0;
+  bit abort_now = 0;
+
+  // The final action executes after the last clock's NBA.  On the finish edge
+  // the current sample is 1, while the preceding clock sampled 0; this makes
+  // the extra post-NBA $past pipeline stage observable.
+  always @(posedge clk) begin
+    if (cyc == 8) data <= 0;
+    else if (cyc == 9) data <= 1;
+    else if (cyc == 10) data <= 0;
+  end
+
+  // s_always [1:3]: three unfinished attempts at $finish, each fires EOS_FAIL.
+  assert property (@(posedge clk) s_always[1: 3] 1'b1)
+  else $display("EOS_FAIL");
+
+  // s_always [2:2]: two distinct unfinished attempts, not one RedOr.
+  assert property (@(posedge clk) s_always[2: 2] 1'b1)
+  else $display("EOS_RING");
+
+  assert property (@(posedge clk) s_always[1: 1] 1'b1)
+  else $display("EOS_PAST=%0d", $past(data));
+
+  // Both branches represent the same outer property attempt.  The two live
+  // NFA paths must be OR-folded by attempt start cycle before applying the
+  // EOS action multiplicity; summing branch states would incorrectly print 6.
+  assert property (@(posedge clk) (s_always[1: 3] 1'b1) or(s_always[1: 3] 1'b1))
+  else $display("EOS_BRANCH");
+
+  // The immediate sibling resolves every outer attempt at its start cycle.
+  // Pending states in the unevaluated-to-completion strong sibling must not
+  // turn those already-successful attempts into shutdown failures.
+  assert property (@(posedge clk) 1'b1 or(s_always[1: 3] 1'b1))
+  else $display("EOS_RESOLVED_BAD");
+
+  assert property (@(posedge clk) disable iff (disable_now) s_always[1: 3] 1'b1)
+  else $display("EOS_DISABLE_BAD");
+
+  assert property (@(posedge clk) sync_accept_on (abort_now) s_always[1: 3] 1'b1)
+  else $display("EOS_ABORT_BAD");
+
+  // Killed on the finish edge below.  The live kill generation, rather than
+  // the previous Observed snapshot, must suppress its stale pending states.
+  assume property (@(posedge clk) s_always[1: 3] 1'b1)
+  else $display("EOS_KILL_BAD");
+
+  // A cover whose strong obligation is still pending simply has not matched;
+  // it is not an assertion failure and must not emit an EOS diagnostic.
+  cover property (@(posedge clk) s_always[1: 3] 1'b1);
+
+  // The default action has the same per-attempt multiplicity.  The driver
+  // uses --no-stop-fail so all three diagnostics remain observable.
+  assert property (@(posedge clk) s_always[1: 3] 1'b1);
+
+  always @(negedge clk) begin
+    if (cyc == 9) abort_now = 1;
+    if (cyc == 10) disable_now = 1;
+  end
+
+  always @(posedge clk) begin
+    cyc <= cyc + 1;
+    if (cyc == 10) begin
+      // Kill concurrent assumptions only, leaving the assertion golden above
+      // intact.  Re-enable preserves the standard $assertkill/$asserton flow.
+      $assertcontrol(5, 1, 4);
+      $assertcontrol(3, 1, 4);
+      $display("*-* All Finished *-*");
+      $finish;
+    end
+  end
+
+endmodule

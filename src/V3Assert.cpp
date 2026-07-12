@@ -232,6 +232,8 @@ class AssertVisitor final : public VNVisitor {
     VDouble0 m_statLiftedCaseExprs;  // Count of purified case expressions
     AstNodeFTask* m_ftaskp = nullptr;  // Current function/task
     V3UniqueNames m_caseTempNames{"__VCase"};
+    V3UniqueNames m_actionCountNames{"__VassertActionCount"};
+    bool m_inReactiveAssertionAction = false;  // Action will execute after NBA
     // Map from (expression, senTree) to AstAlways that computes delayed values of the expression
     std::unordered_map<VNRef<AstNodeExpr>, std::unordered_map<VNRef<AstSenTree>, AstAlways*>>
         m_modExpr2Sen2DelayedAlwaysp;
@@ -332,6 +334,29 @@ class AssertVisitor final : public VNVisitor {
     AstSampled* newSampledExpr(AstNodeExpr* nodep) {
         AstSampled* const sampledp = new AstSampled{nodep->fileline(), nodep, nodep->dtypep()};
         return sampledp;
+    }
+
+    AstNode* repeatAction(FileLine* flp, AstNodeExpr* countp, AstNode* actionp) {
+        AstNodeDType* const u32p = m_modp->findBasicDType(VBasicDTypeKwd::UINT32);
+        AstVar* const counterp
+            = new AstVar{flp, VVarType::BLOCKTEMP, m_actionCountNames.get(""), u32p};
+        counterp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
+        AstBegin* const beginp = new AstBegin{flp, "", counterp, true};
+        beginp->addStmtsp(
+            new AstAssign{flp, new AstVarRef{flp, counterp, VAccess::WRITE}, countp});
+        AstLoop* const loopp = new AstLoop{flp};
+        loopp->addStmtsp(
+            new AstLoopTest{flp, loopp,
+                            new AstGt{flp, new AstVarRef{flp, counterp, VAccess::READ},
+                                      new AstConst{flp, AstConst::WidthedValue{}, 32, 0}}});
+        loopp->addStmtsp(actionp);
+        AstSub* const decrementp = new AstSub{flp, new AstVarRef{flp, counterp, VAccess::READ},
+                                              new AstConst{flp, AstConst::WidthedValue{}, 32, 1}};
+        decrementp->dtypeFrom(u32p);
+        loopp->addStmtsp(
+            new AstAssign{flp, new AstVarRef{flp, counterp, VAccess::WRITE}, decrementp});
+        beginp->addStmtsp(loopp);
+        return beginp;
     }
     AstVarRef* newMonitorNumVarRefp(const AstNode* nodep, VAccess access) {
         if (!m_monitorNumVarp) {
@@ -500,22 +525,40 @@ class AssertVisitor final : public VNVisitor {
         return new AstVarRef{exprp->fileline(), delayedr.at(ticks - 1), VAccess::READ};
     }
 
+    AstNode* wrapAssertionInSensitivity(AstNodeCoverOrAssert* nodep, AstSenTree* sentreep,
+                                        AstNode* bodysp) {
+        if (!sentreep) return bodysp;
+        FileLine* const flp = nodep->fileline();
+        if (nodep->nfaLowered()) {
+            AstNodeExpr* const notFinishp
+                = new AstLogNot{flp, new AstCExpr{flp, AstCExpr::Pure{},
+                                                  "vlSymsp->_vm_contextp__->gotFinish()", 1}};
+            bodysp = new AstIf{flp, notFinishp, bodysp};
+            return new AstAlwaysReactive{flp, sentreep, bodysp};
+        }
+        return new AstAlways{flp, VAlwaysKwd::ALWAYS, sentreep, bodysp};
+    }
+
     void visitAssertionIterate(AstNodeCoverOrAssert* nodep, AstNode* failsp) {
         if (m_beginp && nodep->name() == "") nodep->name(m_beginp->name());
 
         { AssertDeFutureVisitor{nodep->propp(), m_modp, m_modPastNum++}; }
 
         iterateAndNextNull(nodep->sentreep());
-        if (AstAssert* const assertp = VN_CAST(nodep, Assert)) {
-            iterateAndNextNull(assertp->failsp());
-        } else if (AstAssertIntrinsic* const assertp = VN_CAST(nodep, AssertIntrinsic)) {
-            iterateAndNextNull(assertp->failsp());
-        } else if (AstCover* const coverp = VN_CAST(nodep, Cover)) {
-            iterateAndNextNull(coverp->coverincsp());
-        } else if (!VN_IS(nodep, Restrict)) {
-            nodep->v3fatalSrc("Unhandled assert type");
+        {
+            VL_RESTORER(m_inReactiveAssertionAction);
+            m_inReactiveAssertionAction = nodep->nfaLowered();
+            if (AstAssert* const assertp = VN_CAST(nodep, Assert)) {
+                iterateAndNextNull(assertp->failsp());
+            } else if (AstAssertIntrinsic* const assertp = VN_CAST(nodep, AssertIntrinsic)) {
+                iterateAndNextNull(assertp->failsp());
+            } else if (AstCover* const coverp = VN_CAST(nodep, Cover)) {
+                iterateAndNextNull(coverp->coverincsp());
+            } else if (!VN_IS(nodep, Restrict)) {
+                nodep->v3fatalSrc("Unhandled assert type");
+            }
+            iterateAndNextNull(nodep->passsp());
         }
-        iterateAndNextNull(nodep->passsp());
         AstSenTree* sentreep = nodep->sentreep();
         if (nodep->immediate()) {
             UASSERT_OBJ(!sentreep, nodep, "Immediate assertions don't have sensitivity");
@@ -554,6 +597,8 @@ class AssertVisitor final : public VNVisitor {
                 // V3Coverage assigned us a bucket to increment.
                 AstCoverInc* const covincp = VN_AS(snodep->coverincsp(), CoverInc);
                 UASSERT_OBJ(covincp, snodep, "Missing AstCoverInc under assertion");
+                AstNodeExpr* multiplicityp = covincp->multiplicityp();
+                if (multiplicityp) multiplicityp->unlinkFrBack();
                 covincp->unlinkFrBackWithNext();  // next() might have  AstAssign for trace
                 if (message != "") covincp->declp()->comment(message);
                 if (passsp) {
@@ -564,6 +609,7 @@ class AssertVisitor final : public VNVisitor {
                 } else {
                     passsp = covincp;
                 }
+                if (multiplicityp) passsp = repeatAction(nodep->fileline(), multiplicityp, passsp);
             }
         } else if (VN_IS(nodep, Assert) || VN_IS(nodep, AssertIntrinsic)) {
             if (nodep->immediate()) {
@@ -608,7 +654,7 @@ class AssertVisitor final : public VNVisitor {
         if (disablep) bodysp = new AstIf{flp, new AstLogNot{flp, disablep}, bodysp};
         // Add assertOn check last, for better combining
         bodysp = newIfAssertOn(bodysp, nodep->directive(), nodep->userType());
-        if (sentreep) bodysp = new AstAlways{flp, VAlwaysKwd::ALWAYS, sentreep, bodysp};
+        bodysp = wrapAssertionInSensitivity(nodep, sentreep, bodysp);
 
         if (passsp && !passsp->backp()) VL_DO_DANGLING(pushDeletep(passsp), passsp);
         if (failsp && !failsp->backp()) VL_DO_DANGLING(pushDeletep(failsp), failsp);
@@ -913,7 +959,15 @@ class AssertVisitor final : public VNVisitor {
         }
         UASSERT_OBJ(ticks >= 1, nodep, "0 tick should have been checked in V3Width");
         AstNodeExpr* const exprp = newSampledExpr(nodep->exprp()->unlinkFrBack());
-        AstNodeExpr* inp = getPastValue(exprp, nodep->sentreep()->unlinkFrBack(), ticks);
+        // Post-NBA readers (Observed/Reactive/Final) need one extra $past stage
+        // to see the same history depth as an Active reader.
+        const bool procedureRunsPostNba
+            = m_procedurep
+              && (VN_IS(m_procedurep, AlwaysObserved) || VN_IS(m_procedurep, AlwaysReactive)
+                  || VN_IS(m_procedurep, Final));
+        const uint32_t pipelineTicks
+            = ticks + (procedureRunsPostNba || m_inReactiveAssertionAction ? 1 : 0);
+        AstNodeExpr* inp = getPastValue(exprp, nodep->sentreep()->unlinkFrBack(), pipelineTicks);
         nodep->replaceWith(inp);
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
