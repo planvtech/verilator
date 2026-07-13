@@ -382,8 +382,7 @@ class SvaNfaBuilder final {
         const bool fits64 = cp && cp->width() <= 64;
         const uint64_t value = fits64 ? cp->toUQuad() : 0;
         // Values in [2^31, 2^32) are 32-bit sign-wrapped negatives
-        const bool wrappedNegative
-            = fits64 && value >= 0x80000000ULL && value <= 0xFFFFFFFFULL;
+        const bool wrappedNegative = fits64 && value >= 0x80000000ULL && value <= 0xFFFFFFFFULL;
         if (!cp || cp->num().isFourState() || cp->num().isNegative() || wrappedNegative) {
             delayp->v3error(whatp << " is not a non-negative elaboration-time constant"
                                      " (IEEE 1800-2023 16.7)");
