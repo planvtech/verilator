@@ -34,7 +34,6 @@
 
 #include <limits>
 #include <map>
-#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -1058,25 +1057,26 @@ class SvaNfaBuilder final {
     // Build merge vertex for SOr / LogOr: both branches feed into one vertex.
     BuildResult buildOrMerge(AstNodeExpr* lhsp, AstNodeExpr* rhsp, SvaStateVertex* entryVtxp,
                              FileLine* flp, bool isTopLevelStep) {
-        const auto constTruth = [](AstNodeExpr* exprp) -> std::optional<bool> {
+        // Constant truth of an operand: 1 true, 0 false, -1 not a two-state constant
+        const auto constTruth = [](AstNodeExpr* exprp) -> int {
             const AstConst* const constp = VN_CAST(exprp, Const);
-            if (!constp || constp->num().isFourState()) return std::nullopt;
-            return !constp->num().isEqZero();
+            if (!constp || constp->num().isFourState()) return -1;
+            return constp->num().isEqZero() ? 0 : 1;
         };
-        const std::optional<bool> lhsConst = constTruth(lhsp);
-        const std::optional<bool> rhsConst = constTruth(rhsp);
+        const int lhsConst = constTruth(lhsp);
+        const int rhsConst = constTruth(rhsp);
         // Cover sequence must count a temporal sibling's later ends; do not fold to true.
         if (m_isCoverSeq
-            && ((lhsConst && *lhsConst && containsMultiCycleSva(rhsp))
-                || (rhsConst && *rhsConst && containsMultiCycleSva(lhsp)))) {
+            && ((lhsConst == 1 && containsMultiCycleSva(rhsp))
+                || (rhsConst == 1 && containsMultiCycleSva(lhsp)))) {
             flp->v3warn(COVERIGN,
                         "Ignoring unsupported: cover sequence with a sequence operand of 'or'");
             return BuildResult::failWithError();
         }
-        if (lhsConst && *lhsConst) return buildExpr(lhsp, entryVtxp, isTopLevelStep);
-        if (rhsConst && *rhsConst) return buildExpr(rhsp, entryVtxp, isTopLevelStep);
-        if (lhsConst && !*lhsConst) return buildExpr(rhsp, entryVtxp, isTopLevelStep);
-        if (rhsConst && !*rhsConst) return buildExpr(lhsp, entryVtxp, isTopLevelStep);
+        if (lhsConst == 1) return buildExpr(lhsp, entryVtxp, isTopLevelStep);
+        if (rhsConst == 1) return buildExpr(rhsp, entryVtxp, isTopLevelStep);
+        if (lhsConst == 0) return buildExpr(rhsp, entryVtxp, isTopLevelStep);
+        if (rhsConst == 0) return buildExpr(lhsp, entryVtxp, isTopLevelStep);
 
         const int lhsLen = fixedLength(lhsp);
         const int rhsLen = fixedLength(rhsp);
@@ -1175,6 +1175,8 @@ class SvaNfaBuilder final {
         const bool rhsScope = m_inUnboundedScope;
         m_inUnboundedScope = savedScope || lhsScope || rhsScope;
         if (!lhs.valid() || !rhs.valid()) {  // LCOV_EXCL_START -- sub-build fail bail
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
         // Both operands stayed at entry => boolean leaves; reduce to a boolean AND.
@@ -1183,16 +1185,24 @@ class SvaNfaBuilder final {
                         "Single-cycle SAnd operands must have finalCondp");
             AstNodeExpr* const condp = new AstLogAnd{flp, lhs.finalCondp->cloneTreePure(false),
                                                      rhs.finalCondp->cloneTreePure(false)};
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
             return {entryVtxp, condp, {}};
         }
         // Mid-window sources are not foldable into the combiner; defer.
-        if (!lhs.midSources.empty() || !rhs.midSources.empty()) return BuildResult::fail();
+        if (!lhs.midSources.empty() || !rhs.midSources.empty()) {
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
+            return BuildResult::fail();
+        }
         SvaStateVertex* const combVtxp = scopedCreateVertex();
         combVtxp->m_isAndCombiner = true;
         combVtxp->m_andLhsTermp = lhs.termVertexp;
         combVtxp->m_andRhsTermp = rhs.termVertexp;
         if (lhs.finalCondp) combVtxp->m_andLhsCondp = lhs.finalCondp->cloneTreePure(false);
         if (rhs.finalCondp) combVtxp->m_andRhsCondp = rhs.finalCondp->cloneTreePure(false);
+        cleanupProbeResult(lhs);
+        cleanupProbeResult(rhs);
         // One endpoint verdict: reject once if the same-end combiner did not match.
         if (mayEmitLocalReject(isTopLevelStep)) {
             SvaStateVertex* const deadlineVtxp = addDelayChain(entryVtxp, sameEndLength, flp);
@@ -1285,11 +1295,7 @@ class SvaNfaBuilder final {
         }
         if (AstSConsRep* const repp = VN_CAST(nodep, SConsRep)) {
             const int minN = getConstInt(repp->countp());
-            if (minN == 0) {
-                repp->v3warn(E_UNSUPPORTED,
-                             "Unsupported: empty [*0] match in a fixed temporal composite");
-                return false;
-            }
+            UASSERT_OBJ(minN != 0, repp, "Zero-min repetition inside a fixed-length composite");
             if (containsImpureExpr(repp->exprp())) {
                 repp->v3warn(
                     E_UNSUPPORTED,
@@ -1669,11 +1675,8 @@ class SvaNfaBuilder final {
                                                           << "' in complex property expression");
             return BuildResult::failWithError();
         }
-        if (m_inUnboundedScope) {
-            nodep->v3warn(E_UNSUPPORTED,
-                          "Unsupported: 'until' inside a variable-end temporal window");
-            return BuildResult::failWithError();
-        }
+        UASSERT_OBJ(!m_inUnboundedScope, nodep,
+                    "Top-level 'until' cannot be inside a variable-end window");
 
         const bool ov = nodep->isOverlapping();
         // p hoist count: continue, require (ov: 1 use; nov: 1 use). At least 2 uses.
@@ -2345,8 +2348,11 @@ private:
             return countp;
         }
 
-        UASSERT_OBJ(!depthBuckets.empty(), c.graph.m_startVertexp,
-                    "Strong pending depth buckets are empty");
+        if (depthBuckets.empty()) {
+            c.flp->v3warn(E_UNSUPPORTED, "Unsupported: strong s_always pending state has a "
+                                         "non-positive temporal depth");
+            return strongPendingFastCount(c);
+        }
         const int maxPendingDepth = depthBuckets.rbegin()->first;
         if (depthBuckets.begin()->first <= 0) {
             c.flp->v3warn(E_UNSUPPORTED, "Unsupported: strong s_always pending state has a "
@@ -2362,14 +2368,8 @@ private:
             return strongPendingFastCount(c);
         }
         for (const auto& pair : *resolvedMatchBucketsp) {
-            if (pair.first < 0) {
-                c.flp->v3warn(E_UNSUPPORTED, "Unsupported: strong s_always OR sibling has an "
-                                             "ambiguous terminal temporal depth");
-                for (auto& pendingPair : depthBuckets) {
-                    VL_DO_DANGLING(pendingPair.second->deleteTree(), pendingPair.second);
-                }
-                return strongPendingFastCount(c);
-            }
+            UASSERT_OBJ(pair.first >= 0, c.graph.m_startVertexp,
+                        "Ambiguous match depth must imply ambiguous pending depth");
         }
 
         return buildStrongResolvedCount(c, depthBuckets, *resolvedMatchBucketsp, maxPendingDepth,
@@ -3424,7 +3424,7 @@ public:
         appendStmt(observedBodyp, captureBodyp);
         appendStmt(observedBodyp, c.updateBodyp);
         AstNodeExpr* const notFinishp
-            = new AstLogNot{flp, new AstCExpr{flp, "vlSymsp->_vm_contextp__->gotFinish()", 1}};
+            = new AstLogNot{flp, new AstCExpr{flp, "vlSymsp->_vm_contextp__->finishPending()", 1}};
         m_modp->addStmtsp(new AstAlwaysObserved{flp, req.senTreep->cloneTree(false),
                                                 new AstIf{flp, notFinishp, observedBodyp}});
 

@@ -530,9 +530,9 @@ class AssertVisitor final : public VNVisitor {
         if (!sentreep) return bodysp;
         FileLine* const flp = nodep->fileline();
         if (nodep->nfaLowered()) {
-            // Impure: a $finish in an earlier same-slot action must be seen live
-            AstNodeExpr* const notFinishp
-                = new AstLogNot{flp, new AstCExpr{flp, "vlSymsp->_vm_contextp__->gotFinish()", 1}};
+            // Impure: a $finish in an earlier same-slot region must be seen live
+            AstNodeExpr* const notFinishp = new AstLogNot{
+                flp, new AstCExpr{flp, "vlSymsp->_vm_contextp__->finishPending()", 1}};
             bodysp = new AstIf{flp, notFinishp, bodysp};
             return new AstAlwaysReactive{flp, sentreep, bodysp};
         }

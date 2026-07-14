@@ -406,6 +406,8 @@ protected:
         bool m_fatalOnVpiError = true;  // Fatal on vpi error/unsupported
         bool m_gotError = false;  // A $finish statement executed
         bool m_gotFinish = false;  // A $finish or $stop statement executed
+        // A $finish requested, possibly before m_gotFinish updates via the thread queue
+        std::atomic<bool> m_finishPending{false};
         bool m_quiet = false;  // Quiet, no summary report
         // Slow path
         int8_t m_timeunit;  // Time unit as 0..15
@@ -565,6 +567,14 @@ public:
     bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish; }
     /// Set if got a $finish or $stop/error
     void gotFinish(bool flag) VL_MT_SAFE;
+    /// Return if a $finish was requested, even if not yet executed
+    bool finishPending() const VL_MT_SAFE {
+        return m_s.m_finishPending.load(std::memory_order_relaxed) || m_s.m_gotFinish;
+    }
+    /// Set that a $finish was requested; cleared by gotFinish(false)
+    void finishPending(bool flag) VL_MT_SAFE {
+        m_s.m_finishPending.store(flag, std::memory_order_relaxed);
+    }
     /// Check if generated final() code is executing
     bool executingFinal() const VL_MT_SAFE;
     /// Set if generated final() code is executing
