@@ -4,8 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Two independent attempts of the positive sequence match on the same clock.
-// The negated property must therefore execute its failure action twice.
+// Per-attempt counts for negated properties, aborts, and vacuous passes.
 
 // verilog_format: off
 `define stop $stop
@@ -60,13 +59,11 @@ module t (
   cover property (@(posedge clk) not (chain_a ##1 chain_b ##1 chain_c))
     if (chain_target) cover_at_chain_target++;
 
-  // A positive-consequent reject and the current antecedent miss produce one
-  // nonvacuous and one vacuous pass in the same clock.
+  // One nonvacuous and one vacuous pass in the same clock.
   assert property (@(posedge clk) implication_a |-> not (implication_b ##1 implication_c))
     if (implication_target) implication_pass_at_target++;
 
-  // The abort outcome is outside `not`: accept remains a pass and reject
-  // remains a failure for every live attempt.
+  // Abort outcome is outside `not`: accept stays a pass, reject stays a failure.
   assert property (@(posedge clk) sync_accept_on (abort_cond) (abort_a |-> not (##[1:300] b))) begin
     if (abort_cond) accept_pass_at_abort++;
   end
@@ -80,8 +77,7 @@ module t (
     if (abort_cond) reject_fail_at_abort++;
   end
 
-  // A false outer abort is semantically transparent.  In particular it must
-  // not suppress the implication's default vacuous pass action (LRM 20.11).
+  // A false outer abort must not suppress the vacuous pass action.
   assert property (@(posedge clk) 0 |-> ##1 1) plain_vacuous_pass++;
   assert property (@(posedge clk) sync_accept_on (never_abort) (0 |-> ##1 1))
     wrapped_vacuous_pass++;
@@ -126,15 +122,15 @@ module t (
       `checkd(pass_at_chain_target, 2);
       `checkd(fail_at_chain_target, 1);
       `checkd(cover_at_chain_target, 2);
-      `checkd(implication_pass_at_target, 2);  // Other sims: 1
+      `checkd(implication_pass_at_target, 2);
       `checkd(accept_pass_at_abort, 3);
       `checkd(accept_fail_at_abort, 0);
       `checkd(reject_pass_at_abort, 0);
       `checkd(reject_fail_at_abort, 3);
-      `checkd(plain_vacuous_pass, 4);  // Other sims: 0
-      `checkd(wrapped_vacuous_pass, 4);  // Other sims: 0
-      `checkd(negated_plain_vacuous_pass, 4);  // Other sims: 0
-      `checkd(negated_wrapped_vacuous_pass, 4);  // Other sims: 0
+      `checkd(plain_vacuous_pass, 4);
+      `checkd(wrapped_vacuous_pass, 4);
+      `checkd(negated_plain_vacuous_pass, 4);
+      `checkd(negated_wrapped_vacuous_pass, 4);
       $write("*-* All Finished *-*\n");
       $finish;
     end

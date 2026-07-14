@@ -1114,11 +1114,15 @@ class SvaNfaBuilder final {
         const BuildResult lhs = buildExpr(lhsp, entryVtxp);
         const BuildResult rhs = buildExpr(rhsp, entryVtxp);
         if (!lhs.valid() || !rhs.valid()) {  // LCOV_EXCL_START -- sub-build fail bail
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
         // A cover-seq 'or' sequence operand can end more than once; only its final
         // end reaches the merge, so reject it (16.14.3).
         if (m_isCoverSeq && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
             flp->v3warn(COVERIGN,
                         "Ignoring unsupported: cover sequence with a sequence operand of 'or'");
             return BuildResult::failWithError();
@@ -1136,6 +1140,8 @@ class SvaNfaBuilder final {
         } else {
             guardedLink(rhs.termVertexp, mergeVtxp, flp);
         }
+        cleanupProbeResult(lhs);
+        cleanupProbeResult(rhs);
 
         // One endpoint verdict: reject once only if neither branch reached the merge.
         if (sameFixedEnd && mayEmitLocalReject(isTopLevelStep)) {
@@ -1295,7 +1301,12 @@ class SvaNfaBuilder final {
         }
         if (AstSConsRep* const repp = VN_CAST(nodep, SConsRep)) {
             const int minN = getConstInt(repp->countp());
-            UASSERT_OBJ(minN != 0, repp, "Zero-min repetition inside a fixed-length composite");
+            if (minN <= 0) {
+                repp->v3warn(
+                    E_UNSUPPORTED,
+                    "Unsupported: zero-length repetition inside a fixed-length composite");
+                return false;
+            }
             if (containsImpureExpr(repp->exprp())) {
                 repp->v3warn(
                     E_UNSUPPORTED,
@@ -1675,8 +1686,12 @@ class SvaNfaBuilder final {
                                                           << "' in complex property expression");
             return BuildResult::failWithError();
         }
-        UASSERT_OBJ(!m_inUnboundedScope, nodep,
-                    "Top-level 'until' cannot be inside a variable-end window");
+        if (m_inUnboundedScope) {
+            nodep->v3warn(E_UNSUPPORTED, "Unsupported: '"
+                                             << nodep->verilogKwd()
+                                             << "' inside a variable-length property window");
+            return BuildResult::failWithError();
+        }
 
         const bool ov = nodep->isOverlapping();
         // p hoist count: continue, require (ov: 1 use; nov: 1 use). At least 2 uses.
@@ -2390,7 +2405,11 @@ private:
         for (int i = 0; i < c.N; ++i) {
             SvaVertexData* const datap = c.vtx[i]->datap();
             if (datap->evalStateVarp) {
-                UASSERT_OBJ(depths[i] >= 0, c.vtx[i], "Abort attempt root has ambiguous depth");
+                if (depths[i] < 0) {
+                    c.flp->v3warn(E_UNSUPPORTED,
+                                  "Unsupported: abort operator over a variable-length match");
+                    continue;
+                }
                 AstNodeExpr* rootp = new AstVarRef{c.flp, datap->evalStateVarp, VAccess::READ};
                 rootp = gateOldAttempt(c, rootp);
                 rootp = gateNotKill(c, rootp);

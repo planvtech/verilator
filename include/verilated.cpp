@@ -250,12 +250,14 @@ void VL_FINISH_MT(const char* filename, int linenum, const char* hier) VL_MT_SAF
 }
 
 void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_SAFE {
+    Verilated::threadContextp()->finishPending(true);
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_stop_maybe(filename, linenum, hier, maybe);
     }});
 }
 
 void VL_FATAL_MT(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_SAFE {
+    Verilated::threadContextp()->finishPending(true);
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_fatal(filename, linenum, hier, msg);
     }});

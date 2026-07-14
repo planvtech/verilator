@@ -4,6 +4,8 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
+// Per-attempt s_always end-of-simulation failure multiplicity.
+
 module t (
 `ifdef VERILATOR
     input clk
@@ -52,17 +54,14 @@ module t (
   assert property (@(posedge clk) sync_accept_on (abort_now) s_always[1: 3] 1'b1)
   else $display("EOS_ABORT_BAD");
 
-  // Killed on the finish edge below.  The live kill generation, rather than
-  // the previous Observed snapshot, must suppress its stale pending states.
+  // A kill on the finish edge suppresses stale pending states.
   assume property (@(posedge clk) s_always[1: 3] 1'b1)
   else $display("EOS_KILL_BAD");
 
-  // A cover whose strong obligation is still pending simply has not matched;
-  // it is not an assertion failure and must not emit an EOS diagnostic.
+  // A pending strong cover obligation is not an EOS failure.
   cover property (@(posedge clk) s_always[1: 3] 1'b1);
 
-  // The default action has the same per-attempt multiplicity.  The driver
-  // uses --no-stop-fail so all three diagnostics remain observable.
+  // The default action carries the same per-attempt multiplicity.
   assert property (@(posedge clk) s_always[1: 3] 1'b1);
 
   always @(negedge clk) begin

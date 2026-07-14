@@ -4,7 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Multiple attempts mature in one time slot; counts are per-attempt.
+// Multiple attempts maturing in one time slot are counted per attempt.
 
 // verilog_format: off
 `define stop $stop
@@ -34,15 +34,12 @@ module t (
 
   initial $assertpasson;
 
-  // At cyc=2 an older implication attempt passes while a new one fails.
   assert property (@(posedge clk) implication_a |-> ##1 implication_b) implication_pass++;
   else implication_fail++;
 
-  // Two different start-cycle attempts fail at the same maturing event.
   assert property (@(posedge clk) chain_a ##1 chain_b ##1 chain_c) chain_pass++;
   else chain_fail++;
 
-  // Two different start-cycle attempts match at the same maturing event.
   assert property (@(posedge clk) range_a ##[1:2] range_b) range_pass++;
   else range_fail++;
   cover property (@(posedge clk) range_a ##[1:2] range_b) range_cover++;
@@ -91,7 +88,6 @@ module t (
   int large_reject_pass = 0;
   int large_reject_fail = 0;
 
-  // The 300-cycle upper bound selects the ring-buffer lowering
   assert property (@(posedge clk) large_a ##[1:300] large_b) large_pass++;
   else large_fail++;
   cover property (@(posedge clk) large_a ##[1:300] large_b) large_cover++;
@@ -122,7 +118,6 @@ module t (
       `checkd(large_fail, 2);
       `checkd(large_cover, 2);
       `checkd(large_implication_at_b, 3);
-      // Abort priority applies to all three live attempts
       `checkd(large_accept_pass, 3);
       `checkd(large_accept_fail, 0);
       `checkd(large_reject_pass, 0);  // Other sims: 1

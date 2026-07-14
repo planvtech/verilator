@@ -4,8 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// Directed count checks for composite sequence operators.  Each property is
-// pulsed in isolation so a wrong count cannot hide behind an OR-folded verdict.
+// Directed per-attempt count checks for composite sequence operators.
 
 // verilog_format: off
 `define stop $stop
@@ -23,8 +22,6 @@ module t (
   int or_both_pass = 0;
   int or_both_fail = 0;
 
-  // A temporal OR resolves once at its common endpoint.  No branch matching is
-  // one failure; two branches matching simultaneously is one property pass.
   assert property (@(posedge clk) or_fail_start |-> ((1'b1 ##1 1'b0) or(1'b1 ##1 1'b0)))
     or_fail_pass++;
   else or_fail_count++;
@@ -39,7 +36,6 @@ module t (
   bit cross_r_end = 0;
   int cross_hits = 0;
 
-  // LHS and RHS arms match from different start cycles at the same tick
   cover property (@(posedge clk) (cross_l_start ##1 cross_l_end) and(cross_r_start ##2 cross_r_end))
     cross_hits++;
 
@@ -48,7 +44,6 @@ module t (
   int throughout_pass = 0;
   int throughout_fail = 0;
 
-  // First pulse drops the guard and fails; second holds it and passes
   assert property (@(posedge clk) throughout_start |->
       ((throughout_guard throughout (1'b1 ##2 1'b1)) and
        (1'b1 ##1 1'b1)))
@@ -61,7 +56,7 @@ module t (
 
     repeat (2) @(negedge clk);
 
-    // Common-end OR: both attempts mature on the following sampled tick.
+    // Common-end OR stimulus
     or_fail_start = 1;
     or_both_start = 1;
     @(negedge clk);

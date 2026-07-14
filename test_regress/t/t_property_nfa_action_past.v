@@ -4,7 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// $past in a Reactive assertion action returns the previous sampled value
+// $past in a Reactive assertion action returns the previous sampled value.
 
 // verilog_format: off
 `define stop $stop

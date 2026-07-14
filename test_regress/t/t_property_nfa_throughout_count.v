@@ -4,7 +4,7 @@
 // SPDX-FileCopyrightText: 2026 PlanV GmbH
 // SPDX-License-Identifier: CC0-1.0
 
-// A throughout guard drop fails each live delay-ring attempt independently
+// A throughout guard drop fails each live delay-ring attempt independently.
 
 // verilog_format: off
 `define stop $stop
@@ -57,8 +57,6 @@ module t (
   else kill_fail++;
 
   initial begin
-    // Start three attempts on adjacent ticks.  At the following tick, all
-    // three are live and the shared throughout guard drops.
     @(negedge clk) begin
       fixed_start = 1;
       range_start = 1;
@@ -73,8 +71,6 @@ module t (
       disable_now = 1;
       disabled_guard = 0;
     end
-    // The disable pulse ends before the next assertion clock.  Its edge epoch,
-    // rather than the current level, must invalidate the pending ring bits.
     #1 disable_now = 0;
     @(negedge clk) begin
       `checkd(fixed_fail, 3);
@@ -86,7 +82,6 @@ module t (
       kill_start = 1;
     end
 
-    // A kill on the guard-drop edge must clear all live bits without actions.
     repeat (2) @(negedge clk);
     @(negedge clk) begin
       kill_start = 0;
