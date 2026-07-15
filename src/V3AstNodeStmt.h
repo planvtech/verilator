@@ -503,8 +503,8 @@ class AstCoverInc final : public AstNodeStmt {
     // Coverage analysis point; increment coverage count
     // @astgen op1 := toggleExprp : Optional[AstNodeExpr]  // [After V3Clock]
     // @astgen op2 := toggleCovExprp : Optional[AstNodeExpr]  // [After V3Clock]
-    // @astgen op3 := multiplicityp : Optional[AstNodeExpr]  // NFA action count
     // These are expressions to which the node corresponds. Used only in toggle coverage
+    // @astgen op3 := multiplicityp : Optional[AstNodeExpr]  // NFA action count
     //
     // @astgen ptr := m_declp : AstNodeCoverDecl  // [After V3CoverageJoin] Declaration
 public:

@@ -406,8 +406,10 @@ protected:
         bool m_fatalOnVpiError = true;  // Fatal on vpi error/unsupported
         bool m_gotError = false;  // A $finish statement executed
         bool m_gotFinish = false;  // A $finish or $stop statement executed
-        // A $finish requested, possibly before m_gotFinish updates via the thread queue
-        std::atomic<bool> m_finishPending{false};
+        // Posted $finish/$stop requests not yet executed via the thread queue
+        std::atomic<uint32_t> m_finishPending{0};
+        // Time of the first posted $finish/$stop request
+        std::atomic<uint64_t> m_finishPendingTime{0};
         bool m_quiet = false;  // Quiet, no summary report
         // Slow path
         int8_t m_timeunit;  // Time unit as 0..15
@@ -567,13 +569,23 @@ public:
     bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish; }
     /// Set if got a $finish or $stop/error
     void gotFinish(bool flag) VL_MT_SAFE;
-    /// Return if a $finish was requested, even if not yet executed
+    /// Return if a $finish/$stop was requested, even if not yet executed
     bool finishPending() const VL_MT_SAFE {
         return m_s.m_finishPending.load(std::memory_order_relaxed) || m_s.m_gotFinish;
     }
-    /// Set that a $finish was requested; cleared by gotFinish(false)
-    void finishPending(bool flag) VL_MT_SAFE {
-        m_s.m_finishPending.store(flag, std::memory_order_relaxed);
+    /// Record a posted $finish/$stop request awaiting execution
+    void finishPendingInc() VL_MT_SAFE {
+        if (m_s.m_finishPending.fetch_add(1, std::memory_order_relaxed) == 0) {
+            m_s.m_finishPendingTime.store(time(), std::memory_order_relaxed);
+        }
+    }
+    /// Balance finishPendingInc once the posted request ran or was ignored
+    void finishPendingDec() VL_MT_SAFE {
+        m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed);
+    }
+    /// Return the time of the first termination request, else the current time
+    uint64_t finishPendingTime() const VL_MT_SAFE {
+        return finishPending() ? m_s.m_finishPendingTime.load(std::memory_order_relaxed) : time();
     }
     /// Check if generated final() code is executing
     bool executingFinal() const VL_MT_SAFE;

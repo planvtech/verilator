@@ -1,0 +1,4 @@
+[50] %Error: t_property_nfa_default_fail_count.v:22: Assertion failed in top.t.unnamedblk2_1: 'assert' failed.
+-Info: t/t_property_nfa_default_fail_count.v:22: Verilog $stop, ignored due to +verilator+error+limit
+[50] %Error: t_property_nfa_default_fail_count.v:22: Assertion failed in top.t.unnamedblk2_1: 'assert' failed.
+*-* All Finished *-*

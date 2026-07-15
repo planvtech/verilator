@@ -9,10 +9,11 @@
 
 import vltest_bootstrap
 
-test.scenarios('vlt_all')
+test.scenarios('vlt')
 
-test.compile(timing_loop=True, verilator_flags2=['--assert', '--timing'])
+test.compile(verilator_flags2=['--assert', '--timing'])
 
-test.execute()
+test.execute(all_run_flags=['+verilator+error+limit+10'],
+             expect_filename=test.golden_filename)
 
 test.passes()

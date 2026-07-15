@@ -9,10 +9,12 @@
 
 import vltest_bootstrap
 
-test.scenarios('vlt_all')
+test.scenarios('simulator')
 
 test.compile(timing_loop=True, verilator_flags2=['--assert', '--timing'])
 
 test.execute()
+
+test.execute(all_run_flags=['+offedge'])
 
 test.passes()

@@ -243,23 +243,26 @@ void vl_warn(const char* filename, int linenum, const char* hier, const char* ms
 // Wrapper to call certain functions via messages when multithreaded
 
 void VL_FINISH_MT(const char* filename, int linenum, const char* hier) VL_MT_SAFE {
-    Verilated::threadContextp()->finishPending(true);
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_finish(filename, linenum, hier);
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 
 void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_SAFE {
-    Verilated::threadContextp()->finishPending(true);
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_stop_maybe(filename, linenum, hier, maybe);
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 
 void VL_FATAL_MT(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_SAFE {
-    Verilated::threadContextp()->finishPending(true);
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_fatal(filename, linenum, hier, msg);
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 
@@ -3281,7 +3284,6 @@ void VerilatedContext::gotError(bool flag) VL_MT_SAFE {
 void VerilatedContext::gotFinish(bool flag) VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
     m_s.m_gotFinish = flag;
-    if (!flag) m_s.m_finishPending.store(false, std::memory_order_relaxed);
 }
 bool VerilatedContext::executingFinal() const VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
