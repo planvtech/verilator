@@ -7,8 +7,7 @@
 // A $stop ignored by the runtime error limit must not suppress later evaluation
 
 // verilog_format: off
-`define stop $stop
-`define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0);
+`define checkd(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got=%0d exp=%0d\n", `__FILE__,`__LINE__, (gotv), (expv)); $fatal; end while(0);
 // verilog_format: on
 
 module t (
@@ -22,14 +21,24 @@ module t (
 
   initial $stop;
 
-  always @(posedge clk) cyc <= cyc + 1;
+  default clocking cb @(posedge clk);
+  endclocking
 
-  always @(negedge clk) begin
-    if (cyc == 9) begin
-      `checkd(passes, 9);
+  always @(posedge clk) begin
+    cyc <= cyc + 1;
+    if (cyc == 10) begin
       $write("*-* All Finished *-*\n");
       $finish;
     end
+  end
+
+  always @(negedge clk) begin
+    if (cyc == 9) `checkd(passes, 8);
+  end
+
+  final begin
+    $stop;
+    `checkd($past(cyc), 9);
   end
 
 endmodule

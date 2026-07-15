@@ -410,6 +410,8 @@ protected:
         std::atomic<uint32_t> m_finishPending{0};
         // Time of the first posted $finish/$stop request
         std::atomic<uint64_t> m_finishPendingTime{0};
+        // True once a request stamped m_finishPendingTime; latched by termination
+        std::atomic<bool> m_finishPendingTimeValid{false};
         bool m_quiet = false;  // Quiet, no summary report
         // Slow path
         int8_t m_timeunit;  // Time unit as 0..15
@@ -575,17 +577,22 @@ public:
     }
     /// Record a posted $finish/$stop request awaiting execution
     void finishPendingInc() VL_MT_SAFE {
-        if (m_s.m_finishPending.fetch_add(1, std::memory_order_relaxed) == 0) {
+        m_s.m_finishPending.fetch_add(1, std::memory_order_relaxed);
+        if (!m_s.m_finishPendingTimeValid.exchange(true, std::memory_order_relaxed)) {
             m_s.m_finishPendingTime.store(time(), std::memory_order_relaxed);
         }
     }
     /// Balance finishPendingInc once the posted request ran or was ignored
     void finishPendingDec() VL_MT_SAFE {
-        m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed);
+        if (m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed) == 1 && !m_s.m_gotFinish) {
+            m_s.m_finishPendingTimeValid.store(false, std::memory_order_relaxed);
+        }
     }
     /// Return the time of the first termination request, else the current time
     uint64_t finishPendingTime() const VL_MT_SAFE {
-        return finishPending() ? m_s.m_finishPendingTime.load(std::memory_order_relaxed) : time();
+        return m_s.m_finishPendingTimeValid.load(std::memory_order_relaxed)
+                   ? m_s.m_finishPendingTime.load(std::memory_order_relaxed)
+                   : time();
     }
     /// Check if generated final() code is executing
     bool executingFinal() const VL_MT_SAFE;

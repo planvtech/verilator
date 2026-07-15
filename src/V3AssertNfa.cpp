@@ -1301,7 +1301,10 @@ class SvaNfaBuilder final {
         }
         if (AstSConsRep* const repp = VN_CAST(nodep, SConsRep)) {
             const int minN = getConstInt(repp->countp());
-            UASSERT_OBJ(minN > 0, repp, "V3Width rejects zero-count fixed repetitions");
+            if (minN < 1) {
+                repp->v3warn(E_UNSUPPORTED, "Unsupported: [*0] consecutive repetition");
+                return false;
+            }
             if (containsImpureExpr(repp->exprp())) {
                 repp->v3warn(
                     E_UNSUPPORTED,
@@ -1907,8 +1910,6 @@ public:
         // Requested optional outputs; unset ones stay empty in LowerResult
         bool wantMatch = false;
         bool wantPerSrcFail = false;
-        // Drop the fail channel when at most one same-slot failure is possible
-        bool perSrcFailOnlyMulti = false;
         bool wantPerSrcMatch = false;
         bool wantAbortPassCount = false;
         bool wantAbortFailCount = false;
@@ -3106,17 +3107,6 @@ private:
         return false;
     }
 
-    // Drop the fail channel when only one same-slot failure is possible
-    static void pruneSingleFailSource(const LowerRequest& req, const LowerOutputs& o,
-                                      const SignalSet& sigs, LowerResult& res) {
-        if (!req.perSrcFailOnlyMulti || !o.failAttemptSrcsp) return;
-        if (res.failAttemptSrcs.size() > 1 || sigs.failCountp) return;
-        for (AstNodeExpr* const srcp : res.failAttemptSrcs) {
-            VL_DO_DANGLING(srcp->deleteTree(), srcp);
-        }
-        res.failAttemptSrcs.clear();
-    }
-
     void materializeLoweringOutputs(LowerCtx& c, const std::string& baseName, SignalSet& sigs,
                                     const LowerOutputs& o, AstNodeExpr* abortPassCountp,
                                     AstNodeExpr* abortFailCountp, AstNodeDType* u32DTypep,
@@ -3427,8 +3417,6 @@ public:
         SignalSet sigs
             = computeSignals(c, o.failAttemptSrcsp, o.matchAttemptSrcsp, o.matchCountpp != nullptr,
                              trackStrongResolved ? &resolvedMatchBuckets : nullptr, o.perMidSrcsp);
-
-        pruneSingleFailSource(req, o, sigs, res);
 
         AstNodeExpr* abortPassCountp = nullptr;
         AstNodeExpr* abortFailCountp = nullptr;
@@ -3980,16 +3968,6 @@ class AssertNfaVisitor final : public VNVisitor {
         return countp;
     }
 
-    AstNode* repeatAction(FileLine* flp, AstNodeExpr* countp, AstNode* actionp) {
-        AstNodeDType* const u32p = m_modp->findBasicDType(VBasicDTypeKwd::UINT32);
-        AstVar* const counterp
-            = new AstVar{flp, VVarType::BLOCKTEMP, m_actionCountNames.get(""), u32p};
-        counterp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
-        AstBegin* const beginp = new AstBegin{flp, "", counterp, true};
-        beginp->addStmtsp(V3AssertCommon::repeatLoop(flp, counterp, countp, actionp));
-        return beginp;
-    }
-
     AstNode* newDefaultFailAction(FileLine* flp) {
         AstDisplay* const dispp
             = new AstDisplay{flp, VDisplayType::DT_ERROR, "'assert' failed.", nullptr, nullptr};
@@ -3999,7 +3977,8 @@ class AssertNfaVisitor final : public VNVisitor {
         return resultp;
     }
 
-    AstNode* repeatFinalAction(FileLine* flp, AstNodeExpr* countp, AstNode* actionp) {
+    // Module-level counter keeps the action out of a named block, for %m
+    AstNode* repeatAction(FileLine* flp, AstNodeExpr* countp, AstNode* actionp) {
         AstNodeDType* const u32p = m_modp->findBasicDType(VBasicDTypeKwd::UINT32);
         AstVar* const counterp
             = new AstVar{flp, VVarType::MODULETEMP, m_actionCountNames.get(""), u32p};
@@ -4008,11 +3987,12 @@ class AssertNfaVisitor final : public VNVisitor {
         return V3AssertCommon::repeatLoop(flp, counterp, countp, actionp);
     }
 
-    void addStrongPendingHandler(AstAssert* assertp, AstNodeExpr* countp, AstSenTree* senTreep) {
+    void addStrongPendingHandler(AstAssert* assertp, AstNodeExpr* countp, AstSenTree* senTreep,
+                                 bool defaultSynthesized) {
         if (!countp) return;
         FileLine* const flp = assertp->fileline();
         AstNode* actionp = nullptr;
-        if (assertp->failsp()) {
+        if (assertp->failsp() && !defaultSynthesized) {
             actionp = assertp->failsp()->cloneTree(true);
             actionp->foreachAndNext([senTreep](AstPast* const pastp) {
                 if (!pastp->sentreep()) pastp->sentreep(senTreep->cloneTree(false));
@@ -4031,7 +4011,7 @@ class AssertNfaVisitor final : public VNVisitor {
 
         AstIf* const failOnp
             = new AstIf{flp, assertFailOnCond(flp, assertp->userType(), assertp->directive()),
-                        repeatFinalAction(flp, countp, actionp)};
+                        repeatAction(flp, countp, actionp)};
         failOnp->isBoundsCheck(true);
         failOnp->user1(true);
         failOnp->user2(true);
@@ -4291,7 +4271,7 @@ class AssertNfaVisitor final : public VNVisitor {
         bool splitImplicationPasssp = false;
         bool perAttemptPasssp = false;
         bool needMatch = false;
-        bool defaultFailMulti = false;
+        bool defaultFailSynthesized = false;
         bool needPerSrcFail = false;
         bool needPerSrcMatch = false;
         bool needAbortPassCount = false;
@@ -4450,12 +4430,7 @@ class AssertNfaVisitor final : public VNVisitor {
             = assertAssertp && assertAssertp->passsp() && !parts.hasImplication && !negated;
         s.needMatch = assertAssertp && assertAssertp->passsp() && !parts.hasImplication
                       && !s.perAttemptPasssp && !s.countNegatedPasssp;
-        // An assert with neither action gets V3Assert's default fail action;
-        // its same-slot multiplicity must be counted like an explicit else.
-        s.defaultFailMulti = !isCover && !negated && assertAssertp && !assertAssertp->passsp()
-                             && !assertAssertp->failsp();
-        s.needPerSrcFail = (!isCover && !negated && assertAssertp
-                            && (assertAssertp->failsp() || s.defaultFailMulti))
+        s.needPerSrcFail = (!isCover && !negated && assertAssertp && assertAssertp->failsp())
                            || s.countNegatedPasssp || s.countNegatedCover;
         s.needPerSrcMatch = s.perAttemptPasssp || s.splitImplicationPasssp
                             || (isCover && !isCoverSeq && !negated) || s.countNegatedFailsp;
@@ -4495,6 +4470,12 @@ class AssertNfaVisitor final : public VNVisitor {
         AstVar* const snapshotVarp = disableVars.snapp;
 
         AstAssert* const assertWithFailp = VN_CAST(assertp, Assert);
+        // Synthesize V3Assert's default fail action so outcome planning
+        // counts it like an explicit else
+        if (assertWithFailp && !assertWithFailp->passsp() && !assertWithFailp->failsp()) {
+            assertWithFailp->addFailsp(newDefaultFailAction(flp));
+            s.defaultFailSynthesized = true;
+        }
         planOutcomeChannels(s);
 
         AstNodeExpr* const alwaysTriggerp
@@ -4513,7 +4494,6 @@ class AssertNfaVisitor final : public VNVisitor {
         req.directiveType = assertp->directive();
         req.wantMatch = s.needMatch;
         req.wantPerSrcFail = s.needPerSrcFail;
-        req.perSrcFailOnlyMulti = s.defaultFailMulti;
         req.wantPerSrcMatch = s.needPerSrcMatch;
         req.wantAbortPassCount = s.needAbortPassCount;
         req.wantAbortFailCount = s.needAbortFailCount;
@@ -4534,7 +4514,8 @@ class AssertNfaVisitor final : public VNVisitor {
         AstNodeExpr* const disableObservedp = res.disableRefp;
 
         if (assertWithFailp) {
-            addStrongPendingHandler(assertWithFailp, s.strongPendingCountp, senTreep);
+            addStrongPendingHandler(assertWithFailp, s.strongPendingCountp, senTreep,
+                                    s.defaultFailSynthesized);
         }
 
         VL_DO_DANGLING(pushDeletep(alwaysTriggerp), alwaysTriggerp);
@@ -4619,11 +4600,6 @@ class AssertNfaVisitor final : public VNVisitor {
         AstNodeExpr*& matchExprp = s.matchExprp;
         AstAssert* const assertAssertp = VN_CAST(assertp, Assert);
         AstAssert* const assertWithFailp = VN_CAST(assertp, Assert);
-
-        // Give the counted handler the same default action V3Assert would add
-        if (!countNegatedOutcomes && failCountp && assertWithFailp && !assertWithFailp->failsp()) {
-            assertWithFailp->addFailsp(newDefaultFailAction(flp));
-        }
 
         if (countNegatedOutcomes && assertAssertp) {
             if (countNegatedPasssp) {

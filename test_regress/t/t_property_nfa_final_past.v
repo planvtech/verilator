@@ -11,19 +11,29 @@ module t;
   bit clk = 0;
   bit data = 0;
   bit offedge = 0;
+  int cyc = 0;
 
   always #1 clk = ~clk;
-  always @(posedge clk) data <= ~data;
+
+  always @(posedge clk) begin
+    cyc <= cyc + 1;
+    data <= ~data;
+    if (!offedge && cyc == 2) begin
+      $write("*-* All Finished *-*\n");
+      $finish;
+    end
+  end
 
   default clocking cb @(posedge clk);
   endclocking
 
   initial begin
     offedge = $test$plusargs("offedge") != 0;
-    if (offedge) #6;
-    else #5;
-    $write("*-* All Finished *-*\n");
-    $finish;
+    if (offedge) begin
+      #6;
+      $write("*-* All Finished *-*\n");
+      $finish;
+    end
   end
 
   final begin
