@@ -64,14 +64,11 @@
 %Error-UNSUPPORTED: t/t_property_nfa_unsup_msgs.v:68:3: Unsupported: strong s_always pending state has a non-positive temporal depth
    68 |   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) |-> s_always[0: 0] e) cnt++;
       |   ^~~~~~
-%Error: t/t_property_nfa_unsup_msgs.v:71:3: Strong end-of-simulation resolved-attempt history requires 1029 slots, exceeding --assert-unroll-limit (1024)
-   71 |   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) ##1026 e |-> s_always[1: 2] a);
+%Error-UNSUPPORTED: t/t_property_nfa_unsup_msgs.v:71:3: Unsupported: pass-action multiplicity for strong s_always in a temporal OR composite cannot preserve resolved attempts
+   71 |   assert property (@(posedge clk) a |-> (((a ##1 b) or(c ##1 d)) |-> s_always[1: 2] e)) cnt++;
       |   ^~~~~~
-%Error-UNSUPPORTED: t/t_property_nfa_unsup_msgs.v:74:3: Unsupported: pass-action multiplicity for strong s_always in a temporal OR composite cannot preserve resolved attempts
-   74 |   assert property (@(posedge clk) a |-> (((a ##1 b) or(c ##1 d)) |-> s_always[1: 2] e)) cnt++;
-      |   ^~~~~~
-%Error-UNSUPPORTED: t/t_property_nfa_unsup_msgs.v:77:65: Unsupported: abort operator around a branching or unbounded property
+%Error-UNSUPPORTED: t/t_property_nfa_unsup_msgs.v:74:65: Unsupported: abort operator around a branching or unbounded property
                                                        : ... note: In instance 't'
-   77 |   assert property (@(posedge clk) sync_accept_on (a) ((b ##1 c) or(d ##2 e)));
+   74 |   assert property (@(posedge clk) sync_accept_on (a) ((b ##1 c) or(d ##2 e)));
       |                                                                 ^~
 %Error: Exiting due to

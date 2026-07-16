@@ -67,9 +67,6 @@ module t (
   // Unsupported: strong s_always pending state has a non-positive temporal depth
   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) |-> s_always[0: 0] e) cnt++;
 
-  // Strong resolved-attempt EOS history requires too many slots
-  assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) ##1026 e |-> s_always[1: 2] a);
-
   // Unsupported strong pass multiplicity when temporal OR loses resolved attempts
   assert property (@(posedge clk) a |-> (((a ##1 b) or(c ##1 d)) |-> s_always[1: 2] e)) cnt++;
 

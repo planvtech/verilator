@@ -272,10 +272,10 @@ void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe)
 }
 
 void VL_FATAL_MT(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_SAFE {
-    Verilated::threadContextp()->finishPendingInc();  // LCOV_EXCL_LINE
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_fatal(filename, linenum, hier, msg);
-        Verilated::threadContextp()->finishPendingDec();  // LCOV_EXCL_LINE
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 

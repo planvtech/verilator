@@ -22,4 +22,11 @@
    30 |   assert property (@(posedge clk) (a[*2000]) and (1'b1 ##1 1'b1));
       |                                     ^~
         ... See the manual at https://verilator.org/verilator_doc.html?v=latest for more assistance.
+%Error-UNSUPPORTED: t/t_property_nfa_composite_unsup.v:32:3: Unsupported: end-of-simulation attempt counting for multiple strong operators with an ambiguous temporal depth
+   32 |   assert property (@(posedge clk)
+      |   ^~~~~~
+%Error-UNSUPPORTED: t/t_property_nfa_composite_unsup.v:35:46: Unsupported: 'until' inside a variable-length property window
+                                                            : ... note: In instance 't'
+   35 |   assert property (@(posedge clk) ##[1:$] (a until b));
+      |                                              ^~~~~
 %Error: Exiting due to

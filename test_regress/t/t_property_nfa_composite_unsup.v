@@ -28,6 +28,11 @@ module t (
   assert property (@(posedge clk) ((|($random | $random))[*2]) and (1'b1 ##1 1'b1));
 
   assert property (@(posedge clk) (a[*2000]) and (1'b1 ##1 1'b1));
+
+  assert property (@(posedge clk)
+      (s_always [1:2] b) and (((a ##2 b) or (c ##2 d)) ##[1:300] a)) else $display("f");
+
+  assert property (@(posedge clk) ##[1:$] (a until b));
   // verilog_format: on
 
 endmodule

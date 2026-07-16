@@ -303,8 +303,8 @@ public:
                         changed = true;
                         break;
                     }
-                }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
-            }  // LCOV_EXCL_LINE -- gcov attributes the outer range-for exit here
+                }
+            }
         }
     }
     const std::unordered_set<const AstNodeFTask*>& pastFTasksp() const { return m_pastFTasksp; }
@@ -680,11 +680,10 @@ class AssertVisitor final : public VNVisitor {
                 iterateAndNextNull(assertp->failsp());
             } else if (AstAssertIntrinsic* const assertp = VN_CAST(nodep, AssertIntrinsic)) {
                 iterateAndNextNull(assertp->failsp());
-            } else if (AstCover* const coverp = VN_CAST(nodep, Cover)) {
+            } else {
+                AstCover* const coverp = VN_AS(nodep, Cover);
                 iterateAndNextNull(coverp->coverincsp());
-            } else if (!VN_IS(nodep, Restrict)) {  // LCOV_EXCL_START -- exhaustive node kinds
-                nodep->v3fatalSrc("Unhandled assert type");
-            }  // LCOV_EXCL_STOP
+            }
             iterateAndNextNull(nodep->passsp());
         }
         AstSenTree* sentreep = nodep->sentreep();

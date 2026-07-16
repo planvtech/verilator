@@ -121,10 +121,10 @@ public:
     }
     ASTGEN_MEMBERS_AstNodeCoverOrAssert;
     string name() const override VL_MT_STABLE { return m_name; }  // * = Var name
-    bool sameNode(const AstNode* samep) const override {  // LCOV_EXCL_START
+    bool sameNode(const AstNode* samep) const override {
         const AstNodeCoverOrAssert* const asamep = VN_DBG_AS(samep, NodeCoverOrAssert);
         return asamep->name() == name() && asamep->nfaLowered() == nfaLowered();
-    }  // LCOV_EXCL_STOP
+    }
     void name(const string& name) override { m_name = name; }
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;

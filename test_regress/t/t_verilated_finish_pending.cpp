@@ -22,6 +22,14 @@ extern void vl_stop_maybe(const char* filename, int linenum, const char* hier, b
 
 int errors = 0;
 
+int fatalCalls = 0;
+
+// Non-exiting vl_fatal override
+void vl_fatal(const char* filename, int linenum, const char* hier, const char* msg) {
+    ++fatalCalls;
+    TEST_CHECK_EQ(Verilated::threadContextp()->finishPending(), true);
+}
+
 int main(int argc, char** argv) {
     VerilatedContext context;
     Verilated::threadContextp(&context);
@@ -73,6 +81,12 @@ int main(int argc, char** argv) {
     context.gotFinish(false);
     TEST_CHECK_EQ(context.finishPending(), false);
     TEST_CHECK_EQ(context.finishPendingTime(), 40);
+
+    // A posted fatal request holds finishPending until its handler returns.
+    context.time(50);
+    VL_FATAL_MT(__FILE__, __LINE__, "TOP.t", "test fatal");
+    TEST_CHECK_EQ(fatalCalls, 1);
+    TEST_CHECK_EQ(context.finishPending(), false);
 
     topp->final();
     return errors ? 10 : 0;

@@ -2,4 +2,4 @@
    14 |     return $past(data, 1, 1'b1, @(posedge clk));
       |            ^~~~~
                     ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
-%Error: Exiting due to 1 error(s)
+%Error: Exiting due to
