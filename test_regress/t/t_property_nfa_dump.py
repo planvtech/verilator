@@ -23,8 +23,8 @@ for fn in jsons:
         json.load(fh)
 
 trees = glob.glob(test.obj_dir + "/V" + test.name + "_*.tree")
-if not any('ASSERT' in open(t, encoding="latin-1").read() and '[NFA]' in open(
-        t, encoding="latin-1").read() for t in trees):
+if not any('ASSERT' in open(t, encoding="latin-1").read()
+           and '[NFA]' in open(t, encoding="latin-1").read() for t in trees):
     test.error("No NFA-lowered ASSERT node dumped")
 
 test.passes()
