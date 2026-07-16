@@ -16,9 +16,10 @@
 // V3AssertNfa's Transformations:
 //
 //  - Convert multi-cycle SVA sequences/properties into NFA graphs.
-//  - Emit module-level state registers driven by AstAlways blocks.
-//  - Replace converted assertions with combinational match/reject checks
-//    so V3AssertPre sees no multi-cycle SExpr (unsupported ones fall through).
+//  - Commit state in Observed; materialize outcome counts for Reactive
+//    actions, exact per-attempt for supported bounded-depth shapes.
+//  - Replace converted assertions with the materialized verdict so
+//    V3AssertPre sees no multi-cycle SExpr (unsupported ones fall through).
 //
 //*************************************************************************
 
@@ -4424,7 +4425,8 @@ class AssertNfaVisitor final : public VNVisitor {
                            || s.countNegatedPasssp || s.countNegatedCover;
         s.needPerSrcMatch = s.perAttemptPasssp || s.splitImplicationPasssp
                             || (isCover && !isCoverSeq && !negated) || s.countNegatedFailsp;
-        s.needAbortPassCount = !abortSpecs.empty() && assertAssertp && assertAssertp->passsp();
+        s.needAbortPassCount
+            = !abortSpecs.empty() && ((assertAssertp && assertAssertp->passsp()) || isCover);
         s.needAbortFailCount = !abortSpecs.empty() && assertAssertp && assertAssertp->failsp();
     }
 
@@ -4542,6 +4544,7 @@ class AssertNfaVisitor final : public VNVisitor {
         std::vector<AstNodeExpr*>& failAttemptSrcs = s.failAttemptSrcs;
         AstNodeExpr*& matchCountp = s.matchCountp;
         AstNodeExpr*& additionalFailCountp = s.additionalFailCountp;
+        AstNodeExpr*& abortPassCountp = s.abortPassCountp;
         AstNodeExpr*& abortFailCountp = s.abortFailCountp;
         AstNodeExpr*& passCountp = s.passCountp;
         AstNodeExpr*& failCountp = s.failCountp;
@@ -4564,6 +4567,10 @@ class AssertNfaVisitor final : public VNVisitor {
         };
         failCountp = addOutcomeCounts(failCountp, abortFailCountp);
         abortFailCountp = nullptr;
+        if (s.isCover) {
+            passCountp = addOutcomeCounts(passCountp, abortPassCountp);
+            abortPassCountp = nullptr;
+        }
 
         if (countNegatedOutcomes) {
             const auto zeroCount = [&]() {
