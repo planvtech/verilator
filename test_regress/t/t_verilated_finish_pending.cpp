@@ -12,6 +12,10 @@
 
 #include VM_PREFIX_INCLUDE
 
+// Workaround to include verilated_imp.h, needed to drive the eval message queue
+#define VERILATOR_VERILATED_CPP_
+#include "verilated_imp.h"
+
 #include <memory>
 
 // These require the above. Comment prevents clang-format moving them
@@ -87,6 +91,23 @@ int main(int argc, char** argv) {
     VL_FATAL_MT(__FILE__, __LINE__, "TOP.t", "test fatal");
     TEST_CHECK_EQ(fatalCalls, 1);
     TEST_CHECK_EQ(context.finishPending(), false);
+
+    // A worker-queued fatal stays pending until end-of-eval runs its handler.
+    context.time(60);
+    {
+        VerilatedEvalMsgQueue evalMsgQ;
+        Verilated::mtaskId(1);
+        VL_FATAL_MT(__FILE__, __LINE__, "TOP.t", "queued fatal");
+        TEST_CHECK_EQ(fatalCalls, 1);
+        TEST_CHECK_EQ(context.finishPending(), true);
+        TEST_CHECK_EQ(context.finishPendingTime(), 60);
+        Verilated::endOfThreadMTask(&evalMsgQ);
+        TEST_CHECK_EQ(fatalCalls, 1);
+        TEST_CHECK_EQ(context.finishPending(), true);
+        Verilated::endOfEval(&evalMsgQ);
+        TEST_CHECK_EQ(fatalCalls, 2);
+        TEST_CHECK_EQ(context.finishPending(), false);
+    }
 
     topp->final();
     return errors ? 10 : 0;
