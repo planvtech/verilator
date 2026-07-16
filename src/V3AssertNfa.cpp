@@ -4086,29 +4086,6 @@ class AssertNfaVisitor final : public VNVisitor {
         VL_DO_DANGLING(pushDeletep(countp), countp);
     }
 
-    void addPassAttemptHandlers(AstAssert* assertp, AstPropSpec* propSpecp,
-                                std::vector<AstNodeExpr*>& matchAttemptSrcs) {
-        UASSERT_OBJ(!matchAttemptSrcs.empty(), assertp,
-                    "Pass action requested without a match-attempt source");
-        AstNode* const passActionp = assertp->passsp()->unlinkFrBackWithNext();
-        if (!assertp->failsp()) assertp->addFailsp(new AstComment{assertp->fileline(), ""});
-        for (AstNodeExpr* const srcp : matchAttemptSrcs) {
-            AstAssert* const handlerp = new AstAssert{assertp->fileline(),
-                                                      clonePropSpecWithBody(propSpecp, srcp),
-                                                      passActionp->cloneTree(true),
-                                                      nullptr,
-                                                      assertp->userType(),
-                                                      assertp->directive(),
-                                                      assertp->name()};
-            if (assertp->sentreep()) { handlerp->sentreep(assertp->sentreep()->cloneTree(false)); }
-            handlerp->senFromAlways(assertp->senFromAlways());
-            handlerp->nfaLowered(true);
-            assertp->addNextHere(handlerp);
-        }
-        matchAttemptSrcs.clear();
-        VL_DO_DANGLING(pushDeletep(passActionp), passActionp);
-    }
-
     void splitCoverOutcomes(AstCover* coverp, AstNodeExpr* outputExprp,
                             std::vector<AstNodeExpr*>& outcomeSrcs) {
         UASSERT_OBJ(!outcomeSrcs.empty(), coverp, "Cover split without outcome source");
@@ -4587,7 +4564,6 @@ class AssertNfaVisitor final : public VNVisitor {
     void installActionHandlers(ProcState& s) {
         AstNodeCoverOrAssert* const assertp = s.assertp;
         AstPropSpec* const propSpecp = s.propSpecp;
-        FileLine* const flp = s.flp;
         PropertyParts& parts = s.parts;
         const bool countNegatedOutcomes = s.countNegatedOutcomes;
         const bool countNegatedPasssp = s.countNegatedPasssp;
