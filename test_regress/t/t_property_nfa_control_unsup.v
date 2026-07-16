@@ -18,6 +18,8 @@ module t (
   cover property (@(posedge clk) if (a) 1'b1 ##1 b else 1'b1 ##2 c);
   assert property (@(posedge clk) not (if (a) 1'b1 ##1 b else 1'b1 ##2 c));
 
+  assert property (@(posedge clk) if (a) s_always[1:2] b else 1'b1 ##1 c);
+
   assert property (@(posedge clk)
                    if ($random == 0) 1'b1 ##1 b
                    else 1'b1 ##1 c);

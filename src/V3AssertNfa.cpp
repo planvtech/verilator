@@ -54,6 +54,8 @@ struct SvaVertexData final {
     AstVar* evalDelayRingVarp = nullptr;  // Old ring used for the current verdict
     AstVar* delayRingIdxVarp = nullptr;  // Next live slot written in the ring
     AstVar* evalDelayRingIdxVarp = nullptr;  // Old ring index used for the verdict
+    AstVar* doneLVarp = nullptr;  // SAnd LHS done-latch
+    AstVar* doneRVarp = nullptr;  // SAnd RHS done-latch
     AstNodeExpr* stateSigp = nullptr;  // Combinational state signal (owned during lowering)
     bool needsReg = false;  // True if vertex has incoming clocked edge
 };
@@ -74,6 +76,8 @@ public:
     bool m_isUnbounded = false;
     // Same-end sequence intersect combiner; IEEE 1800-2023 16.9.6
     bool m_isAndCombiner = false;
+    // Temporal 'and' permits different end cycles and therefore needs done latches.
+    bool m_andNeedsDoneLatches = false;
     SvaStateVertex* m_andLhsTermp = nullptr;  // LHS sub-NFA terminal vertex
     SvaStateVertex* m_andRhsTermp = nullptr;  // RHS sub-NFA terminal vertex
     AstNodeExpr* m_andLhsCondp = nullptr;  // OWNED; LHS final condition (may be nullptr)
@@ -223,8 +227,7 @@ static bool hasPropertyControlConjunction(const AstNodeExpr* nodep) {
     return nodep->exists([](const AstSAnd* andp) { return isPropertyControlConjunction(andp); });
 }
 
-// A top-level abort wrapper peeled before NFA construction.  The expression
-// remains owned by the source AstAbortOn; lowering only clones it.
+// A peeled top-level abort expression remains owned by its source AstAbortOn.
 struct AbortSpec final {
     VAbortKind kind;
     AstNodeExpr* condp;
@@ -251,8 +254,7 @@ static const char* assertPassOnQuery(bool vacuous) {
     return queries[vacuous];
 }
 
-// Assertion-control queries read runtime-mutable state: impure. The Observed
-// transaction captures each once into a variable; action gates read live.
+// Observed captures impure assertion-control queries once; action gates read them live.
 static AstNodeExpr* assertOnCond(FileLine* flp, VAssertType type,
                                  VAssertDirectiveType directiveType) {
     if (!v3Global.opt.assertOn()) { return new AstConst{flp, AstConst::BitFalse{}}; }
@@ -317,8 +319,7 @@ class SvaNfaBuilder final {
     // not just the first. Builder builds parallel-branch (no first-match-wins)
     // topology when true. Default false preserves cover_property semantics.
     bool m_isCoverSeq = false;
-    // Positive cover properties need only match outcomes.  Assertions and
-    // negated covers also need an exact reject outcome for every attempt.
+    // Assertions and negated covers need exact per-attempt reject outcomes.
     bool m_needsRejectVerdict = true;
 
     bool mayEmitLocalReject(bool isTopLevelStep) const {
@@ -330,12 +331,23 @@ class SvaNfaBuilder final {
             VL_DO_DANGLING(result.finalCondp->deleteTree(), result.finalCondp);
         }
     }
+    // Unsupported endpoint topology must reject, not ignore, or the wait hangs
+    bool m_isSeqEvent = false;
 
     struct RangeDelayRejectInfo final {
         SvaStateVertex* startp = nullptr;
         int range = 0;
         int rhsLen = 0;
     };
+
+    void warnEndpointUnsupported(FileLine* flp, const string& what) const {
+        if (m_isSeqEvent) {
+            flp->v3warn(E_UNSUPPORTED,
+                        "Unsupported: sequence used as an event control with " << what);
+        } else {
+            flp->v3warn(COVERIGN, "Ignoring unsupported: cover sequence with " << what);
+        }
+    }
 
     AstNodeExpr* throughoutCond(AstNodeExpr* baseCondp, FileLine* flp) {
         if (m_throughoutStack.empty()) return baseCondp;
@@ -371,8 +383,7 @@ class SvaNfaBuilder final {
     // Delay rings hold one bit per cycle; bound the ring width, not the graph.
     static constexpr uint64_t kMaxDelayRingBits = 1ULL << 20;
 
-    // Cycle-delay bound as int, checked before any arithmetic or ring sizing.
-    // Emits "<whatp> is not ..." or the ring-width diagnostic and returns -1.
+    // Return a checked cycle-delay bound, diagnosing invalid or oversized values.
     static int readDelayBound(AstDelay* delayp, AstNodeExpr* boundp, const char* whatp,
                               bool& outErrorEmitted) {
         AstNodeExpr* const constp = V3Const::constifyEdit(boundp->cloneTreePure(false));
@@ -402,8 +413,7 @@ class SvaNfaBuilder final {
         return result;
     }
 
-    // Fixed clock-tick length from entry to terminal, or -1 if variable/unbounded.
-    // Used by SIntersect for the 16.9.6 equal-length precondition.
+    // Return a fixed clock-tick length, or -1 for variable/unbounded operands.
     static int fixedLength(AstNodeExpr* nodep) {
         if (AstSExpr* const sexprp = VN_CAST(nodep, SExpr)) {
             AstDelay* const delayp = VN_CAST(sexprp->delayp(), Delay);
@@ -433,7 +443,7 @@ class SvaNfaBuilder final {
         }
         if (AstPropAlways* const alwaysp = VN_CAST(nodep, PropAlways)) {
             if (VN_IS(alwaysp->hiBoundp(), Unbounded) || alwaysp->propp()->isMultiCycleSva()) {
-                return -1;
+                return -1;  // LCOV_EXCL_LINE -- V3Width rejects these nested strong forms
             }
             return getConstInt(alwaysp->hiBoundp());
         }
@@ -493,8 +503,7 @@ class SvaNfaBuilder final {
         });
     }
 
-    // Match-length range [lo,hi] for an operand with at most one ranged delay;
-    // {-1,-1} otherwise (16.9.6 variable-length intersect lowering).
+    // Return [lo,hi] for one ranged delay, or {-1,-1} otherwise (IEEE 16.9.6).
     static std::pair<int, int> lengthRange(AstNodeExpr* nodep) {
         if (AstSExpr* const sexprp = VN_CAST(nodep, SExpr)) {
             AstDelay* const delayp = VN_CAST(sexprp->delayp(), Delay);
@@ -567,8 +576,8 @@ class SvaNfaBuilder final {
     AstVar* tryHoistSampled(AstNodeExpr* exprp, FileLine* flp, int cloneCount) {
         constexpr int kHoistThreshold = 2;
         if (cloneCount < kHoistThreshold) return nullptr;
-        AstVar* const tempVarp = new AstVar{flp, VVarType::MODULETEMP, m_propTempNames.get(exprp),
-                                            m_modp->findBitDType()};
+        AstVar* const tempVarp
+            = new AstVar{flp, VVarType::MODULETEMP, m_propTempNames.get(exprp), exprp->dtypep()};
         m_modp->addStmtsp(tempVarp);
         AstAssign* const assignp = new AstAssign{flp, new AstVarRef{flp, tempVarp, VAccess::WRITE},
                                                  sampled(exprp->cloneTreePure(false))};
@@ -679,12 +688,14 @@ class SvaNfaBuilder final {
         }
         const int range = maxDelay - minDelay;
         currentp = addDelayChain(currentp, minDelay, flp);
-        // Above kChainLimit, use a bit-vector ring buffer (vertex count O(1) in range).
+        // kChainLimit bounds per-attempt unrolled vertices. Above this, a
+        // ring buffer (constant-size state) is used instead, so the vertex
+        // count is O(1) in range regardless of user input; no adversarial N
+        // blowup is possible.
         constexpr int kChainLimit = 256;
         // Cover sequence cannot count each end-of-match over a ranged-delay ring (16.14.3).
         if (m_isCoverSeq && (range > kChainLimit || VN_IS(rhsExprp, SExpr))) {
-            flp->v3warn(COVERIGN,
-                        "Ignoring unsupported: cover sequence with this ranged cycle delay");
+            warnEndpointUnsupported(flp, "this ranged cycle delay");
             outErrorEmitted = true;
             return false;
         }
@@ -819,8 +830,7 @@ class SvaNfaBuilder final {
         return {currentp, exprp, std::move(rangeMidSources)};
     }
 
-    // Repetition count and hoist-site total; sums prefix + unbounded/range tail
-    // so one hoist covers every check edge. False = diagnosed.
+    // Sum prefix and range-tail repetition counts for one shared hoist site.
     static bool readConsRepCounts(AstSConsRep* repp, int& minNr, int64_t& totalSitesr) {
         minNr = getConstInt(repp->countp());
         if (minNr < 0) {
@@ -1003,8 +1013,7 @@ class SvaNfaBuilder final {
         // terminal, so a cover sequence would under-count. Reject the ranged form
         // (the single-count b[->N] has one end and is enumerated correctly).
         if (m_isCoverSeq && hasMax && maxN > minN) {
-            flp->v3warn(COVERIGN,
-                        "Ignoring unsupported: cover sequence with a ranged goto repetition");
+            warnEndpointUnsupported(flp, "a ranged goto repetition");
             return BuildResult::failWithError();
         }
 
@@ -1054,6 +1063,15 @@ class SvaNfaBuilder final {
         return {mergeVtxp, nullptr, {}};
     }
 
+    void linkOrBranch(const BuildResult& branch, SvaStateVertex* mergeVtxp, FileLine* flp) {
+        if (branch.finalCondp) {
+            guardedLink(branch.termVertexp, mergeVtxp,
+                        sampled(branch.finalCondp->cloneTreePure(false)), flp);
+        } else {
+            guardedLink(branch.termVertexp, mergeVtxp, flp);
+        }
+    }
+
     // Build merge vertex for SOr / LogOr: both branches feed into one vertex.
     BuildResult buildOrMerge(AstNodeExpr* lhsp, AstNodeExpr* rhsp, SvaStateVertex* entryVtxp,
                              FileLine* flp, bool isTopLevelStep) {
@@ -1065,6 +1083,10 @@ class SvaNfaBuilder final {
         };
         const int lhsConst = constTruth(lhsp);
         const int rhsConst = constTruth(rhsp);
+        if (m_isSeqEvent && (containsMultiCycleSva(lhsp) || containsMultiCycleSva(rhsp))) {
+            warnEndpointUnsupported(flp, "a sequence operand of 'or'");
+            return BuildResult::failWithError();
+        }
         // Cover sequence must count a temporal sibling's later ends; do not fold to true.
         if (m_isCoverSeq
             && ((lhsConst == 1 && containsMultiCycleSva(rhsp))
@@ -1118,28 +1140,16 @@ class SvaNfaBuilder final {
             cleanupProbeResult(rhs);
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
-        // A cover-seq 'or' sequence operand can end more than once; only its final
-        // end reaches the merge, so reject it (16.14.3).
+        // Reject cover-seq 'or' operands whose earlier endpoints bypass this merge.
         if (m_isCoverSeq && (lhs.termVertexp != entryVtxp || rhs.termVertexp != entryVtxp)) {
             cleanupProbeResult(lhs);
             cleanupProbeResult(rhs);
-            flp->v3warn(COVERIGN,
-                        "Ignoring unsupported: cover sequence with a sequence operand of 'or'");
+            warnEndpointUnsupported(flp, "a sequence operand of 'or'");
             return BuildResult::failWithError();
         }
         SvaStateVertex* const mergeVtxp = scopedCreateVertex();
-        if (lhs.finalCondp) {
-            guardedLink(lhs.termVertexp, mergeVtxp, sampled(lhs.finalCondp->cloneTreePure(false)),
-                        flp);
-        } else {
-            guardedLink(lhs.termVertexp, mergeVtxp, flp);
-        }
-        if (rhs.finalCondp) {
-            guardedLink(rhs.termVertexp, mergeVtxp, sampled(rhs.finalCondp->cloneTreePure(false)),
-                        flp);
-        } else {
-            guardedLink(rhs.termVertexp, mergeVtxp, flp);
-        }
+        linkOrBranch(lhs, mergeVtxp, flp);
+        linkOrBranch(rhs, mergeVtxp, flp);
         cleanupProbeResult(lhs);
         cleanupProbeResult(rhs);
 
@@ -1156,8 +1166,81 @@ class SvaNfaBuilder final {
         return {mergeVtxp, nullptr, {}};
     }
 
-    // Equal-length SIntersect operands finish on the same tick, so combine
-    // their terminal matches directly without persistent cross-attempt state.
+    // A done latch retains the first temporal-AND endpoint until its sibling arrives.
+    BuildResult buildAndCombiner(AstNodeExpr* lhsExprp, AstNodeExpr* rhsExprp,
+                                 SvaStateVertex* entryVtxp, FileLine* flp) {
+        const bool savedScope = m_inUnboundedScope;
+        const BuildResult lhs = buildExpr(lhsExprp, entryVtxp);
+        const bool lhsScope = m_inUnboundedScope;
+        m_inUnboundedScope = savedScope;
+        const BuildResult rhs = buildExpr(rhsExprp, entryVtxp);
+        const bool rhsScope = m_inUnboundedScope;
+        m_inUnboundedScope = savedScope || lhsScope || rhsScope;
+        if (!lhs.valid() || !rhs.valid()) {  // LCOV_EXCL_START -- sub-build fail bail
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
+            return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
+        }  // LCOV_EXCL_STOP
+
+        if (lhs.termVertexp == entryVtxp
+            && rhs.termVertexp == entryVtxp) {  // LCOV_EXCL_START -- fixed leaves flatten first
+            UASSERT_OBJ(lhs.finalCondp && rhs.finalCondp, lhsExprp,
+                        "Single-cycle SAnd operands must have finalCondp");
+            AstNodeExpr* const condp = new AstLogAnd{flp, lhs.finalCondp->cloneTreePure(false),
+                                                     rhs.finalCondp->cloneTreePure(false)};
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
+            return {entryVtxp, condp, {}};
+        }  // LCOV_EXCL_STOP
+        if (!lhs.midSources.empty() || !rhs.midSources.empty()) {
+            cleanupProbeResult(lhs);
+            cleanupProbeResult(rhs);
+            if (m_isSeqEvent) {
+                warnEndpointUnsupported(  // LCOV_EXCL_LINE -- seq events reject variable AND first
+                    flp, "a temporal 'and' operand with multiple endpoints");
+            } else {
+                flp->v3warn(E_UNSUPPORTED,
+                            "Unsupported: temporal 'and' with a multiple-endpoint operand cannot "
+                            "preserve overlapping assertion attempt identity");
+            }
+            return BuildResult::failWithError();
+        }
+        SvaStateVertex* const combVtxp = scopedCreateVertex();
+        combVtxp->m_isAndCombiner = true;
+        combVtxp->m_andNeedsDoneLatches = true;
+        combVtxp->m_andLhsTermp = lhs.termVertexp;
+        combVtxp->m_andRhsTermp = rhs.termVertexp;
+        if (lhs.finalCondp) combVtxp->m_andLhsCondp = lhs.finalCondp->cloneTreePure(false);
+        if (rhs.finalCondp) combVtxp->m_andRhsCondp = rhs.finalCondp->cloneTreePure(false);
+        if (lhs.termVertexp->m_isUnbounded || rhs.termVertexp->m_isUnbounded) {
+            combVtxp->m_isUnbounded = true;
+        }
+        if (!combVtxp->m_isUnbounded) {  // LCOV_EXCL_START -- finite ANDs flatten or reject above
+            const bool lhsMultiCycle = lhs.termVertexp != entryVtxp;
+            const bool rhsMultiCycle = rhs.termVertexp != entryVtxp;
+            const bool needSink
+                = (lhs.finalCondp && lhsMultiCycle) || (rhs.finalCondp && rhsMultiCycle);
+            if (needSink) {
+                SvaStateVertex* const sinkVtxp = m_graph.createStateVertex();
+                sinkVtxp->m_isRejectSink = true;
+                if (lhs.finalCondp && lhsMultiCycle && !lhs.termVertexp->m_isUnbounded) {
+                    SvaTransEdge* const ep = m_graph.addLink(
+                        lhs.termVertexp, sinkVtxp, sampled(lhs.finalCondp->cloneTreePure(false)));
+                    ep->m_rejectOnFail = true;
+                }
+                if (rhs.finalCondp && rhsMultiCycle && !rhs.termVertexp->m_isUnbounded) {
+                    SvaTransEdge* const ep = m_graph.addLink(
+                        rhs.termVertexp, sinkVtxp, sampled(rhs.finalCondp->cloneTreePure(false)));
+                    ep->m_rejectOnFail = true;
+                }
+            }
+        }  // LCOV_EXCL_STOP
+        cleanupProbeResult(lhs);
+        cleanupProbeResult(rhs);
+        return {combVtxp, nullptr, {}};
+    }
+
+    // Equal-length intersect operands combine terminal matches without persistent state.
     BuildResult buildSameEndIntersectCombiner(AstNodeExpr* lhsExprp, AstNodeExpr* rhsExprp,
                                               SvaStateVertex* entryVtxp, FileLine* flp,
                                               int sameEndLength, bool isTopLevelStep = false) {
@@ -1186,7 +1269,8 @@ class SvaNfaBuilder final {
             return BuildResult::fail(lhs.errorEmitted || rhs.errorEmitted);
         }  // LCOV_EXCL_STOP
         // Both operands stayed at entry => boolean leaves; reduce to a boolean AND.
-        if (lhs.termVertexp == entryVtxp && rhs.termVertexp == entryVtxp) {
+        if (lhs.termVertexp == entryVtxp
+            && rhs.termVertexp == entryVtxp) {  // LCOV_EXCL_START -- fixed leaves flatten first
             UASSERT_OBJ(lhs.finalCondp && rhs.finalCondp, lhsExprp,
                         "Single-cycle SAnd operands must have finalCondp");
             AstNodeExpr* const condp = new AstLogAnd{flp, lhs.finalCondp->cloneTreePure(false),
@@ -1194,13 +1278,14 @@ class SvaNfaBuilder final {
             cleanupProbeResult(lhs);
             cleanupProbeResult(rhs);
             return {entryVtxp, condp, {}};
-        }
+        }  // LCOV_EXCL_STOP
         // Mid-window sources are not foldable into the combiner; defer.
-        if (!lhs.midSources.empty() || !rhs.midSources.empty()) {
+        if (!lhs.midSources.empty()
+            || !rhs.midSources.empty()) {  // LCOV_EXCL_START -- fixed-length operands have one end
             cleanupProbeResult(lhs);
             cleanupProbeResult(rhs);
             return BuildResult::fail();
-        }
+        }  // LCOV_EXCL_STOP
         SvaStateVertex* const combVtxp = scopedCreateVertex();
         combVtxp->m_isAndCombiner = true;
         combVtxp->m_andLhsTermp = lhs.termVertexp;
@@ -1221,8 +1306,7 @@ class SvaNfaBuilder final {
         return {combVtxp, nullptr, {}};
     }
 
-    // Lower `seq1 within seq2` (IEEE 16.9.10) as
-    //   (OR_i 1 ##i seq1 ##(slack-i) 1) intersect seq2; both operands fixed-length.
+    // Lower fixed-length `seq1 within seq2` by aligning each legal seq1 placement.
     BuildResult buildSWithin(AstSWithin* nodep, SvaStateVertex* entryVtxp,
                              bool isTopLevelStep = false) {
         const int innerLen = fixedLength(nodep->lhsp());
@@ -1290,8 +1374,7 @@ class SvaNfaBuilder final {
         return false;
     }
 
-    // Validate what flattenFixedSeq expands: bound repetition/throughout by the
-    // unroll limit; reject impure leaves (would be duplicated per synthetic clone).
+    // Bound fixed-sequence expansion and reject leaves whose effects would be duplicated.
     static bool validateFixedTrace(AstNodeExpr* nodep, uint64_t& sites) {
         if (AstSExpr* const sexprp = VN_CAST(nodep, SExpr)) {
             if (AstNodeExpr* const prep = sexprp->preExprp()) {
@@ -1301,10 +1384,10 @@ class SvaNfaBuilder final {
         }
         if (AstSConsRep* const repp = VN_CAST(nodep, SConsRep)) {
             const int minN = getConstInt(repp->countp());
-            if (minN < 1) {
+            if (minN < 1) {  // LCOV_EXCL_START -- V3AssertPre diagnoses empty repetitions
                 repp->v3warn(E_UNSUPPORTED, "Unsupported: [*0] consecutive repetition");
                 return false;
-            }
+            }  // LCOV_EXCL_STOP
             if (containsImpureExpr(repp->exprp())) {
                 repp->v3warn(
                     E_UNSUPPORTED,
@@ -1440,8 +1523,7 @@ class SvaNfaBuilder final {
         branches.push_back(VN_AS(nodep, Implication));
     }
 
-    // Lower property if/case: each branch owns its state and rejects; successes
-    // feed one merge hub, failures stay at the branch's own depth.
+    // Property-control branches retain independent state, rejects, and failure depths.
     BuildResult buildPropertyControlAnd(AstSAnd* nodep, SvaStateVertex* entryVtxp,
                                         bool isTopLevelStep) {
         if (m_inUnboundedScope) {
@@ -1459,7 +1541,7 @@ class SvaNfaBuilder final {
                     "Unsupported: impure property if/case selector cannot be sampled once");
                 return BuildResult::failWithError();
             }
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
 
         SvaStateVertex* const mergeVtxp = scopedCreateVertex();
         m_graph.m_hasOrMerge = true;
@@ -1484,11 +1566,12 @@ class SvaNfaBuilder final {
             };
             for (SvaStateVertex* const sourcep : branch.midSources) {
                 addSuccess(sourcep, /*rejectOnMiss=*/false);
-            }
+            }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
             addSuccess(branch.termVertexp,
                        /*rejectOnMiss=*/!branch.termVertexp->m_isUnbounded);
             if (branch.finalCondp && !branch.finalCondp->backp()) {
-                VL_DO_DANGLING(branch.finalCondp->deleteTree(), branch.finalCondp);
+                VL_DO_DANGLING(branch.finalCondp->deleteTree(),  // LCOV_EXCL_LINE
+                               branch.finalCondp);  // LCOV_EXCL_LINE -- ownership fallback
             }
         }
         return {mergeVtxp, nullptr, {}};
@@ -1515,20 +1598,17 @@ class SvaNfaBuilder final {
                           "single fixed match trace");
             return BuildResult::failWithError();
         }
-        // Let an unsupported operand issue its own diagnostic before rejecting the `and`.
-        const BuildResult lhs = buildExpr(nodep->lhsp(), entryVtxp);
-        if (!lhs.valid() && lhs.errorEmitted) return BuildResult::failWithError();
-        const BuildResult rhs = buildExpr(nodep->rhsp(), entryVtxp);
-        if (!rhs.valid() && rhs.errorEmitted) {
-            cleanupProbeResult(lhs);
+        if (!m_needsRejectVerdict) {
+            if (m_isSeqEvent) {
+                warnEndpointUnsupported(nodep->fileline(), "a variable/unbounded temporal 'and'");
+            } else {
+                nodep->v3warn(E_UNSUPPORTED,
+                              "Unsupported: variable/unbounded temporal 'and' cannot preserve "
+                              "overlapping assertion attempt identity");
+            }
             return BuildResult::failWithError();
         }
-        cleanupProbeResult(lhs);
-        cleanupProbeResult(rhs);
-        nodep->v3warn(E_UNSUPPORTED,
-                      "Unsupported: variable/unbounded temporal 'and' cannot preserve "
-                      "overlapping assertion attempt identity");
-        return BuildResult::failWithError();
+        return buildAndCombiner(nodep->lhsp(), nodep->rhsp(), entryVtxp, nodep->fileline());
     }
 
     // A simple ranged sequence `start ##[m:n] end` (start optional).
@@ -1568,8 +1648,7 @@ class SvaNfaBuilder final {
         return buildFromLoweringTree(falsep, entryVtxp, isTopLevelStep);
     }
 
-    // Lower `seq1 intersect seq2` with a variable-length operand (16.9.6): lo==hi
-    // pins each operand and conjoins; lo<hi with `bool ##[m:n] bool` -> ranged delay.
+    // Lower supported variable-length intersect forms under IEEE 1800-2023 16.9.6.
     BuildResult buildVarLenIntersect(AstSIntersect* nodep, SvaStateVertex* entryVtxp,
                                      bool isTopLevelStep) {
         const std::pair<int, int> lhsRange = lengthRange(nodep->lhsp());
@@ -1684,12 +1763,12 @@ class SvaNfaBuilder final {
                                                           << "' in complex property expression");
             return BuildResult::failWithError();
         }
-        if (m_inUnboundedScope) {
+        if (m_inUnboundedScope) {  // LCOV_EXCL_START -- outer builders isolate/reject this scope
             nodep->v3warn(E_UNSUPPORTED, "Unsupported: '"
                                              << nodep->verilogKwd()
                                              << "' inside a variable-length property window");
             return BuildResult::failWithError();
-        }
+        }  // LCOV_EXCL_STOP
 
         const bool ov = nodep->isOverlapping();
         // p hoist count: continue, require (ov: 1 use; nov: 1 use). At least 2 uses.
@@ -1737,12 +1816,13 @@ class SvaNfaBuilder final {
 
 public:
     SvaNfaBuilder(SvaGraph& graph, AstNodeModule* modp, V3UniqueNames& propTempNames,
-                  bool isCoverSeq = false, bool needsRejectVerdict = true)
+                  bool isCoverSeq = false, bool needsRejectVerdict = true, bool isSeqEvent = false)
         : m_graph{graph}
         , m_modp{modp}
         , m_propTempNames{propTempNames}
         , m_isCoverSeq{isCoverSeq}
-        , m_needsRejectVerdict{needsRejectVerdict} {}
+        , m_needsRejectVerdict{needsRejectVerdict}
+        , m_isSeqEvent{isSeqEvent} {}
 
     // Reset scope between antecedent and consequent: liveness must not leak.
     void resetScope() {
@@ -1776,15 +1856,15 @@ public:
             if (!orp->exists([](const AstNodeExpr* ep) { return ep->isMultiCycleSva(); })) {
                 return {entryVtxp, orp, {}};
             }
-            return buildOrMerge(orp->lhsp(), orp->rhsp(), entryVtxp, orp->fileline(),
-                                isTopLevelStep);
+            return buildOrMerge(
+                orp->lhsp(), orp->rhsp(), entryVtxp, orp->fileline(),
+                isTopLevelStep);  // LCOV_EXCL_LINE -- grammar forbids temporal || operands
         }
         if (AstSAnd* const andp = VN_CAST(nodep, SAnd)) {
             return buildSAnd(andp, entryVtxp, isTopLevelStep);
         }
         if (AstSIntersect* const intp = VN_CAST(nodep, SIntersect)) {
-            // 16.9.6 equal-length intersect: conjoin per-cycle checks; the combiner
-            // is only a fallback for operands that do not flatten.
+            // Conjoin equal-length intersect checks, retaining a non-flattened fallback.
             const int lhsLen = fixedLength(intp->lhsp());
             const int rhsLen = fixedLength(intp->rhsp());
             if (lhsLen >= 0 && rhsLen >= 0) {
@@ -1804,11 +1884,12 @@ public:
         if (AstSWithin* const withinp = VN_CAST(nodep, SWithin)) {
             return buildSWithin(withinp, entryVtxp, isTopLevelStep);
         }
-        if (AstAbortOn* const ap = VN_CAST(nodep, AbortOn)) {
+        if (AstAbortOn* const ap
+            = VN_CAST(nodep, AbortOn)) {  // LCOV_EXCL_START -- preflight diagnoses nested aborts
             ap->v3warn(E_UNSUPPORTED,
                        "Unsupported: nested abort operator in a multi-cycle property");
             return BuildResult::failWithError();
-        }
+        }  // LCOV_EXCL_STOP
         if (VN_IS(nodep, SNonConsRep)) return BuildResult::fail();
         if (AstImplication* const implp = VN_CAST(nodep, Implication)) {
             return buildImplicationEdges(implp->lhsp(), implp->rhsp(), entryVtxp,
@@ -1818,8 +1899,7 @@ public:
         if (AstUntil* const untilp = VN_CAST(nodep, Until)) {
             return buildUntil(untilp, entryVtxp, isTopLevelStep);
         }
-        // Leave unhandled temporal operators to V3AssertPre (a boolean-leaf clone
-        // would double-diagnose).
+        // Leave unsupported temporal operators to V3AssertPre to avoid duplicate diagnostics.
         if (nodep->exists([](const AstNodeExpr* ep) { return ep->isMultiCycleSva(); })) {
             return BuildResult::fail();
         }
@@ -1827,8 +1907,7 @@ public:
         return {entryVtxp, nodep, {}};
     }
 
-    // Wire an implication/followed-by from entryVtxp: antecedent, match-link
-    // (+ reject sink for followed-by), delay vertex, body; errorNodep anchors the error.
+    // Wire antecedent, match/reject links, delay, and body for implication/followed-by.
     BuildResult buildImplicationEdges(AstNodeExpr* antExprp, AstNodeExpr* bodyExprp,
                                       SvaStateVertex* entryVtxp, bool isOverlapped,
                                       bool isFollowedBy, AstNode* errorNodep, FileLine* flp) {
@@ -1910,6 +1989,8 @@ public:
         // Requested optional outputs; unset ones stay empty in LowerResult
         bool wantMatch = false;
         bool wantPerSrcFail = false;
+        // The synthesized default handler only needs a count for true multiplicity.
+        bool pruneSingleFailSource = false;
         bool wantPerSrcMatch = false;
         bool wantAbortPassCount = false;
         bool wantAbortFailCount = false;
@@ -2014,6 +2095,7 @@ private:
             return new AstConst{flp, AstConst::WidthedValue{}, 32, value};
         };
         UASSERT(size > 1, "Delay ring index needs at least two slots");
+        // idx == size - 1 ? 0 : idx + 1
         AstAdd* const addp = new AstAdd{flp, new AstVarRef{flp, idxp, VAccess::READ}, u32Const(1)};
         addp->dtypeFrom(idxp);
         AstCond* const condp = new AstCond{
@@ -2024,6 +2106,7 @@ private:
     }
     static AstNodeExpr* delayRingBit(FileLine* flp, AstVar* ringp, AstNodeExpr* idxExprp,
                                      VAccess access = VAccess::READ) {
+        // ring[idx]
         return new AstSel{flp, new AstVarRef{flp, ringp, access}, idxExprp, 1};
     }
     static AstNodeExpr* ringIndexOffset(FileLine* flp, AstVar* idxp, uint32_t size,
@@ -2080,8 +2163,7 @@ private:
             varp->lifetime(VLifetime::STATIC_EXPLICIT);
             m_modp->addStmtsp(varp);
             condVars.push_back(varp);
-            // Sample the abort condition once per clock (async reaches here only
-            // with no between-clock live window, so one sample is exact).
+            // Sample abort once per clock; supported async forms have no live inter-clock window.
             AstNodeExpr* valuep = sampled(spec.condp->cloneTreePure(false));
             appendStmt(c.snapshotBodyp,
                        new AstAssign{c.flp, new AstVarRef{c.flp, varp, VAccess::WRITE}, valuep});
@@ -2208,7 +2290,7 @@ private:
                     depths[ti] = kDepthAmbiguous;
                     changed = true;
                 }
-            }
+            }  // LCOV_EXCL_LINE -- gcov attributes the edge-loop exit here
             if (!changed) {
                 converged = true;
                 break;
@@ -2281,7 +2363,8 @@ private:
         appendStmt(c.updateBodyp,
                    new AstAssign{c.flp, new AstVarRef{c.flp, resolvedHistoryp, VAccess::WRITE},
                                  shiftedp});
-        for (const auto& pair : resolvedMatchBuckets) {
+        // Supported finite OR siblings cannot populate resolved-match buckets.
+        for (const auto& pair : resolvedMatchBuckets) {  // LCOV_EXCL_START
             if (pair.first >= maxPendingDepth) continue;
             AstAssign* const setp
                 = new AstAssign{c.flp,
@@ -2291,7 +2374,7 @@ private:
                                              VAccess::WRITE),
                                 new AstConst{c.flp, AstConst::BitTrue{}}};
             appendStmt(c.updateBodyp, new AstIf{c.flp, pair.second->cloneTreePure(false), setp});
-        }
+        }  // LCOV_EXCL_STOP
 
         AstNodeExpr* countp = nullptr;
         // Mask each depth bucket by the age-indexed resolved-attempt history.
@@ -2302,7 +2385,7 @@ private:
                                                  static_cast<uint32_t>(pair.first - 1)})};
             AstNodeExpr* const pendingp = new AstLogAnd{c.flp, pair.second, unresolvedp};
             countp = addCounts(c, countp, boolToCount(c, pendingp));
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the bucket-loop exit here
         return countp;
     }
 
@@ -2330,8 +2413,7 @@ private:
             return strongPendingFastCount(c);
         }
 
-        // One strong operator in a linear property: the O(1) ring count is exact.
-        // An OR sibling resolves states early, needing depth buckets.
+        // Linear strong properties use an exact O(1) ring count; OR needs depth buckets.
         if (!trackResolved && groups.size() <= 1) return strongPendingFastCount(c);
 
         const std::vector<int> depths = computeAttemptDepths(c);
@@ -2354,12 +2436,13 @@ private:
 
         OutcomeBuckets depthBuckets = bucketStrongByDepth(c, depths);
         AstNodeExpr* countp = nullptr;
-        if (!trackResolved) {
+        if (!trackResolved) {  // LCOV_EXCL_START -- multiple strong groups require rejected
+                               // controls
             for (auto& pair : depthBuckets) {
                 countp = addCounts(c, countp, boolToCount(c, pair.second));
             }
             return countp;
-        }
+        }  // LCOV_EXCL_STOP
 
         if (depthBuckets.empty()) {
             c.flp->v3warn(E_UNSUPPORTED, "Unsupported: strong s_always pending state has a "
@@ -2367,12 +2450,13 @@ private:
             return strongPendingFastCount(c);
         }
         const int maxPendingDepth = depthBuckets.rbegin()->first;
-        if (depthBuckets.begin()->first <= 0) {
+        if (depthBuckets.begin()->first
+            <= 0) {  // LCOV_EXCL_START -- empty/nonpositive case is rejected immediately above
             c.flp->v3warn(E_UNSUPPORTED, "Unsupported: strong s_always pending state has a "
                                          "non-positive temporal depth");
             for (auto& pair : depthBuckets) VL_DO_DANGLING(pair.second->deleteTree(), pair.second);
             return strongPendingFastCount(c);
-        }
+        }  // LCOV_EXCL_STOP
         if (maxPendingDepth > v3Global.opt.assertUnrollLimit()) {
             c.flp->v3error("Strong end-of-simulation resolved-attempt history requires "
                            << maxPendingDepth << " slots, exceeding --assert-unroll-limit ("
@@ -2383,7 +2467,7 @@ private:
         for (const auto& pair : *resolvedMatchBucketsp) {
             UASSERT_OBJ(pair.first >= 0, c.graph.m_startVertexp,
                         "Ambiguous match depth must imply ambiguous pending depth");
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the assertion-loop exit here
 
         return buildStrongResolvedCount(c, depthBuckets, *resolvedMatchBucketsp, maxPendingDepth,
                                         baseName);
@@ -2391,8 +2475,7 @@ private:
 
     static AstNodeExpr* computeActiveAttemptCount(LowerCtx& c) {
         const std::vector<int> depths = computeAttemptDepths(c);
-        // Abort priority: the current attempt starts at the graph root, before an
-        // implication antecedent filters the nonvacuous path.
+        // Abort priority starts the current attempt before implication filters it.
         UASSERT_OBJ(c.vtx[c.startIdx]->datap()->stateSigp, c.vtx[c.startIdx],
                     "Abort attempt root signal was not resolved");
         AstNodeExpr* currentp = c.vtx[c.startIdx]->datap()->stateSigp->cloneTreePure(false);
@@ -2421,10 +2504,10 @@ private:
                               : notKillActive(c);
                 countp = addCounts(c, countp, gateCount(c, gatep, ringCountp));
             }
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the vertex-loop exit here
         for (auto& pair : scalarRoots) {
             countp = addCounts(c, countp, boolToCount(c, pair.second));
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
         return countp;
     }
 
@@ -2464,11 +2547,11 @@ private:
             } else {
                 outAttemptSrcsp->push_back(pair.second);
             }
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
         if (fallbackp) outAttemptSrcsp->push_back(fallbackp);
     }
 
-    // Phase 2: Each clocked-edge target latches the OR of its incoming contributions.
+    // Phase 2 updates live registered state after snapshotting incoming contributions.
     void emitStateUpdate(LowerCtx& c) {
         AstNode* bodyp = nullptr;
         for (int i = 0; i < c.N; ++i) {
@@ -2581,6 +2664,55 @@ private:
         }
     }
 
+    // Done latches retain early AND endpoints after outcome expressions are captured.
+    void emitAndCombinerDoneUpdate(LowerCtx& c) {
+        for (int ai = 0; ai < c.N; ++ai) {
+            SvaStateVertex* const vtxp = c.vtx[ai];
+            if (!vtxp->datap()->doneLVarp) continue;
+            UASSERT_OBJ(vtxp->m_andLhsTermp && vtxp->m_andRhsTermp, vtxp,
+                        "And-combiner vertex missing LHS/RHS terminal");
+            const int l = vtxp->m_andLhsTermp->color();
+            const int r = vtxp->m_andRhsTermp->color();
+            UASSERT_OBJ(c.vtx[l]->datap()->stateSigp && c.vtx[r]->datap()->stateSigp
+                            && vtxp->datap()->stateSigp,
+                        vtxp, "And-combiner signals unresolved");
+
+            AstNodeExpr* matchLp
+                = buildMatchNow(c.flp, c.vtx[l]->datap()->stateSigp, vtxp->m_andLhsCondp);
+            AstNodeExpr* matchRp
+                = buildMatchNow(c.flp, c.vtx[r]->datap()->stateSigp, vtxp->m_andRhsCondp);
+            matchLp = gateNotKill(c, matchLp);
+            matchRp = gateNotKill(c, matchRp);
+            matchLp = gateNotAbort(c, matchLp);
+            matchRp = gateNotAbort(c, matchRp);
+
+            AstAssign* const clearLp = new AstAssign{
+                c.flp, new AstVarRef{c.flp, vtxp->datap()->doneLVarp, VAccess::WRITE},
+                new AstConst{c.flp, AstConst::BitFalse{}}};
+            clearLp->addNext(new AstAssign{
+                c.flp, new AstVarRef{c.flp, vtxp->datap()->doneRVarp, VAccess::WRITE},
+                new AstConst{c.flp, AstConst::BitFalse{}}});
+
+            AstAssign* const setLp = new AstAssign{
+                c.flp, new AstVarRef{c.flp, vtxp->datap()->doneLVarp, VAccess::WRITE},
+                new AstConst{c.flp, AstConst::BitTrue{}}};
+            AstIf* const setLIfp = new AstIf{c.flp, matchLp, setLp};
+            setLIfp->addNext(new AstIf{
+                c.flp, matchRp,
+                new AstAssign{c.flp,
+                              new AstVarRef{c.flp, vtxp->datap()->doneRVarp, VAccess::WRITE},
+                              new AstConst{c.flp, AstConst::BitTrue{}}}});
+
+            AstNodeExpr* clearp
+                = orExprs(c.flp, killActive(c), vtxp->datap()->stateSigp->cloneTreePure(false));
+            if (c.abortAnyVarp) clearp = orExprs(c.flp, clearp, abortActive(c));
+            if (AstNodeExpr* const alivep = oldAttemptAlive(c)) {
+                clearp = orExprs(c.flp, clearp, new AstLogNot{c.flp, alivep});
+            }
+            appendStmt(c.updateBodyp, new AstIf{c.flp, clearp, clearLp, setLIfp});
+        }
+    }
+
     static void emitKillAckUpdate(LowerCtx& c) {
         AstAssign* const ackp
             = new AstAssign{c.flp, new AstVarRef{c.flp, c.killVarp, VAccess::WRITE},
@@ -2622,9 +2754,9 @@ private:
         AstNodeExpr* countp = addCounts(c, oldMatchCountp, boolToCount(c, incomingp));
 
         AstNodeExpr* gatep = notKillActive(c);
-        if (tep->m_condp) {
+        if (tep->m_condp) {  // LCOV_EXCL_START -- range terminal condition is matchCondp
             gatep = new AstLogAnd{c.flp, gatep, tep->m_condp->cloneTreePure(false)};
-        }
+        }  // LCOV_EXCL_STOP
         if (c.matchCondp) {
             gatep = new AstLogAnd{c.flp, gatep, sampled(c.matchCondp->cloneTreePure(false))};
         }
@@ -2664,23 +2796,21 @@ private:
                         matchp = new AstLogAnd{c.flp, matchp,
                                                sampled(c.matchCondp->cloneTreePure(false))};
                     }
-                    if (sourcep->m_delayRingSize && !sourcep->m_isFixedDelayRing) {
-                        // A ranged ring holds several start cycles; keep an
-                        // ambiguous bucket so strong-EOS rejects it.
+                    if (sourcep->m_delayRingSize
+                        && !sourcep->m_isFixedDelayRing) {  // LCOV_EXCL_START -- isRangeRing above
+                        // Preserve an ambiguous depth for ranged rings so strong EOS rejects it.
                         AstNodeExpr*& bucketpr = (*matchBucketsp)[kDepthAmbiguous];
                         bucketpr = orExprs(c.flp, bucketpr, gateAttemptOutcome(c, matchp));
-                    } else {
+                    } else {  // LCOV_EXCL_STOP
                         addAttemptOutcome(c, matchBucketsp, depths, sourcep->color(), matchp);
                     }
                 };
-                // The merge belongs to one start-depth bucket; count it once
-                // (simultaneous siblings are one outcome).
+                // Count simultaneous sibling matches once in their shared depth bucket.
                 addMatch(tep->fromVtxp(), srcSigp->cloneTreePure(false));
             }
             if (matchBucketsp && isRangeRing) emitRangeRingMatchCount(c, tep, fi, sigs);
             if (outPerMidSrcsp) {
-                // Per-mid signal AND-s in matchCondp so each end-of-match is
-                // gated like the OR-collapsed terminalActivep.
+                // Gate per-mid matches with matchCondp like the collapsed terminal signal.
                 AstNodeExpr* perMidp = srcSigp->cloneTreePure(false);
                 if (c.matchCondp) {
                     perMidp = new AstLogAnd{c.flp, perMidp,
@@ -2753,8 +2883,7 @@ private:
             AstNodeExpr* const notGuardp = new AstLogNot{c.flp, guardp};
             AstNodeExpr* const failp = new AstLogAnd{c.flp, stateExprp, notGuardp};
             if (evalRingp && failBucketsp) {
-                // A ring bit is one live attempt; keep the per-attempt count for
-                // action blocks and negated outcomes.
+                // Preserve one count per live ring attempt for actions and negated outcomes.
                 AstCountOnes* const ringCountp
                     = new AstCountOnes{c.flp, new AstVarRef{c.flp, evalRingp, VAccess::READ}};
                 ringCountp->dtypeFrom(c.killVarp);
@@ -2822,8 +2951,7 @@ private:
 
         // Free the orphan intermediate state signals (lifetime ends this scope).
         clearStateSignals(c);
-        // Fire-edge disable gating (16.12): the live level is the end-of-attempt
-        // current value; in-window cycles are gated per hop above.
+        // Fire-edge disable uses the current value; earlier window hops are gated above.
         if (c.disableExprp) {
             // terminalActivep is always set, so gate it unconditionally.
             AstNodeExpr* const notTermp
@@ -2846,11 +2974,11 @@ private:
             c.disableExprp = nullptr;
         }
 
-        if (outResolvedMatchBucketsp) {
+        if (outResolvedMatchBucketsp) {  // LCOV_EXCL_START -- supported strong ORs have no bucket
             for (const auto& pair : matchBuckets) {
                 (*outResolvedMatchBucketsp)[pair.first] = pair.second->cloneTreePure(false);
             }
-        }
+        }  // LCOV_EXCL_STOP
 
         finishAttemptOutcomes(c, failBuckets, outFailAttemptSrcsp);
         finishAttemptOutcomes(c, matchBuckets, outMatchAttemptSrcsp);
@@ -2898,9 +3026,24 @@ private:
                     = buildMatchNow(c.flp, c.vtx[l]->datap()->stateSigp, vtxp->m_andLhsCondp);
                 AstNodeExpr* const matchRp
                     = buildMatchNow(c.flp, c.vtx[r]->datap()->stateSigp, vtxp->m_andRhsCondp);
-                // Both operands end now (same start cycle); do not retain either
-                // for a later overlapping attempt.
-                sigp = orExprs(c.flp, sigp, new AstLogAnd{c.flp, matchLp, matchRp});
+                AstNodeExpr* matchp = nullptr;
+                if (vtxp->m_andNeedsDoneLatches) {
+                    UASSERT_OBJ(vtxp->datap()->doneLVarp && vtxp->datap()->doneRVarp, vtxp,
+                                "Temporal-and combiner missing done latches");
+                    AstNodeExpr* const doneLOrp = new AstLogOr{
+                        c.flp, new AstVarRef{c.flp, vtxp->datap()->doneLVarp, VAccess::READ},
+                        matchLp};
+                    AstNodeExpr* const doneROrp = new AstLogOr{
+                        c.flp, new AstVarRef{c.flp, vtxp->datap()->doneRVarp, VAccess::READ},
+                        matchRp};
+                    AstNodeExpr* const bothp = new AstLogAnd{c.flp, doneLOrp, doneROrp};
+                    AstNodeExpr* const oneNowp = new AstLogOr{c.flp, matchLp->cloneTreePure(false),
+                                                              matchRp->cloneTreePure(false)};
+                    matchp = new AstLogAnd{c.flp, bothp, oneNowp};
+                } else {
+                    matchp = new AstLogAnd{c.flp, matchLp, matchRp};
+                }
+                sigp = orExprs(c.flp, sigp, matchp);
             }
         }
         for (const V3GraphEdge& er : vtxp->inEdges()) {
@@ -2913,8 +3056,7 @@ private:
         vtxp->datap()->stateSigp = sigp;
     }
 
-    // Phase 1: Resolve combinational Links in dependency order. Each vertex is
-    // finalized exactly once, after every Link source and combiner terminal.
+    // Phase 1 finalizes each combinational Link after all dependency sources.
     void resolveLinks(LowerCtx& c, AstVar* triggerVarp) {
         seedLinkBaseSignals(c, triggerVarp);
         std::vector<int> pendingDeps(c.N, 0);
@@ -2925,7 +3067,7 @@ private:
             if (top->m_isMatch || top->m_isRejectSink || top->datap()->needsReg) continue;
             pendingDeps[top->color()]++;
             dependents[tep->fromVtxp()->color()].push_back(top->color());
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the dependency-edge loop exit here
         for (int i = 0; i < c.N; ++i) {
             if (!c.vtx[i]->m_isAndCombiner) continue;
             // Same-end combiner vertices always have both terminal pointers set.
@@ -2951,8 +3093,8 @@ private:
                 finalizeLinkTarget(c, d);
                 finalized[d] = true;
                 worklist.push_back(d);
-            }
-        }
+            }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
+        }  // LCOV_EXCL_LINE -- gcov attributes the dependent-loop exit here
         for (int i = 0; i < c.N; ++i) {
             UASSERT_OBJ(finalized[i], c.vtx[i], "Combinational Link dependency cycle");
         }
@@ -3107,6 +3249,16 @@ private:
         return false;
     }
 
+    static void pruneSingleFailSource(const LowerRequest& req, const LowerOutputs& o,
+                                      const SignalSet& sigs, LowerResult& res) {
+        if (!req.pruneSingleFailSource || !o.failAttemptSrcsp) return;
+        if (res.failAttemptSrcs.size() > 1 || sigs.failCountp) return;
+        for (AstNodeExpr* const srcp : res.failAttemptSrcs) {
+            VL_DO_DANGLING(srcp->deleteTree(), srcp);
+        }
+        res.failAttemptSrcs.clear();
+    }
+
     void materializeLoweringOutputs(LowerCtx& c, const std::string& baseName, SignalSet& sigs,
                                     const LowerOutputs& o, AstNodeExpr* abortPassCountp,
                                     AstNodeExpr* abortFailCountp, AstNodeDType* u32DTypep,
@@ -3116,9 +3268,10 @@ private:
                                                                  abortActive(c), captureBodyp)
                                            : nullptr;
         }
-        if (o.matchpp && *o.matchpp) {
+        if (o.matchpp
+            && *o.matchpp) {  // LCOV_EXCL_START -- outcome planner always uses count channels
             *o.matchpp = materializeObserved(c, baseName + "__match", *o.matchpp, captureBodyp);
-        }
+        }  // LCOV_EXCL_STOP
         if (o.failAttemptSrcsp) {
             for (size_t i = 0; i < o.failAttemptSrcsp->size(); ++i) {
                 AstNodeExpr*& exprpr = o.failAttemptSrcsp->at(i);
@@ -3136,15 +3289,15 @@ private:
         if (o.matchCountpp) {
             *o.matchCountpp = materializeObserved(c, baseName + "__matchCount", sigs.matchCountp,
                                                   captureBodyp, u32DTypep);
-        } else if (sigs.matchCountp) {
+        } else if (sigs.matchCountp) {  // LCOV_EXCL_START -- producer requires match-count output
             VL_DO_DANGLING(sigs.matchCountp->deleteTree(), sigs.matchCountp);
-        }
+        }  // LCOV_EXCL_STOP
         if (o.failCountpp) {
             *o.failCountpp = materializeObserved(c, baseName + "__failCount", sigs.failCountp,
                                                  captureBodyp, u32DTypep);
-        } else if (sigs.failCountp) {
+        } else if (sigs.failCountp) {  // LCOV_EXCL_START -- producer requires fail-count output
             VL_DO_DANGLING(sigs.failCountp->deleteTree(), sigs.failCountp);
-        }
+        }  // LCOV_EXCL_STOP
         if (o.abortPassCountpp) {
             *o.abortPassCountpp = materializeObserved(c, baseName + "__abortPassCount",
                                                       abortPassCountp, captureBodyp, u32DTypep);
@@ -3181,6 +3334,20 @@ private:
                                  AstNodeDType* u32DTypep, LowerVars& lv) {
         std::vector<SvaStateVertex*>& vtx = lv.vtx;
         for (int i = 0; i < lv.N; ++i) {
+            if (vtx[i]->m_andNeedsDoneLatches) {
+                const std::string base = baseName + "__a" + std::to_string(i);
+                AstVar* const lp = new AstVar{flp, VVarType::MODULETEMP, base + "_doneL",
+                                              m_modp->findBitDType()};
+                lp->lifetime(VLifetime::STATIC_EXPLICIT);
+                m_modp->addStmtsp(lp);
+                vtx[i]->datap()->doneLVarp = lp;
+                AstVar* const rp = new AstVar{flp, VVarType::MODULETEMP, base + "_doneR",
+                                              m_modp->findBitDType()};
+                rp->lifetime(VLifetime::STATIC_EXPLICIT);
+                m_modp->addStmtsp(rp);
+                vtx[i]->datap()->doneRVarp = rp;
+                continue;
+            }
             if (vtx[i]->m_delayRingSize) {
                 const std::string base = baseName + "__d" + std::to_string(i);
                 AstNodeDType* const ringDTypep = m_modp->findLogicDType(
@@ -3274,7 +3441,7 @@ private:
                 *outDisablepp = new AstVarRef{flp, disableObservedp, VAccess::READ};
             }
         } else if (outDisablepp) {
-            *outDisablepp = nullptr;
+            *outDisablepp = nullptr;  // LCOV_EXCL_LINE -- pointer is bound only with disableExprp
         }
         return lv;
     }
@@ -3287,7 +3454,7 @@ private:
             c, trackStrongResolved ? &resolvedMatchBuckets : nullptr, baseName);
         for (auto& pair : resolvedMatchBuckets) {
             VL_DO_DANGLING(pair.second->deleteTree(), pair.second);
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the cleanup-loop exit here
         if (pendingCountp) {
             AstNodeExpr* gatep = oldAttemptAlive(c);
             AstNodeExpr* const notKilledp
@@ -3331,16 +3498,18 @@ private:
         if (abortPassp) {
             UASSERT_OBJ(abortFailp, c.graph.m_startVertexp,
                         "Abort pass verdict without fail verdict");
-            if (isCover) {
+            if (isCover) {  // LCOV_EXCL_START -- abort on multi-cycle cover is rejected
                 resultp = new AstLogOr{flp, abortPassp->cloneTreePure(false), resultp};
-            } else {
+            } else {  // LCOV_EXCL_STOP
                 resultp = new AstLogOr{
                     flp, abortPassp->cloneTreePure(false),
                     new AstLogAnd{flp, new AstLogNot{flp, abortFailp->cloneTreePure(false)},
                                   resultp}};
             }
             if (outMatchpp) {
-                *outMatchpp = orExprs(flp, *outMatchpp, abortPassp->cloneTreePure(false));
+                *outMatchpp
+                    = orExprs(  // LCOV_EXCL_LINE -- abort planner requests count, not match
+                        flp, *outMatchpp, abortPassp->cloneTreePure(false));
             }
             VL_DO_DANGLING(abortPassp->deleteTree(), abortPassp);
             VL_DO_DANGLING(abortFailp->deleteTree(), abortFailp);
@@ -3352,8 +3521,7 @@ public:
     explicit SvaNfaLowering(AstNodeModule* modp)
         : m_modp{modp} {}
 
-    // Lower the NFA into one Observed transaction (snapshot, verdict, commit);
-    // actions lower separately into the Reactive region.
+    // Lower snapshot, verdict, and commit into Observed; actions execute in Reactive.
     LowerResult lower(FileLine* flp, SvaGraph& graph, const LowerRequest& req) {
         LowerResult res;
         const LowerOutputs o = bindLowerOutputs(req, res);
@@ -3398,7 +3566,8 @@ public:
         AstNodeExpr* const activeAttemptCountp
             = o.abortAnypp ? computeActiveAttemptCount(c) : nullptr;
 
-        // Phase 2: update registered state, delay rings, and kill/disable epochs.
+        // Phase 2: update registered state, delay rings, endpoint latches, and epochs.
+        emitAndCombinerDoneUpdate(c);
         emitStateUpdate(c);
         emitDelayRingUpdate(c);
         emitKillAckUpdate(c);
@@ -3418,6 +3587,8 @@ public:
             = computeSignals(c, o.failAttemptSrcsp, o.matchAttemptSrcsp, o.matchCountpp != nullptr,
                              trackStrongResolved ? &resolvedMatchBuckets : nullptr, o.perMidSrcsp);
 
+        pruneSingleFailSource(req, o, sigs, res);
+
         AstNodeExpr* abortPassCountp = nullptr;
         AstNodeExpr* abortFailCountp = nullptr;
         AstNodeExpr* resultp
@@ -3429,8 +3600,7 @@ public:
         materializeLoweringOutputs(c, baseName, sigs, o, abortPassCountp, abortFailCountp,
                                    u32DTypep, captureBodyp);
 
-        // Strong s_always[m:n] end-of-sim liveness: count pending attempts,
-        // masking OR-sibling resolved outcomes by an age-indexed history.
+        // Strong EOS counts pending attempts after masking resolved outcomes by age.
         finalizeStrongPending(c, trackStrongResolved, resolvedMatchBuckets, baseName,
                               o.strongPendingCountpp);
 
@@ -3722,8 +3892,7 @@ class AssertNfaVisitor final : public VNVisitor {
         if (!parts.isFollowedBy && includeVacuous) {
             AstNodeExpr* vacuousp
                 = new AstLogNot{flp, sampled(parts.triggerExprp->cloneTreePure(false))};
-            // IEEE 1800-2023 16.12.14 gives an abort priority when the
-            // underlying property would also finish in this time step.
+            // IEEE 1800-2023 16.12.14 gives abort priority over same-step completion.
             if (abortAnyp) {
                 vacuousp = new AstLogAnd{flp, vacuousp,
                                          new AstLogNot{flp, abortAnyp->cloneTreePure(false)}};
@@ -3889,11 +4058,12 @@ class AssertNfaVisitor final : public VNVisitor {
                              AstNodeExpr* matchExprp,
                              const std::vector<AstNodeExpr*>& failAttemptSrcs) {
         AstNode* failActionp = nullptr;
-        if (failAttemptSrcs.size() >= 2 && assertWithFailp->failsp()) {
+        if (failAttemptSrcs.size() >= 2
+            && assertWithFailp->failsp()) {  // LCOV_EXCL_START -- sources are depth-bucketed
             failActionp = assertWithFailp->failsp()->cloneTree(true);
-        }
+        }  // LCOV_EXCL_STOP
         // Gate pass handler on match to prevent vacuous-pass firings.
-        if (matchExprp) {
+        if (matchExprp) {  // LCOV_EXCL_START -- planner selects per-attempt count instead
             // needMatch implies passsp() was non-null when evaluated above;
             // lowering does not mutate the assert's pass-action between the
             // two reads, so passsp() is still non-null here.
@@ -3912,13 +4082,12 @@ class AssertNfaVisitor final : public VNVisitor {
                     new AstIf{flp, matchExprp, passsp->cloneTree(false), nullptr});
             }
             VL_DO_DANGLING(pushDeletep(passsp), passsp);
-        }
+        }  // LCOV_EXCL_STOP
 
         // Extra fail-handler fires for simultaneous required-step failures
         // (IEEE 1800-2023: fail handler fires once per failing thread).
-        // Appended inside failsp: any single source already fires the main
-        // handler via requiredStepReject, so only the 2nd+ threads add fires.
-        if (failAttemptSrcs.size() >= 2) {
+        // Only second and later failing threads add fires beyond requiredStepReject.
+        if (failAttemptSrcs.size() >= 2) {  // LCOV_EXCL_START -- sources are depth-bucketed
             AstNode* const failsp = assertWithFailp->failsp();
             UASSERT_OBJ(failsp && failActionp, assertWithFailp,
                         "Per-attempt failure sources require a failure action");
@@ -3931,7 +4100,7 @@ class AssertNfaVisitor final : public VNVisitor {
                 cumulativeOrp = new AstLogOr{flp, cumulativeOrp, srcp->cloneTreePure(false)};
             }
             VL_DO_DANGLING(pushDeletep(cumulativeOrp), cumulativeOrp);
-        }
+        }  // LCOV_EXCL_STOP
         if (failActionp) VL_DO_DANGLING(pushDeletep(failActionp), failActionp);
         for (AstNodeExpr* const srcp : failAttemptSrcs) pushDeletep(srcp);
     }
@@ -3963,7 +4132,7 @@ class AssertNfaVisitor final : public VNVisitor {
             } else {
                 countp = oneIfp;
             }
-        }
+        }  // LCOV_EXCL_LINE -- gcov attributes the source-loop exit here
         srcs.clear();
         return countp;
     }
@@ -4255,6 +4424,7 @@ class AssertNfaVisitor final : public VNVisitor {
         FileLine* flp = nullptr;
         bool isCover = false;
         bool isCoverSeq = false;
+        bool isSeqEvent = false;
         AstCover* coverp = nullptr;
         PropertyParts parts;
         AstNodeExpr* seqBodyp = nullptr;
@@ -4354,6 +4524,10 @@ class AssertNfaVisitor final : public VNVisitor {
 
     bool prepareConcurrentAssertion(ProcState& s) {
         AstNodeCoverOrAssert* const assertp = s.assertp;
+        s.coverp = VN_CAST(assertp, Cover);
+        s.isCover = s.coverp != nullptr;
+        s.isCoverSeq = s.coverp && s.coverp->isCoverSeq();
+        s.isSeqEvent = s.coverp && s.coverp->isSeqEvent();
         AstNode* const propp = assertp->propp();
         AstPropSpec* const propSpecp = s.propSpecp = VN_CAST(assertp->propp(), PropSpec);
         UASSERT_OBJ(propSpecp, assertp, "Concurrent assertion must have PropSpec");
@@ -4379,6 +4553,18 @@ class AssertNfaVisitor final : public VNVisitor {
             negated = !negated;
             seqBodyp = notp->lhsp();
         }
+        if (negated && parts.hasImplication && !canSplitImplicationPassActions(parts)) {
+            const AstAssert* const actionAssertp = VN_CAST(s.assertp, Assert);
+            if (s.isCover || (actionAssertp && actionAssertp->passsp())) {
+                seqBodyp->v3warn(
+                    E_UNSUPPORTED,
+                    "Unsupported: temporal implication antecedent with a negated consequent "
+                    "and a pass or cover action cannot preserve attempt identity");
+                replaceBodyOnBuildError(s.assertp->fileline(), propSpecp,
+                                        /*errorEmitted=*/true);
+                return false;
+            }
+        }
         if (rejectUnsupportedPropertyControl(assertp, propSpecp, seqBodyp, negated, abortSpecs)) {
             return false;
         }
@@ -4393,7 +4579,7 @@ class AssertNfaVisitor final : public VNVisitor {
         if (!propSpecp->sensesp() && m_defaultClockingp) {
             propSpecp->sensesp(m_defaultClockingp->sensesp()->cloneTree(true));
         }
-        if (!propSpecp->disablep() && m_defaultDisablep) {
+        if (!propSpecp->disablep() && m_defaultDisablep && !s.isSeqEvent) {
             propSpecp->disablep(m_defaultDisablep->condp()->cloneTreePure(true));
         }
         if (!senTreep && propSpecp->sensesp()) {
@@ -4405,9 +4591,6 @@ class AssertNfaVisitor final : public VNVisitor {
         if (!senTreep) return false;
 
         s.flp = assertp->fileline();
-        s.isCover = VN_IS(assertp, Cover);
-        s.coverp = VN_CAST(assertp, Cover);
-        s.isCoverSeq = s.coverp && s.coverp->isCoverSeq();
         return true;
     }
 
@@ -4419,8 +4602,8 @@ class AssertNfaVisitor final : public VNVisitor {
         const bool isCoverSeq = s.isCoverSeq;
         const std::vector<AbortSpec>& abortSpecs = s.abortSpecs;
         AstAssert* const assertAssertp = VN_CAST(assertp, Assert);
-        s.countNegatedOutcomes
-            = negated && (!parts.hasImplication || canSplitImplicationPassActions(parts));
+        // Negated-consequent failure multiplicity is independent of vacuous-pass splitting.
+        s.countNegatedOutcomes = negated;
         s.countNegatedPasssp = s.countNegatedOutcomes && assertAssertp && assertAssertp->passsp();
         s.countNegatedFailsp = s.countNegatedOutcomes && assertAssertp && assertAssertp->failsp();
         s.countNegatedCover = s.countNegatedOutcomes && isCover && !isCoverSeq;
@@ -4438,12 +4621,21 @@ class AssertNfaVisitor final : public VNVisitor {
         s.needAbortFailCount = !abortSpecs.empty() && assertAssertp && assertAssertp->failsp();
     }
 
+    void replaceObservedDisable(AstPropSpec* propSpecp, AstNodeExpr* disableObservedp) {
+        if (!disableObservedp) return;
+        AstNodeExpr* const oldDisablep = propSpecp->disablep();
+        UASSERT_OBJ(oldDisablep, propSpecp, "Observed disable without PropSpec disable");
+        oldDisablep->replaceWith(disableObservedp);
+        VL_DO_DANGLING(pushDeletep(oldDisablep), oldDisablep);
+    }
+
     bool lowerConcurrentAssertion(ProcState& s) {
         AstNodeCoverOrAssert* const assertp = s.assertp;
         AstPropSpec* const propSpecp = s.propSpecp;
         FileLine* const flp = s.flp;
         const bool isCover = s.isCover;
         const bool isCoverSeq = s.isCoverSeq;
+        const bool isSeqEvent = s.isSeqEvent;
         const bool negated = s.negated;
         AstNodeExpr* const seqBodyp = s.seqBodyp;
         PropertyParts& parts = s.parts;
@@ -4453,7 +4645,8 @@ class AssertNfaVisitor final : public VNVisitor {
         const std::vector<AbortSpec>& abortSpecs = s.abortSpecs;
 
         SvaGraph graph;
-        SvaNfaBuilder builder{graph, m_modp, m_propTempNames, isCoverSeq, !isCover || negated};
+        SvaNfaBuilder builder{graph,     m_modp, m_propTempNames, isCoverSeq, !isCover || negated,
+                              isSeqEvent};
 
         const BuildResult result = buildAssertionGraph(builder, graph, seqBodyp, parts, flp);
         if (result.valid()) wireMatchAndMidSources(graph, result, flp);
@@ -4470,8 +4663,7 @@ class AssertNfaVisitor final : public VNVisitor {
         AstVar* const snapshotVarp = disableVars.snapp;
 
         AstAssert* const assertWithFailp = VN_CAST(assertp, Assert);
-        // Synthesize V3Assert's default fail action so outcome planning
-        // counts it like an explicit else
+        // Synthesize the default fail action before planning counts, like an explicit else.
         if (assertWithFailp && !assertWithFailp->passsp() && !assertWithFailp->failsp()) {
             assertWithFailp->addFailsp(newDefaultFailAction(flp));
             s.defaultFailSynthesized = true;
@@ -4479,7 +4671,8 @@ class AssertNfaVisitor final : public VNVisitor {
         planOutcomeChannels(s);
 
         AstNodeExpr* const alwaysTriggerp
-            = assertOnCond(flp, assertp->userType(), assertp->directive());
+            = isSeqEvent ? new AstConst{flp, AstConst::BitTrue{}}
+                         : assertOnCond(flp, assertp->userType(), assertp->directive());
         SvaNfaLowering::LowerRequest req;
         req.triggerExprp = alwaysTriggerp;
         req.senTreep = senTreep;
@@ -4490,10 +4683,12 @@ class AssertNfaVisitor final : public VNVisitor {
         req.snapshotVarp = snapshotVarp;
         req.isCover = isCover;
         req.negated = negated;
-        req.assertType = assertp->userType();
-        req.directiveType = assertp->directive();
+        req.assertType = isSeqEvent ? VAssertType{VAssertType::INTERNAL} : assertp->userType();
+        req.directiveType = isSeqEvent ? VAssertDirectiveType{VAssertDirectiveType::INTERNAL}
+                                       : assertp->directive();
         req.wantMatch = s.needMatch;
         req.wantPerSrcFail = s.needPerSrcFail;
+        req.pruneSingleFailSource = s.defaultFailSynthesized && !negated && abortSpecs.empty();
         req.wantPerSrcMatch = s.needPerSrcMatch;
         req.wantAbortPassCount = s.needAbortPassCount;
         req.wantAbortFailCount = s.needAbortFailCount;
@@ -4523,13 +4718,9 @@ class AssertNfaVisitor final : public VNVisitor {
             VL_DO_DANGLING(normalizedDisablep->deleteTree(), normalizedDisablep);
         }
         if (senTreeOwned) VL_DO_DANGLING(pushDeletep(senTreep), senTreep);
-        if (disableObservedp) {
-            AstNodeExpr* const oldDisablep = propSpecp->disablep();
-            UASSERT_OBJ(oldDisablep, propSpecp, "Observed disable without PropSpec disable");
-            oldDisablep->replaceWith(disableObservedp);
-            VL_DO_DANGLING(pushDeletep(oldDisablep), oldDisablep);
-        }
+        replaceObservedDisable(propSpecp, disableObservedp);
         if (result.finalCondp && !result.finalCondp->backp()) pushDeletep(result.finalCondp);
+        if (dumpGraphLevel() >= 6) graph.m_graph.dumpDotFilePrefixed("assert-nfa");
         assertp->nfaLowered(true);
         return true;
     }
@@ -4570,12 +4761,12 @@ class AssertNfaVisitor final : public VNVisitor {
         abortFailCountp = nullptr;
 
         if (countNegatedOutcomes) {
-            const auto zeroCount = [&]() {
+            const auto zeroCount = [&]() {  // LCOV_EXCL_START -- defensive impossible outcome
                 return static_cast<AstNodeExpr*>(
                     new AstConst{flp, AstConst::WidthedValue{}, 32, 0});
-            };
+            };  // LCOV_EXCL_STOP
             if ((countNegatedPasssp || countNegatedCover) && !passCountp) {
-                passCountp = zeroCount();
+                passCountp = zeroCount();  // LCOV_EXCL_LINE -- constant properties fold earlier
             }
             if (countNegatedFailsp && !failCountp) failCountp = zeroCount();
         }
@@ -4694,8 +4885,9 @@ class AssertNfaVisitor final : public VNVisitor {
         if (passCountp) VL_DO_DANGLING(pushDeletep(passCountp), passCountp);
         if (failCountp) VL_DO_DANGLING(pushDeletep(failCountp), failCountp);
         if (matchCountp) VL_DO_DANGLING(pushDeletep(matchCountp), matchCountp);
-        if (additionalFailCountp)
+        if (additionalFailCountp) {  // LCOV_EXCL_START -- finalizeOutcomeCounts clears it
             VL_DO_DANGLING(pushDeletep(additionalFailCountp), additionalFailCountp);
+        }  // LCOV_EXCL_STOP
         if (abortPassCountp) VL_DO_DANGLING(pushDeletep(abortPassCountp), abortPassCountp);
         if (abortFailCountp) VL_DO_DANGLING(pushDeletep(abortFailCountp), abortFailCountp);
         if (abortAnyp) VL_DO_DANGLING(pushDeletep(abortAnyp), abortAnyp);

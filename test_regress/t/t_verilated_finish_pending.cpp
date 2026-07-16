@@ -1,0 +1,79 @@
+// -*- mode: C++; c-file-style: "cc-mode" -*-
+// DESCRIPTION: Verilator: VerilatedContext pending termination state test
+//*************************************************************************
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2026 PlanV GmbH
+// SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
+//
+//*************************************************************************
+
+#include VM_PREFIX_INCLUDE
+
+#include <memory>
+
+// These require the above. Comment prevents clang-format moving them
+#include "TestCheck.h"
+
+// This is the synchronous implementation used by the main-thread $stop path.
+extern void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool maybe);
+
+int errors = 0;
+
+int main(int argc, char** argv) {
+    VerilatedContext context;
+    Verilated::threadContextp(&context);
+    context.commandArgs(argc, argv);
+    std::unique_ptr<VM_PREFIX> topp{new VM_PREFIX{&context}};
+
+    // An ignored maybe-stop reserves its error count without pending termination.
+    context.errorLimit(3);
+    context.errorCount(0);
+    vl_stop_maybe(__FILE__, __LINE__, "TOP.t", true);
+    TEST_CHECK_EQ(context.errorCount(), 1);
+    TEST_CHECK_EQ(context.finishPending(), false);
+    vl_stop_maybe(__FILE__, __LINE__, "TOP.t", true);
+    TEST_CHECK_EQ(context.errorCount(), 2);
+    TEST_CHECK_EQ(context.finishPending(), false);
+
+    bool firstIgnored = true;
+    TEST_CHECK_EQ(context.errorCountIncMaybeStop(true, firstIgnored), true);
+    TEST_CHECK_EQ(firstIgnored, false);
+    TEST_CHECK_EQ(context.errorCount(), 3);
+    context.errorCount(0);
+    TEST_CHECK_EQ(context.errorCountIncMaybeStop(false, firstIgnored), true);
+    TEST_CHECK_EQ(firstIgnored, false);
+    TEST_CHECK_EQ(context.errorCount(), 1);
+
+    // The first pending request owns the timestamp until all requests drain.
+    context.gotFinish(false);
+    context.time(10);
+    context.finishPendingInc();
+    context.time(20);
+    context.finishPendingInc();
+    TEST_CHECK_EQ(context.finishPending(), true);
+    TEST_CHECK_EQ(context.finishPendingTime(), 10);
+    context.finishPendingDec();
+    TEST_CHECK_EQ(context.finishPending(), true);
+    TEST_CHECK_EQ(context.finishPendingTime(), 10);
+    context.finishPendingDec();
+    TEST_CHECK_EQ(context.finishPending(), false);
+    TEST_CHECK_EQ(context.finishPendingTime(), 20);
+
+    // Clearing gotFinish invalidates a stale timestamp for context reuse.
+    context.time(30);
+    context.finishPendingInc();
+    context.gotFinish(true);
+    context.finishPendingDec();
+    TEST_CHECK_EQ(context.finishPending(), true);
+    TEST_CHECK_EQ(context.finishPendingTime(), 30);
+    context.time(40);
+    context.gotFinish(false);
+    TEST_CHECK_EQ(context.finishPending(), false);
+    TEST_CHECK_EQ(context.finishPendingTime(), 40);
+
+    topp->final();
+    return errors ? 10 : 0;
+}

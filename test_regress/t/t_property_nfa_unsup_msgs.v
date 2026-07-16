@@ -33,6 +33,8 @@ module t (
 
   // Ignoring unsupported: cover sequence with a sequence operand of 'or'
   cover sequence (@(posedge clk) 1'b1 or(a ##1 b));
+  cover sequence (@(posedge clk) (a ##1 b) or 1'b1);
+  cover sequence (@(posedge clk) (a ##1 b) or(c ##1 d));
 
   // Unsupported: intersect/within endpoint deadline after an operand that can reject earlier
   assert property (@(posedge clk) (((a ##1 b) or (c ##1 d)) ##1 e) intersect (a throughout (b ##2 c)));
@@ -43,6 +45,10 @@ module t (
   // Unsupported: impure expression in a flattened temporal composite
   assert property (@(posedge clk) (fimp() ##1 a) and(b ##1 c));
 
+  // Fixed-trace expansion diagnostics from the always and throughout paths
+  assert property (@(posedge clk) s_always[0: 2000] a);
+  assert property (@(posedge clk) (a throughout (b ##1024 c)) and(d ##1024 e));
+
   // Unsupported: property if/case inside a variable-end temporal window
   assert property (@(posedge clk) (a ##[1:$] b) or (if (c) d else e));
 
@@ -52,23 +58,19 @@ module t (
   // Unsupported: strong s_always in a temporal AND/intersect composite
   assert property (@(posedge clk) (((a ##1 b) or (c ##1 d)) intersect (e ##1 a)) |-> s_always [1:2] b);
 
-  // Unsupported: end-of-simulation attempt counting for multiple strong operators
-  // with an ambiguous temporal depth
+  // Unsupported multiple strong operators with ambiguous EOS attempt depth
   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) ##1 (e [-> 1]) |-> s_always[1: 2] a);
 
-  // End-of-simulation attempt counting for multiple strong operators requires
-  // expanding N ring slots, exceeding --assert-unroll-limit
+  // Multiple strong operators require too many EOS ring slots
   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) |-> s_always[1030: 1030] e) cnt++;
 
   // Unsupported: strong s_always pending state has a non-positive temporal depth
   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) |-> s_always[0: 0] e) cnt++;
 
-  // Strong end-of-simulation resolved-attempt history requires N slots,
-  // exceeding --assert-unroll-limit
+  // Strong resolved-attempt EOS history requires too many slots
   assert property (@(posedge clk) ((a ##1 b) or(c ##1 d)) ##1026 e |-> s_always[1: 2] a);
 
-  // Unsupported: pass-action multiplicity for strong s_always in a temporal OR
-  // composite cannot preserve resolved attempts
+  // Unsupported strong pass multiplicity when temporal OR loses resolved attempts
   assert property (@(posedge clk) a |-> (((a ##1 b) or(c ##1 d)) |-> s_always[1: 2] e)) cnt++;
 
   // Unsupported: abort operator around a branching or unbounded property

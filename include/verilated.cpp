@@ -215,19 +215,21 @@ void vl_fatal(const char* filename, int linenum, const char* hier, const char* m
 #endif
 
 #ifndef VL_USER_STOP_MAYBE  ///< Define this to override the vl_stop_maybe function
+static void vl_stop_maybe_execute(const char* filename, int linenum, const char* hier, bool stop,
+                                  bool firstIgnored) VL_MT_UNSAFE {
+    if (stop) {
+        vl_stop(filename, linenum, hier);
+    } else if (firstIgnored) {
+        vl_print_warn_error("-Info", filename, linenum,
+                            "Verilog $stop, ignored due to +verilator+error+limit");
+    }
+}
+
 void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_UNSAFE {
     // $stop or $fatal
-    Verilated::threadContextp()->errorCountInc();
-    if (maybe
-        && Verilated::threadContextp()->errorCount() < Verilated::threadContextp()->errorLimit()) {
-        // Do just once when cross error limit
-        if (Verilated::threadContextp()->errorCount() == 1) {
-            vl_print_warn_error("-Info", filename, linenum,
-                                "Verilog $stop, ignored due to +verilator+error+limit");
-        }
-    } else {
-        vl_stop(filename, linenum, hier);
-    }
+    bool firstIgnored = false;
+    const bool stop = Verilated::threadContextp()->errorCountIncMaybeStop(maybe, firstIgnored);
+    vl_stop_maybe_execute(filename, linenum, hier, stop, firstIgnored);
 }
 #endif
 
@@ -251,18 +253,29 @@ void VL_FINISH_MT(const char* filename, int linenum, const char* hier) VL_MT_SAF
 }
 
 void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_SAFE {
+#ifdef VL_USER_STOP_MAYBE
     Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_stop_maybe(filename, linenum, hier, maybe);
         Verilated::threadContextp()->finishPendingDec();
     }});
+#else
+    VerilatedContext* const contextp = Verilated::threadContextp();
+    bool firstIgnored = false;
+    const bool stop = contextp->errorCountIncMaybeStop(maybe, firstIgnored);
+    if (stop) contextp->finishPendingInc();
+    VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
+        vl_stop_maybe_execute(filename, linenum, hier, stop, firstIgnored);
+        if (stop) contextp->finishPendingDec();
+    }});
+#endif
 }
 
 void VL_FATAL_MT(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_SAFE {
-    Verilated::threadContextp()->finishPendingInc();
+    Verilated::threadContextp()->finishPendingInc();  // LCOV_EXCL_LINE
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_fatal(filename, linenum, hier, msg);
-        Verilated::threadContextp()->finishPendingDec();
+        Verilated::threadContextp()->finishPendingDec();  // LCOV_EXCL_LINE
     }});
 }
 
@@ -3264,6 +3277,13 @@ void VerilatedContext::errorCount(int val) VL_MT_SAFE {
 void VerilatedContext::errorCountInc() VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
     ++m_s.m_errorCount;
+}
+bool VerilatedContext::errorCountIncMaybeStop(bool maybe, bool& firstIgnored) VL_MT_SAFE {
+    const VerilatedLockGuard lock{m_mutex};
+    const int count = ++m_s.m_errorCount;
+    const bool stop = !maybe || count >= m_s.m_errorLimit;
+    firstIgnored = !stop && count == 1;
+    return stop;
 }
 void VerilatedContext::errorLimit(int val) VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};

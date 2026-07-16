@@ -90,6 +90,58 @@ public:
     explicit DefaultDisablePropagateVisitor(AstNetlist* nodep) { iterate(nodep); }
 };
 
+// Lower a sequence used as an event control ('@seq', IEEE 1800-2023 9.4.2.4) into a
+// synthesized event fired by an internal 'cover sequence' on each end-of-match
+class SeqEventLowerVisitor final : public VNVisitor {
+    // STATE
+    AstNodeModule* m_modp = nullptr;  // Current module
+    V3UniqueNames m_names{"__VseqEvent"};  // Synthesized event names
+
+    // VISITORS
+    void visit(AstNodeModule* nodep) override {
+        VL_RESTORER(m_modp);
+        m_modp = nodep;
+        iterateChildren(nodep);
+    }
+    void visit(AstSenItem* nodep) override {
+        AstFuncRef* const funcrefp = VN_CAST(nodep->sensp(), FuncRef);
+        if (funcrefp && VN_IS(funcrefp->taskp(), Sequence)) {
+            FileLine* const flp = nodep->fileline();
+            AstVar* const eventp = new AstVar{flp, VVarType::MODULETEMP, m_names.get(nodep),
+                                              m_modp->findBasicDType(VBasicDTypeKwd::EVENT)};
+            eventp->lifetime(VLifetime::STATIC_EXPLICIT);
+            m_modp->addStmtsp(eventp);
+            v3Global.setHasEvents();
+            funcrefp->unlinkFrBack();
+            nodep->sensp(new AstVarRef{flp, eventp, VAccess::READ});
+            const bool automaticActual = funcrefp->exists([](const AstNodeVarRef* refp) {
+                return refp->varp() && refp->varp()->lifetime().isAutomatic();
+            });
+            if (automaticActual) {
+                nodep->v3error("Arguments to a sequence used as an event control must be"
+                               " static (IEEE 1800-2023 9.4.2.4)");
+                VN_AS(funcrefp->taskp(), Sequence)->isReferenced(false);
+                VL_DO_DANGLING(pushDeletep(funcrefp), funcrefp);
+                return;
+            }
+            AstFireEvent* const firep
+                = new AstFireEvent{flp, new AstVarRef{flp, eventp, VAccess::WRITE}, false};
+            AstCover* const coverp
+                = new AstCover{flp, new AstPropSpec{flp, nullptr, nullptr, funcrefp}, firep,
+                               VAssertType::CONCURRENT};
+            coverp->isCoverSeq(true);
+            coverp->isSeqEvent(true);
+            m_modp->addStmtsp(coverp);
+            return;
+        }
+        iterateChildren(nodep);
+    }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
+public:
+    explicit SeqEventLowerVisitor(AstNetlist* nodep) { iterate(nodep); }
+};
+
 }  // namespace
 
 void V3AssertCommon::collectDefaultDisable(AstNetlist* nodep) {
@@ -113,6 +165,11 @@ AstNode* V3AssertCommon::repeatLoop(FileLine* flp, AstVar* counterp, AstNodeExpr
     loopp->addStmtsp(new AstAssign{flp, new AstVarRef{flp, counterp, VAccess::WRITE}, decrementp});
     AstNode::addNext<AstNode, AstNode>(initp, loopp);
     return initp;
+}
+
+void V3AssertCommon::lowerSequenceEvents(AstNetlist* nodep) {
+    { SeqEventLowerVisitor{nodep}; }
+    V3Global::dumpCheckGlobalTree("assertseqevent", 0, dumpTreeEitherLevel() >= 3);
 }
 
 //######################################################################
@@ -210,6 +267,49 @@ public:
 //######################################################################
 // AssertVisitor
 
+class FinalPastCallGraphVisitor final : public VNVisitor {
+    AstNodeFTask* m_ftaskp = nullptr;
+    std::unordered_set<const AstNodeFTask*> m_pastFTasksp;
+    std::unordered_map<const AstNodeFTask*, std::vector<const AstNodeFTask*>> m_callees;
+
+    void visit(AstNodeFTask* nodep) override {
+        VL_RESTORER(m_ftaskp);
+        m_ftaskp = nodep;
+        iterateChildren(nodep);
+    }
+    void visit(AstPast* nodep) override {
+        if (m_ftaskp) m_pastFTasksp.insert(m_ftaskp);
+        iterateChildren(nodep);
+    }
+    void visitFTaskRef(AstNodeFTaskRef* nodep) {
+        if (m_ftaskp && nodep->taskp()) m_callees[m_ftaskp].push_back(nodep->taskp());
+        iterateChildren(nodep);
+    }
+    void visit(AstFuncRef* nodep) override { visitFTaskRef(nodep); }
+    void visit(AstTaskRef* nodep) override { visitFTaskRef(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
+public:
+    explicit FinalPastCallGraphVisitor(AstNetlist* nodep) {
+        iterate(nodep);
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& pair : m_callees) {
+                if (m_pastFTasksp.count(pair.first)) continue;
+                for (const AstNodeFTask* const calleep : pair.second) {
+                    if (m_pastFTasksp.count(calleep)) {
+                        m_pastFTasksp.insert(pair.first);
+                        changed = true;
+                        break;
+                    }
+                }  // LCOV_EXCL_LINE -- gcov attributes the range-for exit here
+            }  // LCOV_EXCL_LINE -- gcov attributes the outer range-for exit here
+        }
+    }
+    const std::unordered_set<const AstNodeFTask*>& pastFTasksp() const { return m_pastFTasksp; }
+};
+
 class AssertVisitor final : public VNVisitor {
     // CONSTANTS
     static constexpr uint8_t ALL_ASSERT_TYPES
@@ -249,6 +349,7 @@ class AssertVisitor final : public VNVisitor {
     AstFinal* m_finalp = nullptr;  // Current final block
     VDouble0 m_statLiftedCaseExprs;  // Count of purified case expressions
     AstNodeFTask* m_ftaskp = nullptr;  // Current function/task
+    const std::unordered_set<const AstNodeFTask*>& m_finalPastFTasksp;  // Final-reachable $past
     V3UniqueNames m_caseTempNames{"__VCase"};
     V3UniqueNames m_actionCountNames{"__VassertActionCount"};
     bool m_inReactiveAssertionAction = false;  // Action will execute after NBA
@@ -581,9 +682,9 @@ class AssertVisitor final : public VNVisitor {
                 iterateAndNextNull(assertp->failsp());
             } else if (AstCover* const coverp = VN_CAST(nodep, Cover)) {
                 iterateAndNextNull(coverp->coverincsp());
-            } else if (!VN_IS(nodep, Restrict)) {
+            } else if (!VN_IS(nodep, Restrict)) {  // LCOV_EXCL_START -- exhaustive node kinds
                 nodep->v3fatalSrc("Unhandled assert type");
-            }
+            }  // LCOV_EXCL_STOP
             iterateAndNextNull(nodep->passsp());
         }
         AstSenTree* sentreep = nodep->sentreep();
@@ -616,14 +717,19 @@ class AssertVisitor final : public VNVisitor {
 
         bool selfDestruct = false;
         bool passspGated = false;
-        if (const AstCover* const snodep = VN_CAST(nodep, Cover)) {
+        const AstCover* const coverp = VN_CAST(nodep, Cover);
+        // A sequence event control is not an assertion directive; no assertion control
+        const bool seqEvent = coverp && coverp->isSeqEvent();
+        if (coverp) {
             ++m_statCover;
-            if (!v3Global.opt.coverageUser()) {
+            if (seqEvent) {
+                // Keep the event-fire action, with no coverage bucket
+            } else if (!v3Global.opt.coverageUser()) {
                 selfDestruct = true;
             } else {
                 // V3Coverage assigned us a bucket to increment.
-                AstCoverInc* const covincp = VN_AS(snodep->coverincsp(), CoverInc);
-                UASSERT_OBJ(covincp, snodep, "Missing AstCoverInc under assertion");
+                AstCoverInc* const covincp = VN_AS(coverp->coverincsp(), CoverInc);
+                UASSERT_OBJ(covincp, coverp, "Missing AstCoverInc under assertion");
                 AstNodeExpr* const multiplicityp = covincp->multiplicityp();
                 if (multiplicityp) multiplicityp->unlinkFrBack();
                 covincp->unlinkFrBackWithNext();  // next() might have  AstAssign for trace
@@ -670,7 +776,8 @@ class AssertVisitor final : public VNVisitor {
         FileLine* const flp = nodep->fileline();
         bool passspAlreadyGated = false;
         if (passsp && VN_IS(passsp, If)) passspAlreadyGated = VN_AS(passsp, If)->user1();
-        if (passsp && !passspGated && !passspAlreadyGated && !VN_IS(propExprp, PExpr)) {
+        if (passsp && !passspGated && !passspAlreadyGated && !VN_IS(propExprp, PExpr)
+            && !seqEvent) {
             passsp = newIfAssertPassOn(passsp, nodep->directive(), nodep->userType(),
                                        /*vacuous=*/false);
         }
@@ -680,7 +787,7 @@ class AssertVisitor final : public VNVisitor {
         AstNode* bodysp = assertBody(nodep, propExprp, passsp, failsp);
         if (disablep) bodysp = new AstIf{flp, new AstLogNot{flp, disablep}, bodysp};
         // Add assertOn check last, for better combining
-        bodysp = newIfAssertOn(bodysp, nodep->directive(), nodep->userType());
+        if (!seqEvent) bodysp = newIfAssertOn(bodysp, nodep->directive(), nodep->userType());
         bodysp = wrapAssertionInSensitivity(nodep, sentreep, bodysp);
 
         if (passsp && !passsp->backp()) VL_DO_DANGLING(pushDeletep(passsp), passsp);
@@ -989,8 +1096,7 @@ class AssertVisitor final : public VNVisitor {
         AstSenTree* const senTreep = nodep->sentreep()->unlinkFrBack();
         AstNodeExpr* inp = nullptr;
         if (VN_IS(m_procedurep, Final)) {
-            // End-of-simulation in the sampling tick's own time slot reads one
-            // stage deeper than an end between ticks (IEEE 1800-2023 16.9.3).
+            // A sampling-tick finish reads one stage deeper (IEEE 1800-2023 16.9.3).
             FileLine* const flp = nodep->fileline();
             AstAlways* const alwaysp = getDelayedAlways(exprp, senTreep);
             AstNodeExpr* const betweenTicksp = pastValueRef(alwaysp, flp, ticks);
@@ -1002,8 +1108,7 @@ class AssertVisitor final : public VNVisitor {
             condp->dtypeFrom(onTickp);
             inp = condp;
         } else {
-            // Post-NBA readers (Observed/Reactive) see the pipeline already
-            // shifted this tick, so read one extra stage.
+            // Post-NBA readers use the pipeline's next stage after this tick's shift.
             const bool procedureRunsPostNba
                 = m_procedurep
                   && (VN_IS(m_procedurep, AlwaysObserved) || VN_IS(m_procedurep, AlwaysReactive));
@@ -1014,6 +1119,16 @@ class AssertVisitor final : public VNVisitor {
         nodep->replaceWith(inp);
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
+    void visitFinalFTaskRef(AstNodeFTaskRef* nodep) {
+        if (VN_IS(m_procedurep, Final) && nodep->taskp()
+            && m_finalPastFTasksp.count(nodep->taskp())) {
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: $past in a function or task called from a final block");
+        }
+        iterateChildren(nodep);
+    }
+    void visit(AstFuncRef* nodep) override { visitFinalFTaskRef(nodep); }
+    void visit(AstTaskRef* nodep) override { visitFinalFTaskRef(nodep); }
 
     //========== Move $sampled down to read-only variables
     void visit(AstSampled* nodep) override {
@@ -1106,11 +1221,7 @@ class AssertVisitor final : public VNVisitor {
                         = new AstSenItem{fl, VEdgeType::ET_CHANGED,
                                          // Clone so get VarRef or VarXRef as needed
                                          varrefp->cloneTree(false)};
-                    if (!monSenItemsp) {
-                        monSenItemsp = senItemp;
-                    } else {
-                        monSenItemsp->addNext(senItemp);
-                    }
+                    monSenItemsp = AstNode::addNextNull(monSenItemsp, senItemp);
                 });
             }
 
@@ -1294,7 +1405,11 @@ class AssertVisitor final : public VNVisitor {
 
 public:
     // CONSTRUCTORS
-    explicit AssertVisitor(AstNetlist* nodep) { iterate(nodep); }
+    AssertVisitor(AstNetlist* nodep,
+                  const std::unordered_set<const AstNodeFTask*>& finalPastFTasksp)
+        : m_finalPastFTasksp{finalPastFTasksp} {
+        iterate(nodep);
+    }
     ~AssertVisitor() override {
         V3Stats::addStat("Assertions, assert non-immediate statements", m_statAsNotImm);
         V3Stats::addStat("Assertions, assert immediate statements", m_statAsImm);
@@ -1314,6 +1429,7 @@ public:
 
 void V3Assert::assertAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ":");
-    { AssertVisitor{nodep}; }  // Destruct before checking
+    const FinalPastCallGraphVisitor callGraphVisitor{nodep};
+    { AssertVisitor{nodep, callGraphVisitor.pastFTasksp()}; }  // Destruct before checking
     V3Global::dumpCheckGlobalTree("assert", 0, dumpTreeEitherLevel() >= 3);
 }

@@ -438,8 +438,7 @@ class DelayedVisitor final : public VNVisitor {
             }
             // In a suspendable of fork, we must use the unique flag scheme, TODO: why?
             if (vscpInfo.m_inSuspOrFork) return Scheme::FlagUnique;
-            // Otherwise use a flag scheme for arrays of packed/basic elements. Reactive targets
-            // need a flag that is not reset when the Re-NBA event fires.
+            // Reactive packed/basic arrays need a flag that survives the Re-NBA event.
             if (basicp) {
                 return vscpInfo.m_hasReactiveNba ? Scheme::FlagUnique : Scheme::FlagShared;
             }
@@ -450,8 +449,7 @@ class DelayedVisitor final : public VNVisitor {
         }
 
         const bool isIntegralOrPacked = dtypep->isIntegralOrPacked();
-        // A Reactive partial NBA can repeat before commit (action multiplicity
-        // loop); FlagUnique keeps only one LHS, so use the accumulating mask.
+        // Repeated Reactive partial NBAs need an accumulating mask, not one unique LHS.
         if (vscpInfo.m_inSuspOrFork) {
             if (vscpInfo.m_hasReactiveNba && vscpInfo.m_partial && isIntegralOrPacked) {
                 return Scheme::ShadowVarMasked;

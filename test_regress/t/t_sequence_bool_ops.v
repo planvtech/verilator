@@ -100,14 +100,20 @@ module t (
   // SAnd edge cases (NFA builder coverage)
   // =========================================================================
 
-  // SAnd where only one side has finalCondp: a[*2] has no finalCond (consumed
-  // by ConsRep); b ##1 c has finalCond=c. Exercises single-cond path in
-  // buildAndCombiner.
+  // Fixed-end SAnd forms are flattened into a single per-cycle trace.
   cover property (@(posedge clk) (a [* 2]) and(b ##1 c));
 
-  // SAnd where both sides lack finalCondp (both end with registered state).
-  // Exercises buildMatchNow(!condp) path.
   cover property (@(posedge clk) (a [* 2]) and(b [* 2]));
+
+  // An unbounded single-end operand uses the persistent endpoint combiner.
+  assert property (@(posedge clk) (1'b1 ##1 1'b1) and(1'b1 [-> 1]));
+  assert property (@(posedge clk) disable iff (cyc < 0) (1'b1 ##1 1'b1) and(1'b1 [-> 1]));
+
+  // Nested fixed-end conjunctions exercise recursive trace flattening.
+  assert property (@(posedge clk) ((1'b1 ##1 1'b1) and(1'b1 ##1 1'b1)) and(1'b1 ##1 1'b1));
+
+  // A boolean intersect is folded before the following temporal step.
+  assert property (@(posedge clk) (1'b1 intersect 1'b1) ##1 1'b1);
 
   // =========================================================================
   // Negated cover property (NFA assembleResult negated+cover branches)

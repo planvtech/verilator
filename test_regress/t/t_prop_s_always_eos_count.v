@@ -44,6 +44,14 @@ module t (
   assert property (@(posedge clk) (s_always[1: 3] 1'b1) or(s_always[1: 3] 1'b1))
   else $display("EOS_BRANCH");
 
+  // Exercise the bit-vector pending ring and resolved-attempt depth tracking.
+  assert property (@(posedge clk) (s_always[1: 300] 1'b1) or(s_always[1: 300] 1'b1))
+  else $display("EOS_LARGE_RING");
+
+  // Large lower bounds use bit-vector pending rings and age-indexed resolution.
+  assert property (@(posedge clk) (s_always[300: 300] 1'b1) or(s_always[300: 300] 1'b1))
+  else $display("EOS_DELAY_RING");
+
   // Attempts resolved by the immediate sibling are not EOS failures
   assert property (@(posedge clk) 1'b1 or(s_always[1: 3] 1'b1))
   else $display("EOS_RESOLVED_BAD");
@@ -72,8 +80,7 @@ module t (
   always @(posedge clk) begin
     cyc <= cyc + 1;
     if (cyc == 10) begin
-      // Kill concurrent assumptions only, leaving the assertion golden above
-      // intact.  Re-enable preserves the standard $assertkill/$asserton flow.
+      // Kill assumptions only, then verify the standard $assertkill/$asserton flow.
       $assertcontrol(5, 1, 4);
       $assertcontrol(3, 1, 4);
       $display("*-* All Finished *-*");

@@ -8,6 +8,26 @@ EOS_PAST=0
 EOS_BRANCH
 EOS_BRANCH
 EOS_BRANCH
-[115] %Error: t_prop_s_always_eos_count.v:65: Assertion failed in top.t
-[115] %Error: t_prop_s_always_eos_count.v:65: Assertion failed in top.t
-[115] %Error: t_prop_s_always_eos_count.v:65: Assertion failed in top.t
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_LARGE_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+EOS_DELAY_RING
+[115] %Error: t_prop_s_always_eos_count.v:73: Assertion failed in top.t
+[115] %Error: t_prop_s_always_eos_count.v:73: Assertion failed in top.t
+[115] %Error: t_prop_s_always_eos_count.v:73: Assertion failed in top.t

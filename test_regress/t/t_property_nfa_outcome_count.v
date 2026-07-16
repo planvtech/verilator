@@ -79,6 +79,7 @@ module t (
   bit large_a = 0;
   bit large_b = 0;
   bit large_abort = 0;
+  bit large_disable = 0;
   int large_pass = 0;
   int large_fail = 0;
   int large_cover = 0;
@@ -87,6 +88,8 @@ module t (
   int large_accept_fail = 0;
   int large_reject_pass = 0;
   int large_reject_fail = 0;
+  int large_disable_accept_pass = 0;
+  int large_disable_accept_fail = 0;
 
   assert property (@(posedge clk) large_a ##[1:300] large_b) large_pass++;
   else large_fail++;
@@ -101,6 +104,11 @@ module t (
     if (large_abort) large_reject_pass++;
   end
   else if (large_abort) large_reject_fail++;
+  assert property (@(posedge clk) disable iff (large_disable)
+                   sync_accept_on (large_abort) (large_a |-> ##[1:300] large_b)) begin
+    if (large_abort) large_disable_accept_pass++;
+  end
+  else if (large_abort) large_disable_accept_fail++;
 
   initial begin
     @(negedge clk) large_a = 1;
@@ -122,6 +130,8 @@ module t (
       `checkd(large_accept_fail, 0);
       `checkd(large_reject_pass, 0);  // Other sims: 1
       `checkd(large_reject_fail, 3);  // Other sims: 2
+      `checkd(large_disable_accept_pass, 3);
+      `checkd(large_disable_accept_fail, 0);
       $write("*-* All Finished *-*\n");
       $finish;
     end

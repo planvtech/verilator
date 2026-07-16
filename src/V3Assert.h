@@ -30,6 +30,7 @@ public:
     // counter = count; while (counter > 0) { action; counter--; }
     static AstNode* repeatLoop(FileLine* flp, AstVar* counterp, AstNodeExpr* countp,
                                AstNode* actionp) VL_MT_DISABLED;
+    static void lowerSequenceEvents(AstNetlist* nodep) VL_MT_DISABLED;
 };
 
 class V3Assert final {

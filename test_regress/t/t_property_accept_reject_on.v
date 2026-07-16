@@ -14,8 +14,7 @@ module t (
     input clk
 );
 
-  // The multi-cycle counts below are a nonvacuous-attempt oracle.  Vacuous
-  // pass-action behavior is covered independently by t_property_nfa_negated_count.
+  // These multi-cycle counts are a nonvacuous-attempt oracle.
   initial $assertvacuousoff;
 
   int cyc;

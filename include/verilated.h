@@ -551,6 +551,8 @@ public:
     void errorCount(int val) VL_MT_SAFE;
     /// Increment current number of errors/assertions
     void errorCountInc() VL_MT_SAFE;
+    /// Reserve one maybe-stop and return true if it reaches the termination limit
+    bool errorCountIncMaybeStop(bool maybe, bool& firstIgnored) VL_MT_SAFE;
     /// Return number of errors/assertions before stop
     int errorLimit() const VL_MT_SAFE { return m_s.m_errorLimit; }
     /// Set number of errors/assertions before stop

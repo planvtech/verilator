@@ -11,8 +11,12 @@
                                                           : ... note: In instance 't'
    19 |   assert property (@(posedge clk) not (if (a) 1'b1 ##1 b else 1'b1 ##2 c));
       |                                                                    ^~
-%Error-UNSUPPORTED: t/t_property_nfa_control_unsup.v:22:32: Unsupported: impure property if/case selector cannot be sampled once
+%Error-UNSUPPORTED: t/t_property_nfa_control_unsup.v:21:68: Unsupported: temporal property if/case with pass action, cover, negation, abort, or strong end-of-trace obligation
                                                           : ... note: In instance 't'
-   22 |                    if ($random == 0) 1'b1 ##1 b
+   21 |   assert property (@(posedge clk) if (a) s_always[1:2] b else 1'b1 ##1 c);
+      |                                                                    ^~
+%Error-UNSUPPORTED: t/t_property_nfa_control_unsup.v:24:32: Unsupported: impure property if/case selector cannot be sampled once
+                                                          : ... note: In instance 't'
+   24 |                    if ($random == 0) 1'b1 ##1 b
       |                                ^~
 %Error: Exiting due to

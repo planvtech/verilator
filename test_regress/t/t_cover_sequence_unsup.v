@@ -13,8 +13,7 @@ module t (
   default clocking cb @(posedge clk);
   endclocking
 
-  // cover sequence (IEEE 1800-2023 16.14.3) forms with no exact per-end
-  // representation are ignored (COVERIGN) rather than under-counted.
+  // Ignore cover sequences that lack an exact per-end representation (IEEE 16.14.3).
 
   // Ranged cycle delay before a multi-cycle sequence.
   cover sequence (a ##[1:2] (b ##1 c));

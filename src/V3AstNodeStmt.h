@@ -121,10 +121,10 @@ public:
     }
     ASTGEN_MEMBERS_AstNodeCoverOrAssert;
     string name() const override VL_MT_STABLE { return m_name; }  // * = Var name
-    bool sameNode(const AstNode* samep) const override {
+    bool sameNode(const AstNode* samep) const override {  // LCOV_EXCL_START
         const AstNodeCoverOrAssert* const asamep = VN_DBG_AS(samep, NodeCoverOrAssert);
         return asamep->name() == name() && asamep->nfaLowered() == nfaLowered();
-    }
+    }  // LCOV_EXCL_STOP
     void name(const string& name) override { m_name = name; }
     void dump(std::ostream& str = std::cout) const override;
     void dumpJson(std::ostream& str = std::cout) const override;
@@ -1619,6 +1619,8 @@ class AstCover final : public AstNodeCoverOrAssert {
     // @astgen op3 := coverincsp: List[AstNode] // Coverage node
     bool m_isCoverSeq = false;  // 'cover sequence' (IEEE 1800-2023 16.14.3): fires per
                                 // end-of-match, not per property success
+    bool m_isSeqEvent = false;  // Synthesized for a sequence used as an event control
+                                // (IEEE 1800-2023 9.4.2.4)
 public:
     ASTGEN_MEMBERS_AstCover;
     AstCover(FileLine* fl, AstNode* propp, AstNode* stmtsp, VAssertType type,
@@ -1629,6 +1631,8 @@ public:
     void dumpJson(std::ostream& str) const override;
     bool isCoverSeq() const { return m_isCoverSeq; }
     void isCoverSeq(bool flag) { m_isCoverSeq = flag; }
+    bool isSeqEvent() const { return m_isSeqEvent; }
+    void isSeqEvent(bool flag) { m_isSeqEvent = flag; }
 };
 class AstRestrict final : public AstNodeCoverOrAssert {
 public:

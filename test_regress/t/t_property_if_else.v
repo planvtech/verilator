@@ -31,8 +31,7 @@ module t (
     end
   end
 
-  // Read the action counter in 'final': a same-slot read races the pass
-  // action's increment under --threads.
+  // Read the action counter in final to avoid a same-slot threaded race.
   final `checkd(vacuous_passes, 10);
 
   property p_named;
@@ -58,6 +57,10 @@ module t (
   // Temporal branch: if sel is true, require b on the following cycle; otherwise
   // the else branch is checked on the current cycle.
   assert property (@(posedge clk) if (sel) a |-> ##1 b else c)
+  else $stop;
+
+  // A selected ranged branch contributes each endpoint without evaluating its sibling.
+  assert property (@(posedge clk) if (sel) 1'b1 ##[1:2] b else c)
   else $stop;
 
   // Dangling else binds to the inner property if. If it bound to the outer if,
