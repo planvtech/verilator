@@ -14,6 +14,8 @@ module t (
     input clk
 );
 
+  localparam int MIN_N = 3;
+
   logic [63:0] crc = 64'h5aef0c8dd70a4497;
   logic rst_n = 1'b0;
   logic a, b, c, d, e;
@@ -26,6 +28,14 @@ module t (
   int hit_consrep_range = 0;
   int hit_consrep_2 = 0;
   int hit_consrep_3 = 0;
+  int hit_consrep_unbounded_0 = 0;
+  int hit_consrep_star = 0;
+  int hit_consrep_unbounded_1 = 0;
+  int hit_consrep_plus = 0;
+  int hit_consrep_unbounded_2 = 0;
+  int hit_consrep_unbounded_2_expanded = 0;
+  int hit_consrep_unbounded_param = 0;
+  int hit_consrep_unbounded_param_expanded = 0;
 
   default clocking cb @(posedge clk);
   endclocking
@@ -54,6 +64,16 @@ module t (
   cover sequence (a [* 2]) hit_consrep_2++;
   cover sequence (a [* 3]) hit_consrep_3++;
 
+  // Explicit unbounded ranges and their IEEE 1800-2023 equivalents
+  cover sequence (a [*0:$]) hit_consrep_unbounded_0++;
+  cover sequence (a [*]) hit_consrep_star++;
+  cover sequence (a [*1:$]) hit_consrep_unbounded_1++;
+  cover sequence (a [+]) hit_consrep_plus++;
+  cover sequence (a [*2:$]) hit_consrep_unbounded_2++;
+  cover sequence (a ##1 a [+]) hit_consrep_unbounded_2_expanded++;
+  cover sequence (a [*MIN_N:$]) hit_consrep_unbounded_param++;
+  cover sequence (a [*2] ##1 a [+]) hit_consrep_unbounded_param_expanded++;
+
   always @(posedge clk) begin
 `ifdef TEST_VERBOSE
     $write("[%0t] cyc=%0d crc=%x a=%b b=%b c=%b d=%b e=%b\n", $time, cyc, crc, a, b, c, d, e);
@@ -80,10 +100,14 @@ module t (
     `checkd(hit_clocked, 149);
     `checkd(hit_clocked_disable, 27);
     `checkd(hit_default_disable, 30);
-    `checkd(hit_consrep_2, 30);  // Other sims: 29
-    `checkd(hit_consrep_3, 14);  // Other sims: 13
+    `checkd(hit_consrep_2, 29);
+    `checkd(hit_consrep_3, 13);
     // a[*2:3] == a[*2] or a[*3] (IEEE 1800-2023 16.9.2)
     `checkd(hit_consrep_range, hit_consrep_2 + hit_consrep_3);
+    `checkd(hit_consrep_unbounded_0, hit_consrep_star);
+    `checkd(hit_consrep_unbounded_1, hit_consrep_plus);
+    `checkd(hit_consrep_unbounded_2, hit_consrep_unbounded_2_expanded);
+    `checkd(hit_consrep_unbounded_param, hit_consrep_unbounded_param_expanded);
     $write("*-* All Finished *-*\n");
   end
 endmodule

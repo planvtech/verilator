@@ -6715,7 +6715,8 @@ property_exprCaseIf<nodeExprp>:  // IEEE: part of property_expr for if/case
         |       yIF '(' expr/*expression_or_dist*/ ')' pexpr yELSE pexpr
                         { AstNodeExpr* const elseCondp = new AstLogNot{$1, $3->cloneTreePure(false)};
                           $$ = new AstSAnd{$1, new AstImplication{$1, $3, $5, true},
-                                           new AstImplication{$1, elseCondp, $7, true}}; }
+                                           new AstImplication{$1, elseCondp, $7, true},
+                                           /*propertyControl=*/true}; }
         ;
 
 property_case_itemList<caseItemp>:  // IEEE: {property_case_item}
@@ -6874,9 +6875,16 @@ sexpr<nodeExprp>:  // ==IEEE: sequence_expr  (The name sexpr is important as reg
         //                      // [*N] exact count
         |       ~p~sexpr/*sexpression_or_dist*/ yP_BRASTAR constExpr ']'
                         { $$ = new AstSConsRep{$<fl>2, $1, $3}; }
-        //                      // [*N:M] range
+        //                      // [*N:M] bounded range or [*N:$] unbounded range
         |       ~p~sexpr/*sexpression_or_dist*/ yP_BRASTAR constExpr ':' constExpr ']'
-                        { $$ = new AstSConsRep{$<fl>2, $1, $3, $5, false}; }  // LCOV_EXCL_LINE
+                        {
+                            if (VN_IS($5, Unbounded)) {
+                                DEL($5);
+                                $$ = new AstSConsRep{$<fl>2, $1, $3, nullptr, true};
+                            } else {
+                                $$ = new AstSConsRep{$<fl>2, $1, $3, $5, false};
+                            }
+                        }
         //                      // [+] = [*1:$]
         |       ~p~sexpr/*sexpression_or_dist*/ yP_BRAPLUSKET
                         { $$ = new AstSConsRep{$<fl>2, $1,

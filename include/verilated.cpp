@@ -215,19 +215,21 @@ void vl_fatal(const char* filename, int linenum, const char* hier, const char* m
 #endif
 
 #ifndef VL_USER_STOP_MAYBE  ///< Define this to override the vl_stop_maybe function
+static void vl_stop_maybe_execute(const char* filename, int linenum, const char* hier, bool stop,
+                                  bool firstIgnored) VL_MT_UNSAFE {
+    if (stop) {
+        vl_stop(filename, linenum, hier);
+    } else if (firstIgnored) {
+        vl_print_warn_error("-Info", filename, linenum,
+                            "Verilog $stop, ignored due to +verilator+error+limit");
+    }
+}
+
 void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_UNSAFE {
     // $stop or $fatal
-    Verilated::threadContextp()->errorCountInc();
-    if (maybe
-        && Verilated::threadContextp()->errorCount() < Verilated::threadContextp()->errorLimit()) {
-        // Do just once when cross error limit
-        if (Verilated::threadContextp()->errorCount() == 1) {
-            vl_print_warn_error("-Info", filename, linenum,
-                                "Verilog $stop, ignored due to +verilator+error+limit");
-        }
-    } else {
-        vl_stop(filename, linenum, hier);
-    }
+    bool firstIgnored = false;
+    const bool stop = Verilated::threadContextp()->errorCountIncMaybeStop(maybe, firstIgnored);
+    vl_stop_maybe_execute(filename, linenum, hier, stop, firstIgnored);
 }
 #endif
 
@@ -243,20 +245,38 @@ void vl_warn(const char* filename, int linenum, const char* hier, const char* ms
 // Wrapper to call certain functions via messages when multithreaded
 
 void VL_FINISH_MT(const char* filename, int linenum, const char* hier) VL_MT_SAFE {
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_finish(filename, linenum, hier);
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 
 void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_SAFE {
+#ifdef VL_USER_STOP_MAYBE
+    // The user hook decides; pending only for a definite stop request
+    if (!maybe) Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_stop_maybe(filename, linenum, hier, maybe);
+        if (!maybe) Verilated::threadContextp()->finishPendingDec();
     }});
+#else
+    VerilatedContext* const contextp = Verilated::threadContextp();
+    bool firstIgnored = false;
+    const bool stop = contextp->errorCountIncMaybeStop(maybe, firstIgnored);
+    if (stop) contextp->finishPendingInc();
+    VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
+        vl_stop_maybe_execute(filename, linenum, hier, stop, firstIgnored);
+        if (stop) contextp->finishPendingDec();
+    }});
+#endif
 }
 
 void VL_FATAL_MT(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_SAFE {
+    Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_fatal(filename, linenum, hier, msg);
+        Verilated::threadContextp()->finishPendingDec();
     }});
 }
 
@@ -3259,6 +3279,13 @@ void VerilatedContext::errorCountInc() VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
     ++m_s.m_errorCount;
 }
+bool VerilatedContext::errorCountIncMaybeStop(bool maybe, bool& firstIgnored) VL_MT_SAFE {
+    const VerilatedLockGuard lock{m_mutex};
+    const int count = ++m_s.m_errorCount;
+    const bool stop = !maybe || count >= m_s.m_errorLimit;
+    firstIgnored = !stop && count == 1;
+    return stop;
+}
 void VerilatedContext::errorLimit(int val) VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
     m_s.m_errorLimit = val;
@@ -3277,7 +3304,8 @@ void VerilatedContext::gotError(bool flag) VL_MT_SAFE {
 }
 void VerilatedContext::gotFinish(bool flag) VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
-    m_s.m_gotFinish = flag;
+    m_s.m_gotFinish.store(flag, std::memory_order_relaxed);
+    if (!flag) m_s.m_finishPendingTimeValid.store(false, std::memory_order_relaxed);
 }
 bool VerilatedContext::executingFinal() const VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
@@ -4133,6 +4161,50 @@ VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isP
 
     m_varsp->emplace(namep, std::move(var));
     return &(m_varsp->find(namep)->second);
+}
+
+void VerilatedScope::varsInsertFromTable(const VlVarTableEntry* entp, size_t n,
+                                         void* basep) VL_MT_UNSAFE {
+    // Table-driven equivalent of a run of varInsert()/varInsertSized() calls; see VlVarTableEntry.
+    if (!m_varsp) m_varsp = new VerilatedVarNameMap;
+    uint8_t* const base = static_cast<uint8_t*>(basep);
+    for (size_t i = 0; i < n; ++i) {
+        const VlVarTableEntry& e = entp[i];
+        void* const datap = base + e.byteOffset;
+        const VerilatedVarFlags vlflags = static_cast<VerilatedVarFlags>(e.vlflags);
+        VerilatedVar var{e.namep, datap, e.vltype, vlflags, e.udims, e.pdims, /*isParam=*/false};
+        for (int d = 0; d < e.udims; ++d) {
+            var.m_unpacked[d].m_left = e.dims[2 * d];
+            var.m_unpacked[d].m_right = e.dims[2 * d + 1];
+        }
+        for (int d = 0; d < e.pdims; ++d) {
+            var.m_packed[d].m_left = e.dims[2 * (e.udims + d)];
+            var.m_packed[d].m_right = e.dims[2 * (e.udims + d) + 1];
+        }
+        // Recompute the flattened DPI packed range now dims are known (see
+        // VerilatedVarProps::initPacked)
+        if (e.pdims == 1) {
+            var.m_packedDpi = var.m_packed.front();
+        } else if (e.pdims > 1) {
+            int packedSize = 1;
+            for (int d = 0; d < e.pdims; ++d) packedSize *= var.m_packed[d].elements();
+            var.m_packedDpi = VerilatedRange{packedSize - 1, 0};
+        }
+        m_varsp->emplace(e.namep, std::move(var));
+    }
+}
+
+void VerilatedScope::scopesConstructFromTable(const VlScopeTableEntry* entp, size_t n,
+                                              VerilatedSyms* symsp) VL_MT_UNSAFE {
+    // Table-driven equivalent of a run of 'new VerilatedScope{...}' statements; see
+    // VlScopeTableEntry. The generated Syms class derives VerilatedSyms as its sole primary
+    // base at offset 0, so symsp doubles as the base for the offsetof-baked member addresses.
+    uint8_t* const base = reinterpret_cast<uint8_t*>(symsp);
+    for (size_t i = 0; i < n; ++i) {
+        const VlScopeTableEntry& e = entp[i];
+        VerilatedScope** const slotp = reinterpret_cast<VerilatedScope**>(base + e.ptrOffset);
+        *slotp = new VerilatedScope{symsp, e.namep, e.identp, e.defnamep, e.timeunit, e.type};
+    }
 }
 
 VerilatedVar* VerilatedScope::varInsertSized(const char* namep, void* datap, bool isParam,

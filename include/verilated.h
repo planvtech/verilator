@@ -160,6 +160,21 @@ enum VerilatedVarFlags : uint32_t {
     VLVF_NET = (1 << 15)  // Net object
 };
 
+// One VPI-visible variable, consumed by VerilatedScope::varsInsertFromTable();
+// replaces per-variable varInsert() calls, which compiles faster at scale.
+struct VlVarTableEntry final {
+    static constexpr int kMaxDims = 3;  // Max packed+unpacked dims a table row holds
+    const char* namep;  // VPI-facing (protected) variable name, string literal
+    uint32_t byteOffset;  // offsetof of storage member from module instance base
+    VerilatedVarType vltype;
+    uint32_t vlflags;  // Direction + flags (VLVD_*/VLVF_*)
+    uint8_t udims;  // udims + pdims <= kMaxDims
+    uint8_t pdims;
+    // (left,right) pairs: unpacked dims first, then packed; int32_t since large
+    // unpacked memories exceed int16 range
+    int32_t dims[kMaxDims * 2];
+};
+
 // IEEE 1800-2023 Table 20-6
 enum class VerilatedAssertType : uint8_t {
     ASSERT_TYPE_CONCURRENT = (1 << 0),
@@ -405,7 +420,14 @@ protected:
         bool m_fatalOnError = true;  // Fatal on $stop/non-fatal error
         bool m_fatalOnVpiError = true;  // Fatal on vpi error/unsupported
         bool m_gotError = false;  // A $finish statement executed
-        bool m_gotFinish = false;  // A $finish or $stop statement executed
+        // A $finish or $stop statement executed; read by worker termination gates
+        std::atomic<bool> m_gotFinish{false};
+        // Posted $finish/$stop requests not yet executed via the thread queue
+        std::atomic<uint32_t> m_finishPending{0};
+        // Time of the first posted $finish/$stop request
+        std::atomic<uint64_t> m_finishPendingTime{0};
+        // True once a request stamped m_finishPendingTime; latched by termination
+        std::atomic<bool> m_finishPendingTimeValid{false};
         bool m_quiet = false;  // Quiet, no summary report
         // Slow path
         int8_t m_timeunit;  // Time unit as 0..15
@@ -545,6 +567,8 @@ public:
     void errorCount(int val) VL_MT_SAFE;
     /// Increment current number of errors/assertions
     void errorCountInc() VL_MT_SAFE;
+    /// Reserve one maybe-stop and return true if it reaches the termination limit
+    bool errorCountIncMaybeStop(bool maybe, bool& firstIgnored) VL_MT_SAFE;
     /// Return number of errors/assertions before stop
     int errorLimit() const VL_MT_SAFE { return m_s.m_errorLimit; }
     /// Set number of errors/assertions before stop
@@ -562,9 +586,34 @@ public:
     /// Set if got a $stop or non-fatal error
     void gotError(bool flag) VL_MT_SAFE;
     /// Return if got a $finish or $stop/error
-    bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish; }
+    bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish.load(std::memory_order_relaxed); }
     /// Set if got a $finish or $stop/error
     void gotFinish(bool flag) VL_MT_SAFE;
+    /// Return if a $finish/$stop was requested, even if not yet executed
+    bool finishPending() const VL_MT_SAFE {
+        return m_s.m_finishPending.load(std::memory_order_relaxed)
+               || m_s.m_gotFinish.load(std::memory_order_relaxed);
+    }
+    /// Record a posted $finish/$stop request awaiting execution
+    void finishPendingInc() VL_MT_SAFE {
+        m_s.m_finishPending.fetch_add(1, std::memory_order_relaxed);
+        if (!m_s.m_finishPendingTimeValid.exchange(true, std::memory_order_relaxed)) {
+            m_s.m_finishPendingTime.store(time(), std::memory_order_relaxed);
+        }
+    }
+    /// Balance finishPendingInc once the posted request ran or was ignored
+    void finishPendingDec() VL_MT_SAFE {
+        if (m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed) == 1
+            && !m_s.m_gotFinish.load(std::memory_order_relaxed)) {
+            m_s.m_finishPendingTimeValid.store(false, std::memory_order_relaxed);
+        }
+    }
+    /// Return the time of the first termination request, else the current time
+    uint64_t finishPendingTime() const VL_MT_SAFE {
+        return m_s.m_finishPendingTimeValid.load(std::memory_order_relaxed)
+                   ? m_s.m_finishPendingTime.load(std::memory_order_relaxed)
+                   : time();
+    }
     /// Check if generated final() code is executing
     bool executingFinal() const VL_MT_SAFE;
     /// Set if generated final() code is executing
@@ -756,6 +805,8 @@ public:  // But for internal use only
 // Verilator scope information class
 // Used for internal VPI implementation, and introspection into scopes
 
+struct VlScopeTableEntry;  // Defined below VerilatedScope; used by scopesConstructFromTable()
+
 class VerilatedScope final {
 public:
     enum Type : uint8_t {
@@ -792,6 +843,9 @@ public:  // But internals only - called from verilated modules, VerilatedSyms
                                      void* forceReadSignalData, const char* forceReadSignalName,
                                      std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
                                      int udims, int pdims...) VL_MT_UNSAFE;
+    void varsInsertFromTable(const VlVarTableEntry* entp, size_t n, void* basep) VL_MT_UNSAFE;
+    static void scopesConstructFromTable(const VlScopeTableEntry* entp, size_t n,
+                                         VerilatedSyms* symsp) VL_MT_UNSAFE;
     // ACCESSORS
     const char* name() const VL_MT_SAFE_POSTINIT { return m_namep; }
     const char* identifier() const VL_MT_SAFE_POSTINIT { return m_identifierp; }
@@ -805,6 +859,17 @@ public:  // But internals only - called from verilated modules, VerilatedSyms
     static void* exportFindNullError(int funcnum) VL_MT_SAFE;
     static void* exportFind(const VerilatedScope* scopep, int funcnum) VL_MT_SAFE;
     Type type() const { return m_type; }
+};
+
+// One scope, consumed by VerilatedScope::scopesConstructFromTable(); replaces
+// per-scope 'new VerilatedScope{...}' statements, which compiles faster at scale.
+struct VlScopeTableEntry final {
+    uint32_t ptrOffset;  // offsetof of the target __Vscopep_* member within the Syms object
+    const char* namep;  // Scope suffix name (protected), string literal
+    const char* identp;  // Identifier with escapes removed (protected)
+    const char* defnamep;  // Definition name (SCOPE_MODULE only), else "<null>"
+    int8_t timeunit;  // Timeunit in negative power-of-10
+    VerilatedScope::Type type;
 };
 
 class VerilatedHierarchy final {
