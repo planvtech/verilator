@@ -22,6 +22,7 @@ for fn in jsons:
     with open(fn, 'r', encoding="utf8") as fh:
         json.load(fh)
 
+
 def tree_has_nfa_assert(filename):
     with open(filename, encoding="latin-1") as fh:
         contents = fh.read()
