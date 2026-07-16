@@ -254,10 +254,11 @@ void VL_FINISH_MT(const char* filename, int linenum, const char* hier) VL_MT_SAF
 
 void VL_STOP_MT(const char* filename, int linenum, const char* hier, bool maybe) VL_MT_SAFE {
 #ifdef VL_USER_STOP_MAYBE
-    Verilated::threadContextp()->finishPendingInc();
+    // The user hook decides; pending only for a definite stop request
+    if (!maybe) Verilated::threadContextp()->finishPendingInc();
     VerilatedThreadMsgQueue::post(VerilatedMsg{[=]() {  //
         vl_stop_maybe(filename, linenum, hier, maybe);
-        Verilated::threadContextp()->finishPendingDec();
+        if (!maybe) Verilated::threadContextp()->finishPendingDec();
     }});
 #else
     VerilatedContext* const contextp = Verilated::threadContextp();
@@ -3303,7 +3304,7 @@ void VerilatedContext::gotError(bool flag) VL_MT_SAFE {
 }
 void VerilatedContext::gotFinish(bool flag) VL_MT_SAFE {
     const VerilatedLockGuard lock{m_mutex};
-    m_s.m_gotFinish = flag;
+    m_s.m_gotFinish.store(flag, std::memory_order_relaxed);
     if (!flag) m_s.m_finishPendingTimeValid.store(false, std::memory_order_relaxed);
 }
 bool VerilatedContext::executingFinal() const VL_MT_SAFE {

@@ -14,9 +14,6 @@ module t (
     input clk
 );
 
-  // These multi-cycle counts are a nonvacuous-attempt oracle.
-  initial $assertvacuousoff;
-
   int cyc;
   reg [63:0] crc;
 
@@ -38,12 +35,6 @@ module t (
   int count_fail8 = 0;
   int count_fail9 = 0;
   int count_fail10 = 0;
-  int multi_pass_pair1 = 0;
-  int multi_fail_pair1 = 0;
-  int multi_pass_pair2 = 0;
-  int multi_fail_pair2 = 0;
-  int multi_pass_nested = 0;
-  int multi_fail_nested = 0;
 
   // Test 1: accept_on (async) -- property succeeds when cnd_a fires
   assert property (@(posedge clk) disable iff (cyc < 2) accept_on (cnd_a) body)
@@ -89,22 +80,7 @@ module t (
   assert property (@(posedge clk) disable iff (cyc < 2) sync_accept_on (cnd_a) body)
   else count_fail10 <= count_fail10 + 1;
 
-  // Multi-cycle sync abort forms; accept-forced passes suppressed by $assertvacuousoff.
-  assert property (@(posedge clk) sync_accept_on (cnd_a) (a |-> ##1 b)) multi_pass_pair1++;
-  else multi_fail_pair1++;
-
-  assert property (@(posedge clk) sync_reject_on (cnd_r) (a |-> b))
-  else multi_fail_pair1++;
-
-  assert property (@(posedge clk) sync_accept_on (cnd_a) b) multi_pass_pair2++;
-  else multi_fail_pair2++;
-
-  assert property (@(posedge clk) sync_reject_on (cnd_r) (a |-> ##2 b)) multi_pass_pair2++;
-  else multi_fail_pair2++;
-
-  assert property (@(posedge clk) sync_accept_on (cnd_a) sync_reject_on (cnd_r) (a |-> b))
-    multi_pass_nested++;
-  else multi_fail_nested++;
+  // Multi-cycle sync abort count cases live in t_property_nfa_sync_abort_counts.
 
   always @(posedge clk) begin
 `ifdef TEST_VERBOSE
@@ -128,12 +104,6 @@ module t (
       `checkd(count_fail8, 10);
       `checkd(count_fail9, 14);
       `checkd(count_fail10, 14);
-      `checkd(multi_pass_pair1, 5);  // Other sims: 42
-      `checkd(multi_fail_pair1, 65);  // Other sims: 39
-      `checkd(multi_pass_pair2, 24);  // Other sims: 74
-      `checkd(multi_fail_pair2, 99);  // Other sims: 73
-      `checkd(multi_pass_nested, 7);  // Other sims: 30
-      `checkd(multi_fail_nested, 27);  // Other sims: 18
       $write("*-* All Finished *-*\n");
       $finish;
     end

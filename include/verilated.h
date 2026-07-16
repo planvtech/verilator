@@ -420,7 +420,8 @@ protected:
         bool m_fatalOnError = true;  // Fatal on $stop/non-fatal error
         bool m_fatalOnVpiError = true;  // Fatal on vpi error/unsupported
         bool m_gotError = false;  // A $finish statement executed
-        bool m_gotFinish = false;  // A $finish or $stop statement executed
+        // A $finish or $stop statement executed; read by worker termination gates
+        std::atomic<bool> m_gotFinish{false};
         // Posted $finish/$stop requests not yet executed via the thread queue
         std::atomic<uint32_t> m_finishPending{0};
         // Time of the first posted $finish/$stop request
@@ -585,12 +586,13 @@ public:
     /// Set if got a $stop or non-fatal error
     void gotError(bool flag) VL_MT_SAFE;
     /// Return if got a $finish or $stop/error
-    bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish; }
+    bool gotFinish() const VL_MT_SAFE { return m_s.m_gotFinish.load(std::memory_order_relaxed); }
     /// Set if got a $finish or $stop/error
     void gotFinish(bool flag) VL_MT_SAFE;
     /// Return if a $finish/$stop was requested, even if not yet executed
     bool finishPending() const VL_MT_SAFE {
-        return m_s.m_finishPending.load(std::memory_order_relaxed) || m_s.m_gotFinish;
+        return m_s.m_finishPending.load(std::memory_order_relaxed)
+               || m_s.m_gotFinish.load(std::memory_order_relaxed);
     }
     /// Record a posted $finish/$stop request awaiting execution
     void finishPendingInc() VL_MT_SAFE {
@@ -601,7 +603,8 @@ public:
     }
     /// Balance finishPendingInc once the posted request ran or was ignored
     void finishPendingDec() VL_MT_SAFE {
-        if (m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed) == 1 && !m_s.m_gotFinish) {
+        if (m_s.m_finishPending.fetch_sub(1, std::memory_order_relaxed) == 1
+            && !m_s.m_gotFinish.load(std::memory_order_relaxed)) {
             m_s.m_finishPendingTimeValid.store(false, std::memory_order_relaxed);
         }
     }

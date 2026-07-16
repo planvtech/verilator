@@ -9,9 +9,11 @@
 
 import vltest_bootstrap
 
-test.scenarios('simulator')
+test.scenarios('vlt_all')
 
-test.compile(timing_loop=True, verilator_flags2=['--assert', '--timing'])
+test.compile(make_top_shell=False,
+             make_main=False,
+             verilator_flags2=['--exe', test.pli_filename, '-CFLAGS', '-DVL_USER_STOP_MAYBE'])
 
 test.execute()
 

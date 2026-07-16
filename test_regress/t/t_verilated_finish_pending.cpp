@@ -21,9 +21,6 @@
 // These require the above. Comment prevents clang-format moving them
 #include "TestCheck.h"
 
-// This is the synchronous implementation used by the main-thread $stop path.
-extern void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool maybe);
-
 int errors = 0;
 
 int fatalCalls = 0;
