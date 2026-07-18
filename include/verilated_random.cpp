@@ -24,6 +24,7 @@
 #include "verilated_random.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -263,6 +264,74 @@ private:
     }
 };
 
+//======================================================================
+// Solver-session resilience helpers
+
+static constexpr const char* VL_SOLVER_SYNC = "__VLRSYNC__";
+
+// Per-(check-sat) timeout in ms from VERILATOR_SOLVER_TIMEOUT; 0 = unbounded.
+static int solverTimeoutMs() {
+    static const int s_ms = [] {
+        const char* const env = std::getenv("VERILATOR_SOLVER_TIMEOUT");
+        if (!env || !env[0]) return 0;
+        char* end = nullptr;
+        const long v = std::strtol(env, &end, 10);
+        if (end == env || v < 0) return 0;
+        return static_cast<int>(v);
+    }();
+    return s_ms;
+}
+static void emitTimeout(std::ostream& os) {
+    const int ms = solverTimeoutMs();
+    if (ms > 0) os << "(set-option :timeout " << ms << ")\n";
+}
+
+static void reportSolverErrorOnce(const std::string& line) {
+    static bool s_warned = false;
+    if (s_warned) return;
+    s_warned = true;
+    const std::string msg
+        = "Solver reported an error; this randomize() call fails, later calls continue: "s + line;
+    VL_WARN_MT(__FILE__, __LINE__, "randomize", msg.c_str());
+}
+static void reportSolverUnknownOnce() {
+    static bool s_warned = false;
+    if (s_warned) return;
+    s_warned = true;
+    VL_WARN_MT(__FILE__, __LINE__, "randomize",
+               "Solver returned unknown (timed out or incomplete); this randomize() call fails, "
+               "later calls continue");
+}
+
+// getline that drains blank and `(error ...)` lines; false on stream death.
+static bool readSolverLine(std::istream& os, std::string& line) {
+    while (std::getline(os, line)) {
+        const size_t s = line.find_first_not_of(" \t\r");
+        if (s == std::string::npos) continue;
+        if (line.compare(s, 6, "(error") == 0) {
+            reportSolverErrorOnce(line);
+            continue;
+        }
+        if (s != 0) line.erase(0, s);
+        return true;
+    }
+    return false;
+}
+
+// Drain the pipe to a fresh echo marker before the next transaction.
+static void resyncSolver(std::iostream& os) {
+    os << "(echo \"" << VL_SOLVER_SYNC << "\")\n";
+    os.flush();
+    std::string line;
+    while (std::getline(os, line)) {
+        if (line.find(VL_SOLVER_SYNC) != std::string::npos) break;
+    }
+}
+static void resetSolver(std::iostream& os) {
+    resyncSolver(os);
+    os << "(reset)\n";
+}
+
 static VlRProcess& getSolver() {
     static VlRProcess s_solver;
     static bool s_done = false;
@@ -286,8 +355,7 @@ static VlRProcess& getSolver() {
     s_solver << "(check-sat)\n";
     s_solver << "(reset)\n";
     std::string s;
-    getline(s_solver, s);
-    if (s == "sat") return s_solver;
+    if (readSolverLine(s_solver, s) && s == "sat") return s_solver;
 
     std::stringstream msg;
     msg << "Unable to communicate with SAT solver, please check its installation or specify a "
@@ -297,8 +365,6 @@ static VlRProcess& getSolver() {
     msg << '\n';
     const std::string str = msg.str();
     VL_WARN_MT("", 0, "randomize", str.c_str());
-
-    while (getline(s_solver, s)) {}
     return s_solver;
 }
 
@@ -530,6 +596,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
         os << "(set-option :produce-models true)\n";
         // Lets the scalar pin path learn which free-bit assumptions conflict.
         os << "(set-option :produce-unsat-assumptions true)\n";
+        emitTimeout(os);
         os << "(set-logic QF_ABV)\n";
         os << "(define-fun __Vbv ((b Bool)) (_ BitVec 1) (ite b #b1 #b0))\n";
         os << "(define-fun __Vbool ((v (_ BitVec 1))) Bool (= #b1 v))\n";
@@ -595,7 +662,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
         }
 
         if (!sat) {
-            os << "(reset)\n";
+            resetSolver(os);
             // If randc vars have used values, this may be cycle exhaustion - retry
             if (hasRandc && !m_randcUsedValues.empty() && attempt == 0) {
                 m_randcUsedValues.clear();
@@ -607,6 +674,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             if (m_checkOnly) return false;
             // Genuine unsat: report via unsat-core
             os << "(set-option :produce-unsat-cores true)\n";
+            emitTimeout(os);
             os << "(set-logic QF_ABV)\n";
             os << "(define-fun __Vbv ((b Bool)) (_ BitVec 1) (ite b #b1 #b0))\n";
             os << "(define-fun __Vbool ((v (_ BitVec 1))) Bool (= #b1 v))\n";
@@ -626,7 +694,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
             os << "(check-sat)\n";
             sat = parseSolution(os, true);
             (void)sat;
-            os << "(reset)\n";
+            resetSolver(os);
             return false;
         }
 
@@ -696,7 +764,7 @@ bool VlRandomizer::next(VlRNG& rngr) {
         // Check-only must not advance randc cycle state.
         if (!m_checkOnly) recordRandcValues();
 
-        os << "(reset)\n";
+        resetSolver(os);
         return true;
     }
     return false;  // Should not reach here
@@ -704,14 +772,14 @@ bool VlRandomizer::next(VlRNG& rngr) {
 
 bool VlRandomizer::checkSat(std::iostream& os) {
     std::string result;
-    do { std::getline(os, result); } while (result.empty());
+    if (!readSolverLine(os, result)) return false;
     return result == "sat";
 }
 
 std::vector<int> VlRandomizer::readUnsatAssumptions(std::iostream& os) {
     os << "(get-unsat-assumptions)\n";
     std::string line;
-    do { std::getline(os, line); } while (line.empty());
+    if (!readSolverLine(os, line)) return {};
     // The response lists only "a<N>" literals; collect each full integer run.
     std::vector<int> idxs;
     std::string num;
@@ -729,7 +797,11 @@ std::vector<int> VlRandomizer::readUnsatAssumptions(std::iostream& os) {
 
 bool VlRandomizer::parseSolution(std::iostream& os, bool log) {
     std::string sat;
-    do { std::getline(os, sat); } while (sat == "");
+    if (!readSolverLine(os, sat)) return false;
+    if (sat == "unknown") {
+        reportSolverUnknownOnce();
+        return false;
+    }
     if (sat == "unsat") {
         if (!log) return false;
         os << "(get-unsat-core) \n";
@@ -1006,6 +1078,7 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
 
         // Solver session setup
         os << "(set-option :produce-models true)\n";
+        emitTimeout(os);
         os << "(set-logic QF_ABV)\n";
         os << "(define-fun __Vbv ((b Bool)) (_ BitVec 1) (ite b #b1 #b0))\n";
         os << "(define-fun __Vbool ((v (_ BitVec 1))) Bool (= #b1 v))\n";
@@ -1042,7 +1115,7 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
             bool sat = parseSolution(os, true);
             if (!sat) {
                 if (!m_randcVarNames.empty()) m_randcUsedValues.clear();
-                os << "(reset)\n";
+                resetSolver(os);
                 return false;
             }
             // Record solved randc values for future exclusion
@@ -1056,14 +1129,14 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
                 sat = parseSolution(os, false);
                 (void)sat;
             }
-            os << "(reset)\n";
+            resetSolver(os);
         } else {
             // Intermediate phase: extract values for current layer variables only
             std::string satResponse;
-            do { std::getline(os, satResponse); } while (satResponse.empty());
+            if (!readSolverLine(os, satResponse)) return false;
 
             if (satResponse != "sat") {
-                os << "(reset)\n";
+                resetSolver(os);
                 return false;
             }
 
@@ -1124,7 +1197,7 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
             // Get baseline values (deterministic, always valid)
             getValueCmd();
             if (!parseGetValue()) {
-                os << "(reset)\n";
+                resetSolver(os);
                 return false;
             }
 
@@ -1135,13 +1208,13 @@ bool VlRandomizer::nextPhased(VlRNG& rngr) {
             os << ")\n";
             os << "(check-sat)\n";
             satResponse.clear();
-            do { std::getline(os, satResponse); } while (satResponse.empty());
+            if (!readSolverLine(os, satResponse)) return false;
             if (satResponse == "sat") {
                 getValueCmd();
                 parseGetValue();
             }
 
-            os << "(reset)\n";
+            resetSolver(os);
         }
     }
 
