@@ -24,8 +24,8 @@ test.compile()
 # CRLF line endings, print-success chatter, and wrapped multi-line replies
 # must all parse cleanly
 for mode in ('crlf', 'success', 'multiline'):
-    test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
-                 '/randomize_solver_tamper.py TAMPER=' + mode)
+    test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir + '/randomize_solver_tamper.py TAMPER=' +
+                 mode)
     test.file_grep(test.run_log_filename, r'NPASS=5')
 
 test.passes()
