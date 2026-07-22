@@ -143,6 +143,13 @@ associated programs.
    use the one supplied or found during configure, or :command:`z3 --in` if
    empty.
 
+.. option:: VERILATOR_SOLVER_TIMEOUT
+
+   If set to a positive integer, the per-``(check-sat)`` timeout in
+   milliseconds given to the constrained randomization backend. A solve that
+   exceeds it makes that one :code:`randomize()` call return 0, while later
+   calls continue. Default 0 means no timeout.
+
 .. option:: VERILATOR_VALGRIND
 
    If set, the command to run when using the :vlopt:`--valgrind` option,
