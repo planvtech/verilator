@@ -260,6 +260,7 @@ class VlRandomizer VL_NOT_FINAL {
 
     // PRIVATE METHODS
     void randomConstraint(std::ostream& os, VlRNG& rngr, int bits);
+    bool nextRandomize(VlRNG& rngr, bool checkOnly);
     bool nextFlat(VlRNG& rngr, VlSolverSession& sess, const std::vector<std::string>& uniqueExprs);
     // Phased solving for solve...before
     bool nextPhased(VlRNG& rngr, VlSolverSession& sess,

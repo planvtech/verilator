@@ -74,11 +74,15 @@ static ssize_t vlWriteNoSigpipe(int fd, const void* datap, size_t len) {
     sigset_t sigpipeMask;
     sigemptyset(&sigpipeMask);
     sigaddset(&sigpipeMask, SIGPIPE);
+    sigset_t prevPending;
+    sigemptyset(&prevPending);
+    sigpending(&prevPending);
+    const bool wasPending = sigismember(&prevPending, SIGPIPE) == 1;
     sigset_t prevMask;
     pthread_sigmask(SIG_BLOCK, &sigpipeMask, &prevMask);
     const ssize_t n = ::write(fd, datap, len);
     const int writeErrno = errno;
-    if (n == -1 && writeErrno == EPIPE) {
+    if (n == -1 && writeErrno == EPIPE && !wasPending) {
         const struct timespec zeroTs = {0, 0};
         while (sigtimedwait(&sigpipeMask, nullptr, &zeroTs) == -1 && errno == EINTR) {}
     }
@@ -115,34 +119,44 @@ public:
 
 protected:
     int overflow(int c = traits_type::eof()) override {
-        const char c2 = static_cast<char>(c);
-        if (pbase() == pptr()) return 0;
-        const size_t size = pptr() - pbase();
-        log("  ", std::string(pbase(), size));
+        if (pbase() != pptr()) {
+            const size_t size = pptr() - pbase();
+            log("  ", std::string(pbase(), size));
+            const char* wp = pbase();
+            size_t left = size;
+            while (left > 0) {
 #ifdef _VL_SOLVER_PIPE
-        const ssize_t n = vlWriteNoSigpipe(m_writeFd, pbase(), size);
+                const ssize_t n = vlWriteNoSigpipe(m_writeFd, wp, left);
 #else
-        const ssize_t n = ::write(m_writeFd, pbase(), size);
+                const ssize_t n = ::write(m_writeFd, wp, left);
 #endif
-        if (VL_UNLIKELY(n == -1 && errno != EPIPE)) perror("write");
-        if (n <= 0) {
-            wait_report();
-            return traits_type::eof();
-        }
-        if (static_cast<size_t>(n) == size)
+                if (n == -1 && errno == EINTR) continue;
+                if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    if (waitWritable()) continue;
+                    m_readTimedOut = true;
+                    return traits_type::eof();
+                }
+                if (VL_UNLIKELY(n == -1 && errno != EPIPE)) perror("write");
+                if (n <= 0) {
+                    wait_report();
+                    return traits_type::eof();
+                }
+                wp += n;
+                left -= n;
+            }
             setp(m_writeBuf, m_writeBuf + sizeof(m_writeBuf));
-        else
-            setp(m_writeBuf + n, m_writeBuf + sizeof(m_writeBuf));
-        if (c != traits_type::eof()) sputc(c2);
+        }
+        if (c != traits_type::eof()) sputc(static_cast<char>(c));
         return 0;
     }
     int underflow() override {
-        sync();
+        if (sync() != 0) return traits_type::eof();
         if (VL_UNLIKELY(m_deadlineArmed) && !waitReadable()) {
             m_readTimedOut = true;
             return traits_type::eof();
         }
-        const ssize_t n = ::read(m_readFd, m_readBuf, sizeof(m_readBuf));
+        ssize_t n;
+        while ((n = ::read(m_readFd, m_readBuf, sizeof(m_readBuf))) == -1 && errno == EINTR) {}
         if (VL_UNLIKELY(n == -1)) perror("read");
         if (n <= 0) {
             wait_report();
@@ -152,26 +166,40 @@ protected:
         setg(m_readBuf, m_readBuf, m_readBuf + n);
         return traits_type::to_int_type(m_readBuf[0]);
     }
-    int sync() override {
-        overflow();
-        return 0;
-    }
-    // Poll until data or deadline (+ slack for the solver's own timeout)
-    bool waitReadable() {
-#ifdef _VL_SOLVER_PIPE
+    int sync() override { return overflow() == traits_type::eof() ? -1 : 0; }
+    // Milliseconds until deadline (+ slack for the solver's own timeout); -1 = expired
+    int deadlineWaitMs() const {
         constexpr int SLACK_MS = 200;
+        constexpr int MAX_WAIT_MS = 3600000;
+        const auto limit = m_deadline + std::chrono::milliseconds{SLACK_MS};
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= limit) return -1;
+        const long long ms
+            = std::chrono::duration_cast<std::chrono::milliseconds>(limit - now).count() + 1;
+        return ms > MAX_WAIT_MS ? MAX_WAIT_MS : static_cast<int>(ms);
+    }
+    bool waitReadable() { return waitFd(m_readFd, POLLIN); }
+    bool waitWritable() { return waitFd(m_writeFd, POLLOUT); }
+    // Poll fd until ready; false on deadline expiry or poll failure
+    bool waitFd(int fd, short events) {
+#ifdef _VL_SOLVER_PIPE
         while (true) {
-            const auto limit = m_deadline + std::chrono::milliseconds{SLACK_MS};
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= limit) return false;
-            const int waitMs = static_cast<int>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(limit - now).count() + 1);
-            struct pollfd pfd = {m_readFd, POLLIN, 0};
+            int waitMs = -1;
+            if (m_deadlineArmed) {
+                waitMs = deadlineWaitMs();
+                if (waitMs < 0) return false;
+            }
+            struct pollfd pfd = {fd, events, 0};
             const int r = ::poll(&pfd, 1, waitMs);
             if (r > 0) return true;
-            if (r == -1 && errno != EINTR) return true;
+            if (r == -1 && errno != EINTR) {
+                perror("poll");
+                return false;
+            }
         }
 #else
+        (void)fd;
+        (void)events;
         return true;
 #endif
     }
@@ -193,19 +221,47 @@ public:
     void disarmDeadline() { m_deadlineArmed = false; }
     bool readTimedOut() const { return m_readTimedOut; }
     bool alive() const { return !m_pidExited; }
+    // True if reply data is already buffered or arrives within graceMs
+    bool peekReadable(int graceMs) {
+#ifdef _VL_SOLVER_PIPE
+        if (gptr() < egptr()) return true;
+        sync();
+        const auto limit = std::chrono::steady_clock::now() + std::chrono::milliseconds{graceMs};
+        while (true) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= limit) return false;
+            const int waitMs = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(limit - now).count() + 1);
+            struct pollfd pfd = {m_readFd, POLLIN, 0};
+            const int r = ::poll(&pfd, 1, waitMs);
+            if (r > 0) return true;
+            if (r == -1 && errno != EINTR) return false;
+        }
+#else
+        (void)graceMs;
+        return true;
+#endif
+    }
 
     void terminate() {
 #ifdef _VL_SOLVER_PIPE
-        if (!m_pidExited && m_pid) ::kill(m_pid, SIGKILL);
+        if (!m_pidExited && m_pid) {
+            ::kill(m_pid, SIGKILL);
+            while (waitpid(m_pid, &m_pidStatus, 0) == -1 && errno == EINTR) {}
+        }
 #endif
-        wait_report(true);
+        m_pidExited = true;
+        m_pid = 0;
+        closeFds();
         m_readTimedOut = false;
     }
 
     void wait_report(bool quiet = false) {
         if (m_pidExited) return;
 #ifdef _VL_SOLVER_PIPE
-        if (waitpid(m_pid, &m_pidStatus, 0) != m_pid) return;
+        pid_t rc;
+        while ((rc = waitpid(m_pid, &m_pidStatus, WNOHANG)) == -1 && errno == EINTR) {}
+        if (rc != m_pid) return;  // Still running; terminate() reaps it
         if (m_pidStatus && !quiet) {
             std::stringstream msg;
             msg << "Subprocess command `" << m_cmd[0];
@@ -301,12 +357,27 @@ public:
         m_pidStatus = 0;
         m_readFd = fd_stdout[P_RD];
         m_writeFd = fd_stdin[P_WR];
-#ifdef F_SETNOSIGPIPE
-        fcntl(m_writeFd, F_SETNOSIGPIPE, 1);
-#endif
 
         close(fd_stdin[P_RD]);
         close(fd_stdout[P_WR]);
+
+        int flags;
+        while ((flags = fcntl(m_writeFd, F_GETFL)) == -1 && errno == EINTR) {}
+        int fcntlRc = flags;
+        if (fcntlRc != -1) {
+            while ((fcntlRc = fcntl(m_writeFd, F_SETFL, flags | O_NONBLOCK)) == -1
+                   && errno == EINTR) {}
+        }
+#ifdef F_SETNOSIGPIPE
+        if (fcntlRc != -1) {
+            while ((fcntlRc = fcntl(m_writeFd, F_SETNOSIGPIPE, 1)) == -1 && errno == EINTR) {}
+        }
+#endif
+        if (VL_UNLIKELY(fcntlRc == -1)) {
+            perror("VlRProcess::open: fcntl");
+            terminate();
+            return false;
+        }
 
         return true;
 #else
@@ -352,9 +423,12 @@ static int solverTimeoutMs() {
     static const int s_ms = [] {
         const char* const envp = std::getenv("VERILATOR_SOLVER_TIMEOUT");
         if (!envp || !envp[0]) return 0;
+        constexpr long MAX_TIMEOUT_MS = 0x3FFFFFFF;
         char* endp = nullptr;
+        errno = 0;
         const long v = std::strtol(envp, &endp, 10);
-        if (endp == envp || v < 0) return 0;
+        if (endp == envp || v <= 0) return 0;
+        if (errno == ERANGE || v > MAX_TIMEOUT_MS) return static_cast<int>(MAX_TIMEOUT_MS);
         return static_cast<int>(v);
     }();
     return s_ms;
@@ -383,6 +457,7 @@ static std::vector<int> scanIntRuns(const std::string& reply) {
 class VlSolverSession final {
     enum class State : std::uint8_t { UNSTARTED, LIVE, BROKEN, DISABLED };
     static constexpr int MAX_CONSEC_FAILS = 3;
+    static constexpr int ERROR_STATUS_GRACE_MS = 500;
 
     VlRProcess m_proc;  // Solver subprocess and pipe
     VerilatedMutex m_mutex;  // Serializes whole solver transactions
@@ -433,14 +508,18 @@ public:
     // End a transaction: clean sessions reset, desynced or dead ones are condemned
     void end() {
         if (m_state == State::LIVE) {
-            if (m_dirty || m_proc.readTimedOut() || !m_proc.alive() || !m_proc) {
+            bool healthy = !m_dirty && !m_proc.readTimedOut() && m_proc.alive() && !m_proc.fail();
+            if (healthy) {
+                m_proc << "(reset)\n";
+                m_proc.flush();
+                healthy = !m_proc.fail() && m_proc.alive();
+            }
+            if (healthy) {
+                m_consecFails = 0;
+            } else {
                 m_proc.terminate();
                 m_state = State::BROKEN;
                 ++m_consecFails;
-            } else {
-                m_proc << "(reset)\n";
-                m_proc.flush();
-                m_consecFails = 0;
             }
         }
         m_dirty = false;
@@ -454,6 +533,7 @@ public:
         const auto now = std::chrono::steady_clock::now();
         long ms = std::chrono::duration_cast<std::chrono::milliseconds>(m_deadline - now).count();
         if (ms < 1) ms = 1;
+        if (ms > 0x3FFFFFFF) ms = 0x3FFFFFFF;
         m_proc << "(set-option :timeout " << ms << ")\n";
     }
 
@@ -473,6 +553,10 @@ public:
             if (line == "success") continue;
             if (isSolverError(line)) {
                 warnSolverError(line);
+                if (!m_deadlineArmed && !m_proc.peekReadable(ERROR_STATUS_GRACE_MS)) {
+                    abandon();
+                    return VlSolverStatus::FAIL;
+                }
                 continue;
             }
             if (line == "sat") return VlSolverStatus::SAT;
@@ -783,18 +867,16 @@ void VlRandomizer::recordRandcValues() {
     }
 }
 
-bool VlRandomizer::next_check_only(VlRNG& rngr) {
-    m_checkOnly = true;
-    const bool result = next(rngr);
-    m_checkOnly = false;
-    return result;
-}
+bool VlRandomizer::next_check_only(VlRNG& rngr) { return nextRandomize(rngr, true); }
 
-bool VlRandomizer::next(VlRNG& rngr) {
-    if (!m_checkOnly && m_vars.empty() && m_unique_arrays.empty()) return true;
-    if (m_checkOnly && m_vars.empty()) return true;  // No rand members: trivially SAT
+bool VlRandomizer::next(VlRNG& rngr) { return nextRandomize(rngr, false); }
+
+bool VlRandomizer::nextRandomize(VlRNG& rngr, bool checkOnly) {
+    if (!checkOnly && m_vars.empty() && m_unique_arrays.empty()) return true;
+    if (checkOnly && m_vars.empty()) return true;  // No rand members: trivially SAT
     VlSolverSession& sess = VlSolverSession::s();
     const VerilatedLockGuard lock{sess.mutex()};
+    m_checkOnly = checkOnly;
     const std::vector<std::string> uniqueExprs = buildUniqueExprs();
 
     // Randc exclusion-based cycling: exclude previously used values per randc var.
@@ -809,8 +891,14 @@ bool VlRandomizer::next(VlRNG& rngr) {
     }
 
     // Pinned vars make phase ordering moot; skip phased path in check-only.
-    if (!m_checkOnly && !m_solveBefore.empty()) return nextPhased(rngr, sess, uniqueExprs);
-    return nextFlat(rngr, sess, uniqueExprs);
+    bool result;
+    if (!m_checkOnly && !m_solveBefore.empty()) {
+        result = nextPhased(rngr, sess, uniqueExprs);
+    } else {
+        result = nextFlat(rngr, sess, uniqueExprs);
+    }
+    m_checkOnly = false;
+    return result;
 }
 
 std::vector<std::string> VlRandomizer::buildUniqueExprs() const {
@@ -1305,6 +1393,7 @@ bool VlRandomizer::nextPhased(VlRNG& rngr, VlSolverSession& sess,
         if (solvePhases(rngr, sess, layers, uniqueExprs, exhausted)) return true;
         if (!exhausted || attempt != 0) return false;
         m_randcUsedValues.clear();
+        sess.os() << "(reset)\n";
     }
     return false;  // Should not reach here
 }
@@ -1341,7 +1430,6 @@ bool VlRandomizer::solvePhases(VlRNG& rngr, VlSolverSession& sess,
                 exhaustedr = !m_randcUsedValues.empty();
                 if (isFinalPhase) m_randcUsedValues.clear();
             }
-            os << "(reset)\n";
             return false;
         }
 
@@ -1350,12 +1438,8 @@ bool VlRandomizer::solvePhases(VlRNG& rngr, VlSolverSession& sess,
             solveDiversityXor(rngr, sess);
             // Record final randc values for future exclusion
             recordRandcValues();
-            os << "(reset)\n";
         } else {
-            if (!solvePhaseValues(sess, rngr, layers[phase], solvedValues)) {
-                os << "(reset)\n";
-                return false;
-            }
+            if (!solvePhaseValues(sess, rngr, layers[phase], solvedValues)) return false;
             os << "(reset)\n";
         }
     }

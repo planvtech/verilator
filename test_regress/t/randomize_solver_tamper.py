@@ -12,17 +12,38 @@
 #
 # Env:
 #   TAMPER    : none | err_once | err_all | unknown_once | die_at | silent_at
-#               | crlf | success | multiline
-#   TAMPER_AT : response index for *_once/die_at/silent_at (default 2)
+#               | crlf | success | multiline | stall_stdin
+#   TAMPER_AT : response index for *_once/die_at/silent_at/stall_stdin (default 2)
 
 import os
 import subprocess
 import sys
+import threading
 
 mode = os.environ.get("TAMPER", "none")
 at = int(os.environ.get("TAMPER_AT", "2"))
+z3 = os.environ.get("REAL_Z3", "z3")
 
-proc = subprocess.Popen(["z3", "-in"], stdin=sys.stdin, stdout=subprocess.PIPE, text=True)
+stall = threading.Event()
+
+if mode == "stall_stdin":
+    # Interpose stdin so the pump can stop consuming, backpressuring the model
+    proc = subprocess.Popen([z3, "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            text=True)
+
+    def pump():
+        while not stall.is_set():
+            data = sys.stdin.buffer.read1(4096)
+            if not data:
+                proc.stdin.close()
+                return
+            proc.stdin.write(data.decode())
+            proc.stdin.flush()
+
+    threading.Thread(target=pump, daemon=True).start()
+else:
+    proc = subprocess.Popen([z3, "-in"], stdin=sys.stdin, stdout=subprocess.PIPE, text=True)
+
 n = 0
 done = False
 
@@ -52,6 +73,9 @@ for line in proc.stdout:
                 emit('(error "injected silence")')
                 done = True
                 continue
+            elif mode == "stall_stdin":
+                stall.set()
+                done = True
     if mode == "crlf":
         emit(line, "\r\n")
     elif mode == "success":
