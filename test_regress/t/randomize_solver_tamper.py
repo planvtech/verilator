@@ -28,8 +28,7 @@ stall = threading.Event()
 
 if mode == "stall_stdin":
     # Interpose stdin so the pump can stop consuming, backpressuring the model
-    proc = subprocess.Popen([z3, "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            text=True)
+    proc = subprocess.Popen([z3, "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 
     def pump():
         while not stall.is_set():
