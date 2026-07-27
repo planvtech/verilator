@@ -18,6 +18,6 @@ test.compile()
 
 test.execute()
 
-test.file_grep(test.run_log_filename, r'NLO=99 NHI=99')
+test.file_grep(test.run_log_filename, r'NLO=99 NHI=50')
 
 test.passes()

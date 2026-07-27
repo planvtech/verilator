@@ -9,12 +9,9 @@
 #
 # Forwards the SMT-LIB conversation to a real z3 and tampers the reply stream.
 # Response index = 1-based count of sat/unsat/unknown lines (1 = init handshake).
-#
-# Env:
-#   TAMPER    : none | err_once | err_all | unknown_once | die_at | silent_at
-#               | crlf | success | multiline | stall_stdin
-#   TAMPER_AT : response index for *_once/die_at/silent_at/stall_stdin (default 2)
-#               1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# TAMPER: none | err_once | err_multiline | unknown_once | unsupported_once
+#         | die_at | silent_at | garbage_model | crlf | success | multiline | stall_stdin
+# TAMPER_AT: response index for the one-shot modes above (default 2)
 
 # pylint: disable=consider-using-with
 
@@ -25,13 +22,15 @@ import threading
 
 mode = os.environ.get("TAMPER", "none")
 at = int(os.environ.get("TAMPER_AT", "2"))
-z3 = os.environ.get("REAL_Z3", "z3")
 
 stall = threading.Event()
 
 if mode == "stall_stdin":
     # Interpose stdin so the pump can stop consuming, backpressuring the model
-    proc = subprocess.Popen([z3, "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(["z3", "-in"],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,
+                            text=True)
 
     def pump():
         while not stall.is_set():
@@ -44,7 +43,7 @@ if mode == "stall_stdin":
 
     threading.Thread(target=pump, daemon=True).start()
 else:
-    proc = subprocess.Popen([z3, "-in"], stdin=sys.stdin, stdout=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(["z3", "-in"], stdin=sys.stdin, stdout=subprocess.PIPE, text=True)
 
 n = 0
 done = False
@@ -61,15 +60,23 @@ for line in proc.stdout:
     if is_status:
         n += 1
         if not done and n >= at:
-            if mode in ("err_once", "err_all"):
+            if mode == "err_once":
                 emit('(error "injected transient desync")')
-                done = mode == "err_once"
+                done = True
+            elif mode == "err_multiline":
+                emit('(error "injected')
+                emit('multiline error")')
+                done = True
             elif mode == "unknown_once":
                 emit("unknown")
                 done = True
                 continue
+            elif mode == "unsupported_once":
+                emit("unsupported")
+                done = True
             elif mode == "die_at":
                 proc.kill()
+                proc.wait()
                 sys.exit(0)
             elif mode == "silent_at":
                 emit('(error "injected silence")')
@@ -78,6 +85,10 @@ for line in proc.stdout:
             elif mode == "stall_stdin":
                 stall.set()
                 done = True
+    elif mode == "garbage_model" and not done and n >= at and line.startswith("(("):
+        emit('((a #x0b) junk)')
+        done = True
+        continue
     if mode == "crlf":
         emit(line, "\r\n")
     elif mode == "success":

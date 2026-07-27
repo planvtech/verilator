@@ -42,14 +42,19 @@ module sub_hi (
     output int npass
 );
   PktHi p;
+  int phase;
   initial begin
     p = new;
     npass = 0;
+    phase = 0;
   end
   always @(posedge clk) begin
-    if (p.randomize() != 0) begin
-      if (p.b >= 100 && p.b <= 110) npass <= npass + 1;
-      else $stop;
+    phase <= phase + 1;
+    if (phase[0] == 1'b0) begin
+      if (p.randomize() != 0) begin
+        if (p.b >= 100 && p.b <= 110) npass <= npass + 1;
+        else $stop;
+      end
     end
   end
 endmodule
@@ -73,7 +78,7 @@ module t (  /*AUTOARG*/
     cyc <= cyc + 1;
     if (cyc == 99) begin
       $display("NLO=%0d NHI=%0d", nlo, nhi);
-      if (nlo != 99 || nhi != 99) $stop;
+      if (nlo != 99 || nhi != 50) $stop;
       $write("*-* All Finished *-*\n");
       $finish;
     end

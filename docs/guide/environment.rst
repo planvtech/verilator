@@ -150,7 +150,9 @@ associated programs.
    backend. When the budget is exceeded, the call returns 0 (or keeps the
    solution found so far) with a warning instead of blocking the
    simulation. A solver that overruns the budget is killed and restarted
-   on the next call. If not set, solver interactions are unbounded.
+   on the next call; after three consecutive failed calls, constrained
+   randomization is disabled with a warning and ``randomize()`` returns 0.
+   If not set, solver interactions are unbounded.
 
 .. option:: VERILATOR_VALGRIND
 

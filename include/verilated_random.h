@@ -230,9 +230,10 @@ public:
     }
 };
 
+class VlSolverSession;
+
 //=============================================================================
 // Object holding constraints and variable references.
-class VlSolverSession;
 
 class VlRandomizer VL_NOT_FINAL {
     // MEMBERS
@@ -288,7 +289,7 @@ class VlRandomizer VL_NOT_FINAL {
     void solveDiversityXor(VlRNG& rngr, VlSolverSession& sess);
     std::vector<std::string> buildUniqueExprs() const;
     void emitDefines(std::ostream& os) const;
-    void emitDeclares(std::ostream& os, bool pinCurrent);
+    void emitDeclares(std::ostream& os, bool pinCurrent) const;
     void emitAsserts(std::ostream& os, const std::vector<std::string>& extras, bool named) const;
     void emitRandcExclusions(std::ostream& os) const;  // Emit randc exclusion constraints
     void recordRandcValues();  // Record solved randc values for future exclusion

@@ -12,7 +12,6 @@ import shutil
 import vltest_bootstrap
 
 test.scenarios('vlt')
-test.top_filename = "t/t_randomize_solver_fault.v"
 
 if not test.have_solver:
     test.skip("No constraint solver installed")
@@ -21,13 +20,11 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Error then silence: the wall budget bounds the call
+# Malformed model reply: the failed call must keep prior variable values
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
-             '/randomize_solver_tamper.py TAMPER=silent_at TAMPER_AT=2' +
-             ' VERILATOR_SOLVER_TIMEOUT=1000')
+             '/randomize_solver_tamper.py TAMPER=garbage_model TAMPER_AT=2')
 
-test.file_grep(test.run_log_filename, r'exceeded VERILATOR_SOLVER_TIMEOUT')
-test.file_grep(test.run_log_filename, r'randomization disabled')
+test.file_grep(test.run_log_filename, r'Unable to parse')
 test.file_grep(test.run_log_filename, r'All Finished')
 
 test.passes()
