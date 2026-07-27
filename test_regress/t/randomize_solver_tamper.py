@@ -4,7 +4,7 @@
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of either the GNU Lesser General Public License Version 3,
 # or the Perl Artistic License Version 2.0.
-# SPDX-FileCopyrightText: 2026 PlanV GmbH
+# SPDX-FileCopyrightText: 2026 Wilson Snyder
 # SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 #
 # Forwards the SMT-LIB conversation to a real z3 and tampers the reply stream.
@@ -14,6 +14,8 @@
 #   TAMPER    : none | err_once | err_all | unknown_once | die_at | silent_at
 #               | crlf | success | multiline | stall_stdin
 #   TAMPER_AT : response index for *_once/die_at/silent_at/stall_stdin (default 2)
+
+# pylint: disable=consider-using-with
 
 import os
 import subprocess

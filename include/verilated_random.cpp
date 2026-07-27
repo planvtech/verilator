@@ -131,7 +131,7 @@ protected:
                 const ssize_t n = ::write(m_writeFd, wp, left);
 #endif
                 if (n == -1 && errno == EINTR) continue;
-                if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                if (n == -1 && errno == EAGAIN) {
                     if (waitWritable()) continue;
                     m_readTimedOut = true;
                     return traits_type::eof();
