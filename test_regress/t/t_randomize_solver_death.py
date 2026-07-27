@@ -21,10 +21,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Solver dies during every diversity round: base solutions are kept, the
-# solver is respawned with a warning, and after repeated deaths
-# randomization is disabled instead of crashing or hanging
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# Repeated death: respawn each time, then disable after MAX_CONSEC_FAILS
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=die_at TAMPER_AT=3')
 

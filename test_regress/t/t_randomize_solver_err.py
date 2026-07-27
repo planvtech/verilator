@@ -21,7 +21,6 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=err_once TAMPER_AT=2')
 

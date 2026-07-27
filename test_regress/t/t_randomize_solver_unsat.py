@@ -20,8 +20,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Genuinely UNSAT constraints with wrapped multi-line replies: the unsat-core
-# path must consume its complete reply and every call fail cleanly
+# Genuine UNSAT with wrapped replies: the unsat-core path consumes its whole reply
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=multiline')
 

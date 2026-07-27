@@ -21,9 +21,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# unknown at the first check-sat-assuming of a diversity round: the base
-# solution must be kept, no get-unsat-assumptions issued, no hang
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# Diversity-round unknown keeps the base solution, issues no get-unsat-assumptions
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=unknown_once TAMPER_AT=3' +
              ' VERILATOR_SOLVER_TIMEOUT=10000')

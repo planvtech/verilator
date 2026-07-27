@@ -14,6 +14,7 @@
 #   TAMPER    : none | err_once | err_all | unknown_once | die_at | silent_at
 #               | crlf | success | multiline | stall_stdin
 #   TAMPER_AT : response index for *_once/die_at/silent_at/stall_stdin (default 2)
+#               1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
 
 # pylint: disable=consider-using-with
 

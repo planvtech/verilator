@@ -21,8 +21,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# CRLF line endings, print-success chatter, and wrapped multi-line replies
-# must all parse cleanly
+# CRLF, print-success chatter, and wrapped replies must all parse cleanly
 for mode in ('crlf', 'success', 'multiline'):
     test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir + '/randomize_solver_tamper.py TAMPER=' +
                  mode)

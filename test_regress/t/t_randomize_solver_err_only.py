@@ -21,10 +21,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Solver replies with ONLY an error line and no status, with NO runtime
-# timeout configured: the call must fail bounded (no hang), the solver is
-# condemned and respawned, and the simulation completes
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# Error then silence with no timeout: must fail bounded, not hang
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=silent_at TAMPER_AT=2')
 

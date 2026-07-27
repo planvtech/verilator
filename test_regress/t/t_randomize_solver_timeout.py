@@ -21,9 +21,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Solver answers one error line then goes silent: the wall budget must bound
-# the call, kill the stuck solver, and let the simulation finish
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# Error then silence: the wall budget bounds the call
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=silent_at TAMPER_AT=2' +
              ' VERILATOR_SOLVER_TIMEOUT=1000')

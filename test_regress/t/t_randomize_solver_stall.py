@@ -20,10 +20,7 @@ if not shutil.which('z3'):
 
 test.compile()
 
-# Solver stops consuming stdin after the handshake while staying alive: the
-# oversized transaction must hit write backpressure and fail at the wall
-# deadline instead of blocking in write() forever
-# Status-line index: 1 = spawn handshake, 2 = main check-sat, 3 = first diversity round
+# Solver stalls stdin while alive: oversized write fails at the deadline
 test.execute(run_env='VERILATOR_SOLVER=' + test.t_dir +
              '/randomize_solver_tamper.py TAMPER=stall_stdin TAMPER_AT=1' +
              ' VERILATOR_SOLVER_TIMEOUT=2000')
