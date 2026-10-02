@@ -1152,6 +1152,21 @@ private:
             // The replacement node will be visited by the parent's iterateChildren.
             return;
         }
+        if (VN_IS(nodep->taskp(), Property)) {
+            // A property instance that is the entire property expression (direct
+            // propp() child of AstPropSpec) was already inlined by
+            // substitutePropertyCall() before we ever reach here. Getting here means
+            // the instance is nested inside a property operator (|->, not, and, or,
+            // etc.), which substitutePropertyCall does not walk into (IEEE 1800-2023
+            // 16.10). Reject cleanly instead of leaving a dangling reference once the
+            // property declaration is deleted in visit(AstProperty*).
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: property instance nested inside a property operator"
+                          " (IEEE 1800-2023 16.10)");
+            nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
+            VL_DO_DANGLING(pushDeletep(nodep), nodep);
+            return;
+        }
         iterateChildren(nodep);
     }
     void visit(AstImplication* nodep) override {

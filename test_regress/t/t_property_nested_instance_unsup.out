@@ -1,0 +1,6 @@
+%Error-UNSUPPORTED: t/t_property_nested_instance_unsup.v:26:41: Unsupported: property instance nested inside a property operator (IEEE 1800-2023 16.10)
+                                                              : ... note: In instance 't'
+   26 |   assert property (@(posedge clk) a |-> q);
+      |                                         ^
+                    ... For error description see https://verilator.org/warn/UNSUPPORTED?v=latest
+%Error: Exiting due to
