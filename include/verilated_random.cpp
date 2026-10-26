@@ -897,12 +897,10 @@ size_t VlRandomizer::hashConstraints(const std::vector<std::string>& extras) con
     return h;
 }
 
-void VlRandomizer::emitRandcExclusions(std::ostream& os,
-                                       const std::map<std::string, std::string>& drawn) const {
+void VlRandomizer::emitRandcExclusions(std::ostream& os) const {
     std::vector<std::string> names;
     activeRandcVars(names);
     for (const auto& name : names) {
-        if (drawn.count(name)) continue;
         const auto usedIt = m_randcUsedValues.find(name);
         if (usedIt != m_randcUsedValues.end()) {
             const int w = m_vars.at(name)->width();
@@ -939,11 +937,10 @@ bool VlRandomizer::constraintIsRandcOnly(const std::vector<std::string>& varName
     return true;
 }
 
-void VlRandomizer::recordUndrawnValues(const std::map<std::string, std::string>& drawn) {
+void VlRandomizer::recordRandcValues() {
     std::vector<std::string> names;
     activeRandcVars(names);
     for (const auto& name : names) {
-        if (drawn.count(name)) continue;
         const VlRandomVar& var = *m_vars.at(name);
         m_randcUsedValues[name].insert(readVarValueU64(var.datap(0), var.width()));
     }
@@ -1199,13 +1196,13 @@ bool VlRandomizer::nextFlat(VlRNG& rngr, VlSolverSession& sess,
         emitDeclares(os, m_checkOnly);
         emitAsserts(os, uniqueExprs, false);
 
-        // A drawn randc value is pinned; any other randc variable keeps the
+        // A drawn randc value is pinned, and every randc variable keeps its
         // used-value exclusions. Check-only pins current values instead.
         if (!m_checkOnly) {
             for (const auto& entry : drawn) {
                 os << "(assert (= " << entry.first << " " << entry.second << "))\n";
             }
-            emitRandcExclusions(os, drawn);
+            emitRandcExclusions(os);
         }
 
         relaxSoftConstraints(sess);
@@ -1242,8 +1239,7 @@ bool VlRandomizer::nextFlat(VlRNG& rngr, VlSolverSession& sess,
 
         if (!m_checkOnly) {
             solveDiversity(rngr, sess, drawn);
-            recordDrawnValues(drawn);
-            recordUndrawnValues(drawn);
+            recordRandcValues();
         }
         return true;
     }
@@ -2033,7 +2029,7 @@ bool VlRandomizer::solvePhases(VlRNG& rngr, VlSolverSession& sess,
             os << "(assert (= " << entry.first << " " << entry.second << "))\n";
         }
         emitAsserts(os, uniqueExprs, false);
-        emitRandcExclusions(os, drawn);
+        emitRandcExclusions(os);
 
         // Soft constraints participate in every phase, priority-ordered.
         relaxSoftConstraints(sess);
@@ -2049,8 +2045,7 @@ bool VlRandomizer::solvePhases(VlRNG& rngr, VlSolverSession& sess,
         if (isFinalPhase) {
             if (!applyModel(sess)) return false;
             solveDiversityXor(rngr, sess);
-            recordDrawnValues(drawn);
-            recordUndrawnValues(drawn);
+            recordRandcValues();
         } else {
             if (!solvePhaseValues(sess, rngr, layers[phase], solvedValues)) return false;
             os << "(reset)\n";
