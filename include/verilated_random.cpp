@@ -1747,9 +1747,12 @@ bool VlRandomizer::parseModel(std::istream& is, size_t requested) {
     return true;
 }
 
-void VlRandomizer::hard(std::string&& constraint, const char* filename, uint32_t linenum,
-                        const char* source) {
+void VlRandomizer::hard(std::string&& constraint, std::initializer_list<const char*> varNames,
+                        const char* filename, uint32_t linenum, const char* source) {
     m_constraints.emplace_back(std::move(constraint));
+    // Stored for every constraint; markRandc() may follow hard()
+    m_constraintVarNames.insert(m_constraintVarNames.end(), varNames.begin(), varNames.end());
+    m_constraintVarEnds.push_back(m_constraintVarNames.size());
     // Format constraint location: "filename:linenum   source"
     if (filename[0] != '\0' || source[0] != '\0') {
         std::string line;
@@ -1778,6 +1781,8 @@ void VlRandomizer::disable_soft(const std::string& varName) {
 
 void VlRandomizer::clearConstraints() {
     m_constraints.clear();
+    m_constraintVarNames.clear();
+    m_constraintVarEnds.clear();
     m_constraints_line.clear();
     m_solveBefore.clear();
     m_softConstraints.clear();
@@ -1787,6 +1792,8 @@ void VlRandomizer::clearConstraints() {
 
 void VlRandomizer::clearAll() {
     m_constraints.clear();
+    m_constraintVarNames.clear();
+    m_constraintVarEnds.clear();
     m_softConstraints.clear();
     m_vars.clear();
     m_randcVarNames.clear();
